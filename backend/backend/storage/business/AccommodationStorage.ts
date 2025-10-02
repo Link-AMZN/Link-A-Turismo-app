@@ -29,6 +29,7 @@ function mapToAccommodation(accommodation: any, host?: any): Accommodation {
     driverDiscountRate: accommodation.driverDiscountRate ? Number(accommodation.driverDiscountRate) : 0,
     minimumDriverLevel: accommodation.minimumDriverLevel || 'bronze',
     partnershipBadgeVisible: accommodation.partnershipBadgeVisible ?? false,
+    maxGuests: accommodation.maxGuests || 2, // ✅ ADICIONADO: Valor padrão para maxGuests
     host: host ? {
       ...host,
       rating: host.rating ? Number(host.rating) : 0,
@@ -108,6 +109,8 @@ export class DatabaseAccommodationStorage implements IAccommodationStorage {
           driverDiscountRate: (data.driverDiscountRate || 10).toString(),
           minimumDriverLevel: 'bronze',
           partnershipBadgeVisible: false,
+          // ✅ ADICIONADO: maxGuests com valor padrão de 2
+          maxGuests: data.maxGuests || 2,
         })
         .returning();
       
@@ -127,6 +130,10 @@ export class DatabaseAccommodationStorage implements IAccommodationStorage {
       }
       if (data.driverDiscountRate !== undefined) {
         updateData.driverDiscountRate = data.driverDiscountRate.toString();
+      }
+      // ✅ ADICIONADO: Atualizar maxGuests se fornecido
+      if (data.maxGuests !== undefined) {
+        updateData.maxGuests = data.maxGuests;
       }
 
       const [accommodation] = await db
@@ -184,7 +191,8 @@ export class DatabaseAccommodationStorage implements IAccommodationStorage {
         .from(accommodations)
         .leftJoin(users, eq(accommodations.hostId, users.id));
 
-      const conditions = [eq(accommodations.isAvailable, true)];
+      // ✅ CORREÇÃO APLICADA: Filtro de disponibilidade com valor padrão true
+      const conditions = [eq(accommodations.isAvailable, criteria.isAvailable ?? true)];
 
       if (criteria.location) {
         conditions.push(sql`${accommodations.address} ILIKE ${`%${criteria.location}%`}`);
@@ -194,8 +202,17 @@ export class DatabaseAccommodationStorage implements IAccommodationStorage {
         conditions.push(eq(accommodations.type, criteria.type));
       }
 
+      if (criteria.minPrice) {
+        conditions.push(sql`CAST(${accommodations.pricePerNight} AS DECIMAL) >= ${criteria.minPrice}`);
+      }
+
       if (criteria.maxPrice) {
         conditions.push(sql`CAST(${accommodations.pricePerNight} AS DECIMAL) <= ${criteria.maxPrice}`);
+      }
+
+      // ✅ CORREÇÃO APLICADA: Filtro de número de hóspedes (agora funcionará após adicionar a coluna)
+      if (criteria.guests) {
+        conditions.push(gte(accommodations.maxGuests, Number(criteria.guests)));
       }
 
       if (criteria.amenities && criteria.amenities.length > 0) {

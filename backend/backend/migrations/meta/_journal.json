@@ -29,6 +29,34 @@
       "when": 1758430062063,
       "tag": "0003_thin_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1758701516155,
+      "tag": "0004_small_venus",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1759144244615,
+      "tag": "0005_lean_blizzard",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1759251711290,
+      "tag": "0006_romantic_maelstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1759252639904,
+      "tag": "0007_high_energizer",
+      "breakpoints": true
     }
   ]
 }

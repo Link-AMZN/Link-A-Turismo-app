@@ -150,6 +150,8 @@ export interface Accommodation extends BaseEntity {
   minimumDriverLevel: string;
   partnershipBadgeVisible: boolean;
   host?: User;
+  // ✅ ADICIONADO: Para suportar filtro de hóspedes
+  maxGuests?: number;
 }
 
 export interface CreateAccommodationData {
@@ -165,6 +167,8 @@ export interface CreateAccommodationData {
   description?: string;
   offerDriverDiscounts?: boolean;
   driverDiscountRate?: number;
+  // ✅ ADICIONADO: Para suportar filtro de hóspedes
+  maxGuests?: number;
 }
 
 export interface UpdateAccommodationData {
@@ -179,6 +183,8 @@ export interface UpdateAccommodationData {
   offerDriverDiscounts?: boolean;
   driverDiscountRate?: number;
   partnershipBadgeVisible?: boolean;
+  // ✅ ADICIONADO: Para suportar atualização de hóspedes
+  maxGuests?: number;
 }
 
 export interface AccommodationSearchCriteria {
@@ -189,6 +195,10 @@ export interface AccommodationSearchCriteria {
   type?: string;
   amenities?: string[];
   hostId?: string;
+  // ✅ ADICIONADAS: Para suportar os filtros do controller
+  isAvailable?: boolean;
+  guests?: number;
+  minPrice?: number;
 }
 
 export interface PartnershipProgram {

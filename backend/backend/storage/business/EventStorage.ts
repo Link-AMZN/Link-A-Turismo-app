@@ -1,4 +1,4 @@
-import { eq, and, or, gte, lte, desc, sql } from 'drizzle-orm';
+import { eq, and, or, gte, lte, desc, sql, ne, like } from 'drizzle-orm';
 import { db } from '../../db';
 import { events, users } from '../../shared/schema';
 import { 
@@ -6,23 +6,34 @@ import {
   GeoLocation 
 } from '../types';
 
+// ✅ Adicionado: Tipo inferido para insert (ajuda o TS)
+type EventInsert = typeof events.$inferInsert;
+
+// Event status constants
+export const EVENT_STATUS = {
+  PENDING: 'pending',
+  ACTIVE: 'active',
+  CANCELLED: 'cancelled',
+  COMPLETED: 'completed'
+} as const;
+
 // Event interfaces (extending base types)
 export interface Event {
   id: string;
-  name: string;
+  title: string;
   description?: string;
   organizerId: string;
   eventDate: Date;
   startTime: string;
   endTime?: string;
   location: string;
-  lat?: string;
-  lng?: string;
-  price: string;
+  lat?: number; // Corrigido: number (consistente com input)
+  lng?: number; // Corrigido: number
+  price: number; // Corrigido: number
   maxAttendees?: number;
-  maxTickets?: number; // Total tickets available
+  maxTickets?: number;
   currentAttendees: number;
-  ticketsSold?: number; // Tickets sold so far
+  ticketsSold?: number;
   category: string;
   tags: string[];
   images: string[];
@@ -35,7 +46,7 @@ export interface Event {
 }
 
 export interface CreateEventData {
-  name: string;
+  title: string;
   description?: string;
   organizerId: string;
   eventDate: Date;
@@ -54,7 +65,7 @@ export interface CreateEventData {
 }
 
 export interface UpdateEventData {
-  name?: string;
+  title?: string;
   description?: string;
   eventDate?: Date;
   startTime?: string;
@@ -83,147 +94,321 @@ export interface EventSearchCriteria {
 }
 
 export interface IEventStorage {
-  // Event management
   createEvent(data: CreateEventData): Promise<Event>;
   updateEvent(id: string, data: UpdateEventData): Promise<Event>;
   deleteEvent(id: string): Promise<void>;
   getEvent(id: string): Promise<Event | undefined>;
-  
-  // Search and discovery
   searchEvents(criteria: EventSearchCriteria): Promise<Event[]>;
   getEventsByOrganizer(organizerId: string): Promise<Event[]>;
   getUpcomingEvents(limit?: number): Promise<Event[]>;
   getFeaturedEvents(limit?: number): Promise<Event[]>;
   getEventsByCategory(category: string): Promise<Event[]>;
-  
-  // Attendance management
   updateEventAttendance(eventId: string, change: number): Promise<Event>;
   checkEventAvailability(eventId: string): Promise<boolean>;
-  
-  // Event status
   publishEvent(eventId: string): Promise<Event>;
   cancelEvent(eventId: string, reason: string): Promise<Event>;
-  
-  // Analytics
   getEventStatistics(organizerId?: string): Promise<{
     totalEvents: number;
     upcomingEvents: number;
     completedEvents: number;
     totalAttendees: number;
   }>;
-  
-  // Additional methods needed by controllers
   getEventsByFilter(filters: any): Promise<Event[]>;
 }
 
 export class DatabaseEventStorage implements IEventStorage {
   
-  // ===== EVENT MANAGEMENT =====
-  
+  private normalizeEventTitle(title: string): string {
+    return title.trim().replace(/\s+/g, ' ');
+  }
+
   async createEvent(data: CreateEventData): Promise<Event> {
     try {
-      // Since events table doesn't exist in current schema, this is a placeholder implementation
-      // TODO: Add events table to schema
+      // Validação dos dados
+      if (!data.title || data.title.trim().length === 0) {
+        throw new Error('Event title is required');
+      }
       
-      const eventData = {
-        ...data,
-        price: data.price.toString(),
-        lat: data.lat?.toString(),
-        lng: data.lng?.toString(),
-        tags: data.tags || [],
-        images: data.images || [],
-        isPublic: data.isPublic !== false,
-        requiresApproval: data.requiresApproval || false,
-        currentAttendees: 0,
-        status: 'draft',
-        createdAt: new Date(),
-      };
+      if (data.price < 0) {
+        throw new Error('Price cannot be negative');
+      }
+      
+      if (!data.organizerId) {
+        throw new Error('Organizer ID is required');
+      }
+      
+      if (!data.eventDate || data.eventDate < new Date()) {
+        throw new Error('Valid event date is required');
+      }
 
-      // Placeholder - would use actual events table
-      const mockEvent: Event = {
-        id: `event_${Date.now()}`,
-        ...eventData,
-        updatedAt: new Date(),
-      };
+      const [newEvent] = await db
+        .insert(events)
+        .values({
+          title: this.normalizeEventTitle(data.title),
+          description: data.description || "",
+          category: data.category,
+          venue: data.location,
+          address: data.location,
+          lat: data.lat != null ? data.lat.toString() : null, // Corrigido: convert to string for decimal
+          lng: data.lng != null ? data.lng.toString() : null, // Corrigido: convert to string for decimal
+          images: data.images || [],
+          status: EVENT_STATUS.PENDING,
+          tags: data.tags || [],
+          organizerId: data.organizerId,
+          eventType: "general",
+          startDate: data.eventDate,
+          endDate: data.eventDate,
+          startTime: data.startTime,
+          endTime: data.endTime || null,
+          isPaid: data.price > 0,
+          ticketPrice: data.price.toString(),
+          maxTickets: data.maxAttendees || 100,
+          ticketsSold: 0,
+          maxAttendees: data.maxAttendees || 100,
+          currentAttendees: 0,
+          isPublic: data.isPublic ?? true,
+          requiresApproval: data.requiresApproval ?? false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
 
-      console.log('Event creation placeholder:', mockEvent);
-      return mockEvent;
+      return this.mapDbEventToEvent(newEvent);
     } catch (error) {
       console.error('Error creating event:', error);
+      
+      if (error instanceof Error) {
+        throw new Error(`Failed to create event: ${error.message}`);
+      }
+      
       throw new Error('Failed to create event');
     }
   }
 
   async updateEvent(id: string, data: UpdateEventData): Promise<Event> {
     try {
-      const updateData: any = { ...data };
+      const updateData: Partial<EventInsert> = {}; // Adicionado Partial para ajudar TS
       
+      if (data.title !== undefined) updateData.title = this.normalizeEventTitle(data.title);
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.eventDate !== undefined) {
+        updateData.startDate = data.eventDate;
+        updateData.endDate = data.eventDate;
+      }
+      if (data.startTime !== undefined) updateData.startTime = data.startTime;
+      if (data.endTime !== undefined) updateData.endTime = data.endTime;
+      if (data.location !== undefined) {
+        updateData.venue = data.location;
+        updateData.address = data.location;
+      }
+      if (data.lat !== undefined) updateData.lat = data.lat != null ? data.lat.toString() : null; // Corrigido: convert to string
+      if (data.lng !== undefined) updateData.lng = data.lng != null ? data.lng.toString() : null; // Corrigido: convert to string
       if (data.price !== undefined) {
-        updateData.price = data.price.toString();
+        updateData.ticketPrice = data.price.toString();
+        updateData.isPaid = data.price > 0;
       }
-      if (data.lat !== undefined) {
-        updateData.lat = data.lat.toString();
+      if (data.maxAttendees !== undefined) {
+        updateData.maxAttendees = data.maxAttendees;
+        updateData.maxTickets = data.maxAttendees;
       }
-      if (data.lng !== undefined) {
-        updateData.lng = data.lng.toString();
+      if (data.category !== undefined) updateData.category = data.category;
+      if (data.tags !== undefined) updateData.tags = data.tags;
+      if (data.images !== undefined) updateData.images = data.images;
+      if (data.isPublic !== undefined) updateData.isPublic = data.isPublic;
+      if (data.requiresApproval !== undefined) updateData.requiresApproval = data.requiresApproval;
+      if (data.status !== undefined) updateData.status = data.status;
+      
+      updateData.updatedAt = new Date();
+
+      const [updatedEvent] = await db
+        .update(events)
+        .set(updateData)
+        .where(eq(events.id, id))
+        .returning();
+
+      if (!updatedEvent) {
+        throw new Error('Event not found');
       }
 
-      // Placeholder implementation
-      console.log('Event update placeholder:', { id, updateData });
-      
-      // Return mock updated event
-      return {
-        id,
-        name: 'Updated Event',
-        organizerId: 'user123',
-        eventDate: new Date(),
-        startTime: '10:00',
-        location: 'Updated Location',
-        price: '0.00',
-        currentAttendees: 0,
-        category: 'General',
-        tags: [],
-        images: [],
-        isPublic: true,
-        requiresApproval: false,
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      return this.mapDbEventToEvent(updatedEvent);
     } catch (error) {
       console.error('Error updating event:', error);
+      
+      if (error instanceof Error) {
+        throw new Error(`Failed to update event: ${error.message}`);
+      }
+      
       throw new Error('Failed to update event');
     }
   }
 
   async deleteEvent(id: string): Promise<void> {
     try {
-      // Placeholder implementation
-      console.log('Event deletion placeholder:', id);
+      const [deletedEvent] = await db
+        .delete(events)
+        .where(eq(events.id, id))
+        .returning();
+
+      if (!deletedEvent) {
+        throw new Error('Event not found');
+      }
     } catch (error) {
       console.error('Error deleting event:', error);
+      
+      if (error instanceof Error) {
+        throw new Error(`Failed to delete event: ${error.message}`);
+      }
+      
       throw new Error('Failed to delete event');
     }
   }
 
   async getEvent(id: string): Promise<Event | undefined> {
     try {
-      // Placeholder implementation
-      console.log('Event fetch placeholder:', id);
-      return undefined;
+      const [row] = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(eq(events.id, id))
+        .limit(1);
+
+      if (!row) return undefined;
+
+      return this.mapDbEventToEvent(row.event, row.organizer);
     } catch (error) {
       console.error('Error fetching event:', error);
       return undefined;
     }
   }
 
-  // ===== SEARCH AND DISCOVERY =====
-  
   async searchEvents(criteria: EventSearchCriteria): Promise<Event[]> {
     try {
-      // Placeholder implementation
-      console.log('Event search placeholder:', criteria);
-      return [];
+      let conditions = [];
+
+      if (criteria.location) {
+        conditions.push(
+          or(
+            like(events.venue, `%${criteria.location}%`),
+            like(events.address, `%${criteria.location}%`)
+          )
+        );
+      }
+      
+      if (criteria.category) {
+        conditions.push(eq(events.category, criteria.category));
+      }
+      
+      if (criteria.dateRange) {
+        conditions.push(
+          and(
+            gte(events.startDate, criteria.dateRange.from),
+            lte(events.startDate, criteria.dateRange.to)
+          )
+        );
+      }
+      
+      if (criteria.maxPrice !== undefined) {
+        conditions.push(sql`CAST(${events.ticketPrice} AS DECIMAL) <= ${criteria.maxPrice}`);
+      }
+      
+      if (criteria.tags && criteria.tags.length > 0) {
+        conditions.push(sql`${events.tags} && ${criteria.tags}`);
+      }
+      
+      if (criteria.organizerId) {
+        conditions.push(eq(events.organizerId, criteria.organizerId));
+      }
+      
+      if (criteria.isPublic !== undefined) {
+        conditions.push(eq(events.isPublic, criteria.isPublic));
+      }
+
+      conditions.push(ne(events.status, EVENT_STATUS.CANCELLED));
+
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(events.startDate));
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error searching events:', error);
       return [];
@@ -232,9 +417,52 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async getEventsByOrganizer(organizerId: string): Promise<Event[]> {
     try {
-      // Placeholder implementation
-      console.log('Events by organizer placeholder:', organizerId);
-      return [];
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(eq(events.organizerId, organizerId))
+        .orderBy(desc(events.createdAt));
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error fetching events by organizer:', error);
       return [];
@@ -243,9 +471,59 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async getUpcomingEvents(limit: number = 20): Promise<Event[]> {
     try {
-      // Placeholder implementation
-      console.log('Upcoming events placeholder:', limit);
-      return [];
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(
+          and(
+            gte(events.startDate, new Date()),
+            eq(events.isPublic, true),
+            ne(events.status, EVENT_STATUS.CANCELLED)
+          )
+        )
+        .orderBy(events.startDate)
+        .limit(limit);
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error fetching upcoming events:', error);
       return [];
@@ -254,9 +532,60 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async getFeaturedEvents(limit: number = 10): Promise<Event[]> {
     try {
-      // Placeholder implementation
-      console.log('Featured events placeholder:', limit);
-      return [];
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(
+          and(
+            gte(events.startDate, new Date()),
+            eq(events.isPublic, true),
+            ne(events.status, EVENT_STATUS.CANCELLED),
+            eq(events.isFeatured, true)
+          )
+        )
+        .orderBy(desc(events.ticketsSold))
+        .limit(limit);
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error fetching featured events:', error);
       return [];
@@ -265,40 +594,82 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async getEventsByCategory(category: string): Promise<Event[]> {
     try {
-      // Placeholder implementation
-      console.log('Events by category placeholder:', category);
-      return [];
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(
+          and(
+            eq(events.category, category),
+            gte(events.startDate, new Date()),
+            eq(events.isPublic, true),
+            ne(events.status, EVENT_STATUS.CANCELLED)
+          )
+        )
+        .orderBy(events.startDate);
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error fetching events by category:', error);
       return [];
     }
   }
 
-  // ===== ATTENDANCE MANAGEMENT =====
-  
   async updateEventAttendance(eventId: string, change: number): Promise<Event> {
     try {
-      // Placeholder implementation
-      console.log('Event attendance update placeholder:', { eventId, change });
-      
-      return {
-        id: eventId,
-        name: 'Mock Event',
-        organizerId: 'user123',
-        eventDate: new Date(),
-        startTime: '10:00',
-        location: 'Mock Location',
-        price: '0.00',
-        currentAttendees: Math.max(0, change),
-        category: 'General',
-        tags: [],
-        images: [],
-        isPublic: true,
-        requiresApproval: false,
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      const [updatedEvent] = await db
+        .update(events)
+        .set({
+          ticketsSold: sql`${events.ticketsSold} + ${change}`,
+          currentAttendees: sql`${events.currentAttendees} + ${change}`,
+          updatedAt: new Date()
+        })
+        .where(eq(events.id, eventId))
+        .returning();
+
+      if (!updatedEvent) {
+        throw new Error('Event not found');
+      }
+
+      return this.mapDbEventToEvent(updatedEvent);
     } catch (error) {
       console.error('Error updating event attendance:', error);
       throw error;
@@ -307,20 +678,29 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async checkEventAvailability(eventId: string): Promise<boolean> {
     try {
-      // Placeholder implementation
-      console.log('Event availability check placeholder:', eventId);
-      return true;
+      const [event] = await db
+        .select()
+        .from(events)
+        .where(
+          and(
+            eq(events.id, eventId),
+            eq(events.status, EVENT_STATUS.ACTIVE),
+            gte(events.startDate, new Date()),
+            sql`${events.ticketsSold} < ${events.maxTickets}`
+          )
+        )
+        .limit(1);
+
+      return !!event;
     } catch (error) {
       console.error('Error checking event availability:', error);
       return false;
     }
   }
 
-  // ===== EVENT STATUS =====
-  
   async publishEvent(eventId: string): Promise<Event> {
     try {
-      return this.updateEvent(eventId, { status: 'published' });
+      return this.updateEvent(eventId, { status: EVENT_STATUS.ACTIVE });
     } catch (error) {
       console.error('Error publishing event:', error);
       throw error;
@@ -329,16 +709,13 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async cancelEvent(eventId: string, reason: string): Promise<Event> {
     try {
-      // TODO: Add cancellation reason field
-      return this.updateEvent(eventId, { status: 'cancelled' });
+      return this.updateEvent(eventId, { status: EVENT_STATUS.CANCELLED });
     } catch (error) {
       console.error('Error cancelling event:', error);
       throw error;
     }
   }
 
-  // ===== ANALYTICS =====
-  
   async getEventStatistics(organizerId?: string): Promise<{
     totalEvents: number;
     upcomingEvents: number;
@@ -346,14 +723,51 @@ export class DatabaseEventStorage implements IEventStorage {
     totalAttendees: number;
   }> {
     try {
-      // Placeholder implementation
-      console.log('Event statistics placeholder:', organizerId);
+      let conditions = [];
       
+      if (organizerId) {
+        conditions.push(eq(events.organizerId, organizerId));
+      }
+
+      const baseCondition = conditions.length ? and(...conditions) : undefined;
+
+      const [totalEventsResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(events)
+        .where(baseCondition);
+
+      const [upcomingEventsResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(events)
+        .where(
+          and(
+            baseCondition,
+            gte(events.startDate, new Date()),
+            ne(events.status, EVENT_STATUS.CANCELLED)
+          )
+        );
+
+      const [completedEventsResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(events)
+        .where(
+          and(
+            baseCondition,
+            lte(events.startDate, new Date()),
+            ne(events.status, EVENT_STATUS.CANCELLED)
+          )
+        );
+
+      const [totalAttendeesResult] = await db
+        .select({ total: sql<number>`coalesce(sum(${events.ticketsSold}), 0)` })
+        .from(events)
+        .where(baseCondition);
+
       return {
-        totalEvents: 0,
-        upcomingEvents: 0,
-        completedEvents: 0,
-        totalAttendees: 0,
+        totalEvents: totalEventsResult?.count || 0,
+        upcomingEvents: upcomingEventsResult?.count || 0,
+        completedEvents: completedEventsResult?.count || 0,
+        totalAttendees: totalAttendeesResult?.total || 0,
       };
     } catch (error) {
       console.error('Error fetching event statistics:', error);
@@ -366,23 +780,14 @@ export class DatabaseEventStorage implements IEventStorage {
     }
   }
 
-  // ===== UTILITY METHODS =====
-  
   async getEventCategories(): Promise<string[]> {
     try {
-      // Placeholder implementation
-      return [
-        'Music',
-        'Sports',
-        'Technology',
-        'Business',
-        'Education',
-        'Food & Drink',
-        'Arts & Culture',
-        'Health & Wellness',
-        'Community',
-        'Other'
-      ];
+      const result = await db
+        .selectDistinct({ category: events.category })
+        .from(events)
+        .where(ne(events.category, ''));
+
+      return result.map(row => row.category).filter(Boolean);
     } catch (error) {
       console.error('Error fetching event categories:', error);
       return [];
@@ -402,27 +807,151 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async getNearbyEvents(location: GeoLocation, radius: number = 50): Promise<Event[]> {
     try {
-      // Placeholder implementation for geospatial search
       console.log('Nearby events placeholder:', { location, radius });
-      return [];
+      return this.searchEvents({
+        location: location.address
+      });
     } catch (error) {
       console.error('Error fetching nearby events:', error);
       return [];
     }
   }
 
-  // ===== ADDITIONAL METHODS FOR CONTROLLERS =====
-  
   async getEventsByFilter(filters: any): Promise<Event[]> {
     try {
-      // Since events table doesn't exist in current schema, return empty array
-      // TODO: Implement when events table is added to schema
-      console.log('Events table not implemented yet, returning empty array for filters:', filters);
-      return [];
+      let conditions = [];
+
+      if (filters.status) {
+        conditions.push(eq(events.status, filters.status));
+      }
+      
+      if (filters.isPublic !== undefined) {
+        conditions.push(eq(events.isPublic, filters.isPublic));
+      }
+      
+      if (filters.category) {
+        conditions.push(eq(events.category, filters.category));
+      }
+      
+      if (filters.eventType) {
+        conditions.push(eq(events.eventType, filters.eventType));
+      }
+      
+      if (filters.organizerId) {
+        conditions.push(eq(events.organizerId, filters.organizerId));
+      }
+
+      const rows = await db
+        .select({
+          event: {
+            id: events.id,
+            title: events.title,
+            description: events.description,
+            organizerId: events.organizerId,
+            startDate: events.startDate,
+            startTime: events.startTime,
+            endTime: events.endTime,
+            venue: events.venue,
+            address: events.address,
+            lat: events.lat,
+            lng: events.lng,
+            ticketPrice: events.ticketPrice,
+            maxAttendees: events.maxAttendees,
+            maxTickets: events.maxTickets,
+            currentAttendees: events.currentAttendees,
+            ticketsSold: events.ticketsSold,
+            category: events.category,
+            tags: events.tags,
+            images: events.images,
+            isPublic: events.isPublic,
+            requiresApproval: events.requiresApproval,
+            status: events.status,
+            createdAt: events.createdAt,
+            updatedAt: events.updatedAt,
+            isPaid: events.isPaid,
+            eventType: events.eventType,
+          },
+          organizer: {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            phone: users.phone,
+            roles: users.roles,
+            profileImageUrl: users.profileImageUrl,
+            isVerified: users.isVerified,
+          }
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(events.createdAt));
+
+      return rows.map(row => this.mapDbEventToEvent(row.event, row.organizer));
     } catch (error) {
       console.error('Error getting events by filter:', error);
       return [];
     }
+  }
+
+  private mapDbEventToEvent(dbEvent: any, user?: any): Event {
+    return {
+      id: dbEvent.id,
+      title: dbEvent.title || 'Sem título',
+      description: dbEvent.description,
+      organizerId: dbEvent.organizerId,
+      eventDate: dbEvent.startDate,
+      startTime: dbEvent.startTime,
+      endTime: dbEvent.endTime,
+      location: dbEvent.venue || dbEvent.address,
+      lat: dbEvent.lat ? Number(dbEvent.lat) : undefined, // Corrigido: convert string to number
+      lng: dbEvent.lng ? Number(dbEvent.lng) : undefined, // Corrigido: convert string to number
+      price: Number(dbEvent.ticketPrice || 0), // Corrigido: convert string to number
+      maxAttendees: dbEvent.maxAttendees,
+      maxTickets: dbEvent.maxTickets,
+      currentAttendees: dbEvent.currentAttendees || 0,
+      ticketsSold: dbEvent.ticketsSold || 0,
+      category: dbEvent.category,
+      tags: dbEvent.tags || [],
+      images: dbEvent.images || [],
+      isPublic: dbEvent.isPublic,
+      requiresApproval: dbEvent.requiresApproval,
+      status: dbEvent.status,
+      createdAt: dbEvent.createdAt,
+      updatedAt: dbEvent.updatedAt,
+      organizer: user ? this.mapDbUserToUser(user) : undefined
+    };
+  }
+
+  private mapDbUserToUser(dbUser: any): User {
+    return {
+      id: dbUser.id,
+      email: dbUser.email || null,
+      firstName: dbUser.firstName || null,
+      lastName: dbUser.lastName || null,
+      fullName: dbUser.fullName || null,
+      phone: dbUser.phone || null,
+      userType: dbUser.userType || 'client',
+      roles: dbUser.roles || [],
+      canOfferServices: dbUser.canOfferServices || false,
+      profileImageUrl: dbUser.profileImageUrl || null,
+      avatar: dbUser.avatar || null,
+      rating: parseFloat(dbUser.rating || '0'),
+      totalReviews: dbUser.totalReviews || 0,
+      isVerified: dbUser.isVerified || false,
+      verificationStatus: dbUser.verificationStatus || 'pending',
+      verificationDate: dbUser.verificationDate || null,
+      verificationNotes: dbUser.verificationNotes || null,
+      identityDocumentUrl: dbUser.identityDocumentUrl || null,
+      identityDocumentType: dbUser.identityDocumentType || null,
+      profilePhotoUrl: dbUser.profilePhotoUrl || null,
+      documentNumber: dbUser.documentNumber || null,
+      dateOfBirth: dbUser.dateOfBirth || null,
+      registrationCompleted: dbUser.registrationCompleted || false,
+      verificationBadge: dbUser.verificationBadge || null,
+      badgeEarnedDate: dbUser.badgeEarnedDate || null,
+      createdAt: dbUser.createdAt,
+      updatedAt: dbUser.updatedAt || null
+    };
   }
 }
 

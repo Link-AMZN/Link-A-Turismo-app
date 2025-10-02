@@ -112,10 +112,10 @@ router.post("/", verifyFirebaseToken, async (req: Request, res: Response) => {
       });
     }
 
-    // MAPEAMENTO CORRETO: Converter dados do frontend para o formato do backend
+    // ✅ CORREÇÃO APLICADA: Mapeamento correto usando 'title' em vez de 'name'
     const eventData: CreateEventData = {
       // Campos obrigatórios do CreateEventData
-      name: validation.validatedData!.title,                   // title → name
+      title: validation.validatedData!.title,                   // ✅ CORRETO: title em vez de name
       eventDate: new Date(validation.validatedData!.startDate), // startDate → eventDate
       startTime: validation.validatedData!.startTime || '10:00', // Valor padrão se não fornecido
       location: validation.validatedData!.address,             // address → location

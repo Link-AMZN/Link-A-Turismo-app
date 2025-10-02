@@ -66,7 +66,7 @@ export const rides = pgTable("rides", {
 });
 
 export const accommodations = pgTable("accommodations", {
-  id: varchar("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   type: text("type").notNull(),
   hostId: varchar("hostId").references(() => users.id),
@@ -76,8 +76,8 @@ export const accommodations = pgTable("accommodations", {
   pricePerNight: decimal("pricePerNight", { precision: 8, scale: 2 }),
   rating: decimal("rating", { precision: 3, scale: 1 }),
   reviewCount: integer("reviewCount").default(0),
-  images: text("images").array(),
-  amenities: text("amenities").array(),
+  images: text("images").array().default(sql`'{}'`),
+  amenities: text("amenities").array().default(sql`'{}'`),
   description: text("description"),
   distanceFromCenter: decimal("distanceFromCenter", { precision: 4, scale: 1 }),
   isAvailable: boolean("isAvailable").default(true),
@@ -88,6 +88,15 @@ export const accommodations = pgTable("accommodations", {
   enablePartnerships: boolean("enablePartnerships").default(false),
   accommodationDiscount: integer("accommodationDiscount").default(10),
   transportDiscount: integer("transportDiscount").default(15),
+  // ✅ ADICIONADAS: Colunas necessárias para os filtros
+  maxGuests: integer("maxGuests").default(2),
+  checkInTime: text("checkInTime"),
+  checkOutTime: text("checkOutTime"),
+  policies: text("policies"),
+  contactEmail: text("contactEmail"),
+  contactPhone: text("contactPhone"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
 // Ratings table for all user types

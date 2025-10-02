@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, index, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -73,7 +73,6 @@ export const accommodations = pgTable("accommodations", {
   address: text("address").notNull(),
   lat: decimal("lat", { precision: 10, scale: 7 }),
   lng: decimal("lng", { precision: 10, scale: 7 }),
-  pricePerNight: decimal("pricePerNight", { precision: 8, scale: 2 }),
   rating: decimal("rating", { precision: 3, scale: 1 }),
   reviewCount: integer("reviewCount").default(0),
   images: text("images").array().default(sql`'{}'`),
@@ -88,6 +87,32 @@ export const accommodations = pgTable("accommodations", {
   enablePartnerships: boolean("enablePartnerships").default(false),
   accommodationDiscount: integer("accommodationDiscount").default(10),
   transportDiscount: integer("transportDiscount").default(15),
+  maxGuests: integer("maxGuests").default(2),
+  checkInTime: text("checkInTime"),
+  checkOutTime: text("checkOutTime"),
+  policies: text("policies"),
+  contactEmail: text("contactEmail"),
+  contactPhone: text("contactPhone"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+});
+
+export const roomTypes = pgTable("roomTypes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accommodationId: uuid("accommodationId")
+    .notNull()
+    .references(() => accommodations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  pricePerNight: decimal("pricePerNight", { precision: 8, scale: 2 }).notNull(),
+  description: text("description"),
+  maxOccupancy: integer("maxOccupancy").default(2),
+  bedType: text("bedType"),
+  bedCount: integer("bedCount").default(1),
+  amenities: text("amenities").array().default(sql`'{}'`),
+  images: text("images").array().default(sql`'{}'`),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
 // Ratings table for all user types
@@ -197,6 +222,7 @@ export const bookings = pgTable("bookings", {
   rideId: varchar("rideId").references(() => rides.id),
   passengerId: varchar("passengerId").references(() => users.id),
   accommodationId: varchar("accommodationId").references(() => accommodations.id),
+  hotelRoomId: varchar("hotelRoomId").references(() => hotelRooms.id),
   type: varchar("type", { length: 20 }).default('ride'),
   status: varchar("status", { length: 20 }).default("pending"),
   totalPrice: decimal("totalPrice", { precision: 10, scale: 2 }).notNull(),
@@ -207,6 +233,7 @@ export const bookings = pgTable("bookings", {
   guestPhone: text("guestPhone"),
   checkInDate: timestamp("checkInDate"),
   checkOutDate: timestamp("checkOutDate"),
+  nightsCount: integer("nightsCount"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
@@ -451,10 +478,11 @@ export const hotelRooms = pgTable("hotelRooms", {
   roomType: text("roomType").notNull(),
   description: text("description"),
   images: text("images").array().default(sql`'{}'`),
-  basePrice: decimal("basePrice", { precision: 8, scale: 2 }).notNull(),
+  pricePerNight: decimal("pricePerNight", { precision: 8, scale: 2 }).notNull(),
   weekendPrice: decimal("weekendPrice", { precision: 8, scale: 2 }),
   holidayPrice: decimal("holidayPrice", { precision: 8, scale: 2 }),
   maxOccupancy: integer("maxOccupancy").notNull().default(2),
+  status: text("status").default("available"),
   bedType: text("bedType"),
   bedCount: integer("bedCount").default(1),
   hasPrivateBathroom: boolean("hasPrivateBathroom").default(true),
@@ -468,14 +496,6 @@ export const hotelRooms = pgTable("hotelRooms", {
   maintenanceUntil: timestamp("maintenanceUntil"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
-});
-
-// Room types table
-export const roomTypes = pgTable("roomTypes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  accommodationId: varchar("accommodationId").references(() => accommodations.id),
-  type: text("type").notNull(),
-  pricePerNight: decimal("pricePerNight", { precision: 8, scale: 2 }).notNull(),
 });
 
 // Hotel financial reports
@@ -528,7 +548,7 @@ export const upsertUserSchema = createInsertSchema(users).pick({
 });
 export const insertBookingSchema = createInsertSchema(bookings);
 
-// Schema de inserção para rides com validações customizadas - CORRIGIDO
+// Schema de inserção para rides com validações customizadas
 export const insertRideSchema = z.object({
   driverId: z.string(),
   driverName: z.string().optional(),
@@ -550,7 +570,12 @@ export const insertRideSchema = z.object({
 export const insertAccommodationSchema = createInsertSchema(accommodations);
 export const insertPartnershipProposalSchema = createInsertSchema(partnershipProposals);
 export const insertHotelRoomSchema = createInsertSchema(hotelRooms);
+export const insertRoomTypeSchema = createInsertSchema(roomTypes);
 export const insertHotelFinancialReportSchema = createInsertSchema(hotelFinancialReports);
 export const insertPartnershipApplicationSchema = createInsertSchema(partnershipApplications);
+
+// Generated Types for roomTypes
+export type RoomType = typeof roomTypes.$inferSelect;
+export type RoomTypeInsert = typeof roomTypes.$inferInsert;
 
 export type NewSystemSetting = typeof systemSettings.$inferInsert;
