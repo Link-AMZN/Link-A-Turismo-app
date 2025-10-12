@@ -23,13 +23,15 @@ export interface Event {
   title: string;
   description?: string;
   organizerId: string;
-  eventDate: Date;
+  startDate: Date;
+  endDate: Date;
   startTime: string;
   endTime?: string;
-  location: string;
-  lat?: number; // Corrigido: number (consistente com input)
-  lng?: number; // Corrigido: number
-  price: number; // Corrigido: number
+  venue: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  ticketPrice: number;
   maxAttendees?: number;
   maxTickets?: number;
   currentAttendees: number;
@@ -49,38 +51,50 @@ export interface CreateEventData {
   title: string;
   description?: string;
   organizerId: string;
-  eventDate: Date;
+  startDate: Date;
+  endDate: Date;
   startTime: string;
   endTime?: string;
-  location: string;
+  venue: string;
+  address: string;
   lat?: number;
   lng?: number;
-  price: number;
+  ticketPrice: number;
   maxAttendees?: number;
+  maxTickets?: number;
   category: string;
   tags?: string[];
   images?: string[];
   isPublic?: boolean;
   requiresApproval?: boolean;
+  eventType: string;
+  isPaid?: boolean;
 }
 
 export interface UpdateEventData {
   title?: string;
   description?: string;
-  eventDate?: Date;
+  startDate?: Date;
+  endDate?: Date;
   startTime?: string;
   endTime?: string;
-  location?: string;
+  venue?: string;
+  address?: string;
   lat?: number;
   lng?: number;
-  price?: number;
+  ticketPrice?: number;
   maxAttendees?: number;
+  maxTickets?: number;
+  currentAttendees?: number;
+  ticketsSold?: number; // ✅ CORREÇÃO: Adicionado ticketsSold
   category?: string;
   tags?: string[];
   images?: string[];
   isPublic?: boolean;
   requiresApproval?: boolean;
   status?: string;
+  eventType?: string;
+  isPaid?: boolean;
 }
 
 export interface EventSearchCriteria {
@@ -129,7 +143,7 @@ export class DatabaseEventStorage implements IEventStorage {
         throw new Error('Event title is required');
       }
       
-      if (data.price < 0) {
+      if (data.ticketPrice < 0) {
         throw new Error('Price cannot be negative');
       }
       
@@ -137,8 +151,8 @@ export class DatabaseEventStorage implements IEventStorage {
         throw new Error('Organizer ID is required');
       }
       
-      if (!data.eventDate || data.eventDate < new Date()) {
-        throw new Error('Valid event date is required');
+      if (!data.startDate || data.startDate < new Date()) {
+        throw new Error('Valid start date is required');
       }
 
       const [newEvent] = await db
@@ -147,22 +161,22 @@ export class DatabaseEventStorage implements IEventStorage {
           title: this.normalizeEventTitle(data.title),
           description: data.description || "",
           category: data.category,
-          venue: data.location,
-          address: data.location,
-          lat: data.lat != null ? data.lat.toString() : null, // Corrigido: convert to string for decimal
-          lng: data.lng != null ? data.lng.toString() : null, // Corrigido: convert to string for decimal
+          venue: data.venue,
+          address: data.address,
+          lat: data.lat != null ? data.lat.toString() : null,
+          lng: data.lng != null ? data.lng.toString() : null,
           images: data.images || [],
           status: EVENT_STATUS.PENDING,
           tags: data.tags || [],
           organizerId: data.organizerId,
-          eventType: "general",
-          startDate: data.eventDate,
-          endDate: data.eventDate,
+          eventType: data.eventType || "general",
+          startDate: data.startDate,
+          endDate: data.endDate,
           startTime: data.startTime,
           endTime: data.endTime || null,
-          isPaid: data.price > 0,
-          ticketPrice: data.price.toString(),
-          maxTickets: data.maxAttendees || 100,
+          isPaid: data.isPaid ?? data.ticketPrice > 0,
+          ticketPrice: data.ticketPrice.toString(),
+          maxTickets: data.maxTickets || data.maxAttendees || 100,
           ticketsSold: 0,
           maxAttendees: data.maxAttendees || 100,
           currentAttendees: 0,
@@ -187,38 +201,46 @@ export class DatabaseEventStorage implements IEventStorage {
 
   async updateEvent(id: string, data: UpdateEventData): Promise<Event> {
     try {
-      const updateData: Partial<EventInsert> = {}; // Adicionado Partial para ajudar TS
+      console.log("🔄 EVENT STORAGE: Atualizando evento", id, "com dados:", data);
+      
+      const updateData: Partial<EventInsert> = {};
       
       if (data.title !== undefined) updateData.title = this.normalizeEventTitle(data.title);
       if (data.description !== undefined) updateData.description = data.description;
-      if (data.eventDate !== undefined) {
-        updateData.startDate = data.eventDate;
-        updateData.endDate = data.eventDate;
-      }
+      if (data.startDate !== undefined) updateData.startDate = data.startDate;
+      if (data.endDate !== undefined) updateData.endDate = data.endDate;
       if (data.startTime !== undefined) updateData.startTime = data.startTime;
       if (data.endTime !== undefined) updateData.endTime = data.endTime;
-      if (data.location !== undefined) {
-        updateData.venue = data.location;
-        updateData.address = data.location;
+      if (data.venue !== undefined) updateData.venue = data.venue;
+      if (data.address !== undefined) updateData.address = data.address;
+      if (data.lat !== undefined) updateData.lat = data.lat != null ? data.lat.toString() : null;
+      if (data.lng !== undefined) updateData.lng = data.lng != null ? data.lng.toString() : null;
+      if (data.ticketPrice !== undefined) {
+        updateData.ticketPrice = data.ticketPrice.toString();
+        updateData.isPaid = data.ticketPrice > 0;
       }
-      if (data.lat !== undefined) updateData.lat = data.lat != null ? data.lat.toString() : null; // Corrigido: convert to string
-      if (data.lng !== undefined) updateData.lng = data.lng != null ? data.lng.toString() : null; // Corrigido: convert to string
-      if (data.price !== undefined) {
-        updateData.ticketPrice = data.price.toString();
-        updateData.isPaid = data.price > 0;
+      if (data.maxAttendees !== undefined) updateData.maxAttendees = data.maxAttendees;
+      if (data.maxTickets !== undefined) updateData.maxTickets = data.maxTickets;
+      if (data.currentAttendees !== undefined) updateData.currentAttendees = data.currentAttendees;
+      
+      // ✅ CORREÇÃO CRÍTICA: Incluir ticketsSold na atualização
+      if (data.ticketsSold !== undefined) {
+        console.log("🎫 EVENT STORAGE: Atualizando ticketsSold para:", data.ticketsSold);
+        updateData.ticketsSold = data.ticketsSold;
       }
-      if (data.maxAttendees !== undefined) {
-        updateData.maxAttendees = data.maxAttendees;
-        updateData.maxTickets = data.maxAttendees;
-      }
+      
       if (data.category !== undefined) updateData.category = data.category;
       if (data.tags !== undefined) updateData.tags = data.tags;
       if (data.images !== undefined) updateData.images = data.images;
       if (data.isPublic !== undefined) updateData.isPublic = data.isPublic;
       if (data.requiresApproval !== undefined) updateData.requiresApproval = data.requiresApproval;
       if (data.status !== undefined) updateData.status = data.status;
+      if (data.eventType !== undefined) updateData.eventType = data.eventType;
+      if (data.isPaid !== undefined) updateData.isPaid = data.isPaid;
       
       updateData.updatedAt = new Date();
+
+      console.log("📝 EVENT STORAGE: Dados finais para update:", updateData);
 
       const [updatedEvent] = await db
         .update(events)
@@ -230,9 +252,12 @@ export class DatabaseEventStorage implements IEventStorage {
         throw new Error('Event not found');
       }
 
-      return this.mapDbEventToEvent(updatedEvent);
+      const result = this.mapDbEventToEvent(updatedEvent);
+      console.log("✅ EVENT STORAGE: Evento atualizado com sucesso. ticketsSold:", result.ticketsSold);
+      
+      return result;
     } catch (error) {
-      console.error('Error updating event:', error);
+      console.error('❌ EVENT STORAGE: Erro ao atualizar evento:', error);
       
       if (error instanceof Error) {
         throw new Error(`Failed to update event: ${error.message}`);
@@ -273,6 +298,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -340,7 +366,7 @@ export class DatabaseEventStorage implements IEventStorage {
         conditions.push(
           and(
             gte(events.startDate, criteria.dateRange.from),
-            lte(events.startDate, criteria.dateRange.to)
+            lte(events.endDate, criteria.dateRange.to)
           )
         );
       }
@@ -371,6 +397,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -425,6 +452,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -479,6 +507,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -540,6 +569,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -602,6 +632,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -753,7 +784,7 @@ export class DatabaseEventStorage implements IEventStorage {
         .where(
           and(
             baseCondition,
-            lte(events.startDate, new Date()),
+            lte(events.endDate, new Date()),
             ne(events.status, EVENT_STATUS.CANCELLED)
           )
         );
@@ -849,6 +880,7 @@ export class DatabaseEventStorage implements IEventStorage {
             description: events.description,
             organizerId: events.organizerId,
             startDate: events.startDate,
+            endDate: events.endDate,
             startTime: events.startTime,
             endTime: events.endTime,
             venue: events.venue,
@@ -899,17 +931,19 @@ export class DatabaseEventStorage implements IEventStorage {
       title: dbEvent.title || 'Sem título',
       description: dbEvent.description,
       organizerId: dbEvent.organizerId,
-      eventDate: dbEvent.startDate,
+      startDate: dbEvent.startDate,
+      endDate: dbEvent.endDate,
       startTime: dbEvent.startTime,
       endTime: dbEvent.endTime,
-      location: dbEvent.venue || dbEvent.address,
-      lat: dbEvent.lat ? Number(dbEvent.lat) : undefined, // Corrigido: convert string to number
-      lng: dbEvent.lng ? Number(dbEvent.lng) : undefined, // Corrigido: convert string to number
-      price: Number(dbEvent.ticketPrice || 0), // Corrigido: convert string to number
+      venue: dbEvent.venue,
+      address: dbEvent.address,
+      lat: dbEvent.lat ? Number(dbEvent.lat) : undefined,
+      lng: dbEvent.lng ? Number(dbEvent.lng) : undefined,
+      ticketPrice: Number(dbEvent.ticketPrice || 0),
       maxAttendees: dbEvent.maxAttendees,
       maxTickets: dbEvent.maxTickets,
       currentAttendees: dbEvent.currentAttendees || 0,
-      ticketsSold: dbEvent.ticketsSold || 0,
+      ticketsSold: dbEvent.ticketsSold || 0, // ✅ CORREÇÃO: Garantir que ticketsSold seja retornado
       category: dbEvent.category,
       tags: dbEvent.tags || [],
       images: dbEvent.images || [],

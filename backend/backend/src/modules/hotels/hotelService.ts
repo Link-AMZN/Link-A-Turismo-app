@@ -38,25 +38,31 @@ export const createAccommodation = async (data: AccommodationInsert): Promise<Ac
   return accommodation;
 };
 
-// Obter todas as acomodações com filtros - CORREÇÃO APLICADA
+// Obter todas as acomodações com filtros - CORREÇÃO FINAL
 export const getAccommodations = async (filters: any = {}): Promise<Accommodation[]> => {
   const conditions = [];
 
   if (filters.type) {
     conditions.push(eq(accommodations.type, filters.type));
   }
+
   if (filters.address) {
     conditions.push(sql`${accommodations.address} ILIKE ${'%' + filters.address + '%'}`);
   }
-  // ✅ CORREÇÃO CRÍTICA: Usar o valor booleano diretamente em vez de comparar com string
+
   if (filters.isAvailable !== undefined) {
     conditions.push(eq(accommodations.isAvailable, filters.isAvailable));
   }
-  
 
-  const query = conditions.length > 0
-    ? db.select().from(accommodations).where(and(...conditions))
-    : db.select().from(accommodations);
+  // ✅ NOVO: permitir filtrar hotéis do usuário logado
+  if (filters.hostId) {
+    conditions.push(eq(accommodations.hostId, filters.hostId));
+  }
+
+  const query =
+    conditions.length > 0
+      ? db.select().from(accommodations).where(and(...conditions))
+      : db.select().from(accommodations);
 
   return await query;
 };
@@ -307,7 +313,7 @@ export async function createRoomType(data: any) {
     type: data.type,
     accommodationId: data.accommodationId,
     // ✅ CORREÇÃO: Adicionar pricePerNight obrigatório
-    pricePerNight: data.pricePerNight !== undefined ? String(data.pricePerNight) : '0',
+    pricePerNight: data.pricePerNight !== undefined ? Number(data.pricePerNight) : 0, // ⭐ MANTIDO COMO NUMBER
     description: data.description || null,
     images: data.images || null,
     amenities: data.amenities || null,
@@ -317,11 +323,11 @@ export async function createRoomType(data: any) {
   
   // ✅ CORREÇÃO: Adicionar apenas campos que existem no schema
   if (data.basePrice !== undefined) {
-    processedData.basePrice = String(data.basePrice);
+    processedData.basePrice = Number(data.basePrice); // ⭐ MANTIDO COMO NUMBER
   }
   
   if (data.maxOccupancy !== undefined) {
-    processedData.maxOccupancy = String(data.maxOccupancy);
+    processedData.maxOccupancy = Number(data.maxOccupancy); // ⭐ MANTIDO COMO NUMBER
   }
 
   // ✅ CORREÇÃO: Adicionar campos opcionais do schema
@@ -330,7 +336,7 @@ export async function createRoomType(data: any) {
   }
 
   if (data.bedCount !== undefined) {
-    processedData.bedCount = String(data.bedCount);
+    processedData.bedCount = Number(data.bedCount); // ⭐ MANTIDO COMO NUMBER
   }
 
   console.log('🔍 DEBUG - Dados para criar roomType:', {
@@ -348,28 +354,72 @@ export async function getRoomTypesByHotelId(hotelId: string) {
   return await db.select().from(roomTypes).where(eq(roomTypes.accommodationId, hotelId));
 }
 
-// ✅ CORREÇÃO: Função para criar quarto específico com tratamento correto
+// ✅ CORREÇÃO CRÍTICA: Função para criar quarto específico com tratamento correto
 export async function createRoom(data: any) {
   // ✅ CORREÇÃO: Criar objeto com apenas os campos que existem no schema hotelRooms
   const processedData: any = {
     accommodationId: data.accommodationId,
     roomNumber: data.roomNumber,
     roomType: data.roomType,
-    roomTypeId: data.roomTypeId,
+    // ✅ CORREÇÃO: Incluir todos os campos obrigatórios da tabela hotelRooms
+    pricePerNight: data.pricePerNight !== undefined ? Number(data.pricePerNight) : 0, // ⭐ MANTIDO COMO NUMBER
+    maxOccupancy: data.maxOccupancy !== undefined ? Number(data.maxOccupancy) : 2, // ⭐ MANTIDO COMO NUMBER
     status: data.status || 'available',
-    isAvailable: data.isAvailable !== undefined ? data.isAvailable : true,
-    images: data.images || null,
-    amenities: data.amenities || null
+    isAvailable: data.isAvailable !== undefined ? data.isAvailable : true
   };
   
-  // ✅ CORREÇÃO: Adicionar apenas campos que existem no schema
-  if (data.pricePerNight !== undefined) {
-    processedData.pricePerNight = String(data.pricePerNight);
+  // ✅ CORREÇÃO: Adicionar campos opcionais
+  if (data.roomTypeId) {
+    processedData.roomTypeId = data.roomTypeId;
   }
   
-  if (data.maxOccupancy !== undefined) {
-    processedData.maxOccupancy = String(data.maxOccupancy);
+  if (data.description) {
+    processedData.description = data.description;
   }
+  
+  if (data.images) {
+    processedData.images = data.images;
+  }
+  
+  if (data.amenities) {
+    processedData.amenities = data.amenities;
+  }
+
+  // ✅ CORREÇÃO: Adicionar campos booleanos da tabela hotelRooms
+  if (data.hasPrivateBathroom !== undefined) {
+    processedData.hasPrivateBathroom = data.hasPrivateBathroom;
+  }
+  
+  if (data.hasAirConditioning !== undefined) {
+    processedData.hasAirConditioning = data.hasAirConditioning;
+  }
+  
+  if (data.hasWifi !== undefined) {
+    processedData.hasWifi = data.hasWifi;
+  }
+  
+  if (data.hasTV !== undefined) {
+    processedData.hasTV = data.hasTV;
+  }
+  
+  if (data.hasBalcony !== undefined) {
+    processedData.hasBalcony = data.hasBalcony;
+  }
+  
+  if (data.hasKitchen !== undefined) {
+    processedData.hasKitchen = data.hasKitchen;
+  }
+
+  // ✅ CORREÇÃO: Adicionar campos de cama
+  if (data.bedType) {
+    processedData.bedType = data.bedType;
+  }
+  
+  if (data.bedCount !== undefined) {
+    processedData.bedCount = Number(data.bedCount); // ⭐ MANTIDO COMO NUMBER
+  }
+
+  console.log('🔍 DEBUG - Dados para criar hotelRoom:', processedData);
 
   const [newRoom] = await db.insert(hotelRooms).values(processedData).returning();
   return newRoom;
@@ -380,18 +430,12 @@ export async function getRoomsByHotelId(hotelId: string) {
   return await db.select().from(hotelRooms).where(eq(hotelRooms.accommodationId, hotelId));
 }
 
-// ✅ CORREÇÃO: Atualizar quarto com conversão de tipos
+// ✅ CORREÇÃO: Atualizar quarto SEM conversão para string (mantém como number)
 export const updateRoom = async (roomId: string, data: Partial<HotelRoom>): Promise<HotelRoom | null> => {
-  // ✅ CORREÇÃO: Converter campos numéricos para string
+  // ✅ CORREÇÃO: NÃO converter campos numéricos para string
   const processedData: any = { ...data };
   
-  if (processedData.pricePerNight !== undefined) {
-    processedData.pricePerNight = String(processedData.pricePerNight);
-  }
-  
-  if (processedData.maxOccupancy !== undefined) {
-    processedData.maxOccupancy = String(processedData.maxOccupancy);
-  }
+  console.log('🔍 DEBUG - Atualizando quarto:', { roomId, data: processedData });
 
   const [room] = await db.update(hotelRooms)
     .set(processedData)
@@ -401,22 +445,12 @@ export const updateRoom = async (roomId: string, data: Partial<HotelRoom>): Prom
   return room || null;
 };
 
-// ✅ CORREÇÃO: Atualizar room type com conversão de tipos
+// ✅ CORREÇÃO: Atualizar room type SEM conversão para string (mantém como number)
 export const updateRoomType = async (roomTypeId: string, data: Partial<RoomType>): Promise<RoomType | null> => {
-  // ✅ CORREÇÃO: Converter campos numéricos para string
+  // ✅ CORREÇÃO: NÃO converter campos numéricos para string
   const processedData: any = { ...data };
   
-  if (processedData.pricePerNight !== undefined) {
-    processedData.pricePerNight = String(processedData.pricePerNight);
-  }
-  
-  if (processedData.basePrice !== undefined) {
-    processedData.basePrice = String(processedData.basePrice);
-  }
-  
-  if (processedData.maxOccupancy !== undefined) {
-    processedData.maxOccupancy = String(processedData.maxOccupancy);
-  }
+  console.log('🔍 DEBUG - Atualizando room type:', { roomTypeId, data: processedData });
 
   const [roomType] = await db.update(roomTypes)
     .set(processedData)

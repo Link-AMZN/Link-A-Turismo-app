@@ -12,6 +12,9 @@ import LoginPage from './pages/login';
 import SignupPage from './pages/signup';
 import NotFoundPage from './pages/not-found';
 
+// ⭐⭐ IMPORTE A PÁGINA DIRETAMENTE
+import HotelManagementPage from './apps/hotels-app/pages/HotelManagementPage';
+
 function AppRouter() {
   return (
     <Switch>
@@ -22,12 +25,16 @@ function AppRouter() {
       {/* Nova rota para pesquisa de viagens */}
       <Route path="/rides/search" component={SearchRides} />
       
+      {/* ⭐⭐ CORREÇÃO CRÍTICA: Rota específica PRIMEIRO */}
+      <Route path="/hotels/manage-hotel/:hotelId" component={HotelManagementPage} />
+      
+      {/* ⭐⭐ Rotas do HotelsApp - DEPOIS das específicas */}
+      <Route path="/hotels" component={HotelsApp} />
+      <Route path="/hotels/:rest*" component={HotelsApp} />
+      
       {/* Rotas das outras aplicações */}
       <Route path="/drivers" component={DriversApp} />
       <Route path="/drivers/:rest*" component={DriversApp} />
-      
-      <Route path="/hotels" component={HotelsApp} />
-      <Route path="/hotels/:rest*" component={HotelsApp} />
       
       <Route path="/admin" component={AdminApp} />
       <Route path="/admin/:rest*" component={AdminApp} />

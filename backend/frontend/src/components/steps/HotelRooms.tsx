@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { HotelFormData, RoomType } from '../hotel-wizard/HotelCreationWizard';
+import { HotelFormData, RoomFormData } from '../hotel-wizard/types';
 
-// ✅ NOVO: Importar componentes de preço
+// ✅ Importar componentes de preço
 import { PriceInput } from '@/shared/components/PriceInput';
 import { formatMetical } from '@/shared/utils/currency';
+
+// ✅ Importar Switch (ajuste o caminho conforme sua estrutura)
+import { Switch } from '../../shared/components/ui/switch'; // Ou: import { Switch } from '@radix-ui/react-switch';
 
 interface HotelRoomsProps {
   formData: HotelFormData;
@@ -14,7 +17,9 @@ interface HotelRoomsProps {
 
 const HotelRooms: React.FC<HotelRoomsProps> = ({
   formData,
-  updateFormData
+  updateFormData,
+  onNext,
+  onBack
 }) => {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -33,20 +38,26 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
   }, []);
 
   const addRoom = () => {
-    const newRoom: RoomType = {
+    const newRoom: RoomFormData = {
       id: Date.now().toString(),
+      name: '',
       type: '',
       description: '',
-      price: 0,
-      capacity: 1,
+      pricePerNight: 0,
+      maxOccupancy: 1,
       quantity: 1,
-      amenities: []
+      amenities: [],
+      images: [],
+      size: 0,
+      bedType: '',
+      hasBalcony: false,
+      hasSeaView: false
     };
     
     updateFormData({ rooms: [...formData.rooms, newRoom] });
   };
 
-  const updateRoom = (roomId: string, field: keyof RoomType, value: any) => {
+  const updateRoom = (roomId: string, field: keyof RoomFormData, value: any) => {
     const updatedRooms = formData.rooms.map(room =>
       room.id === roomId ? { ...room, [field]: value } : room
     );
@@ -59,16 +70,16 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
     updateFormData({ rooms: updatedRooms });
   };
 
-  // ✅ NOVO: Calcular estatísticas de preços
+  // ✅ Calcular estatísticas de preços
   const getPriceStats = () => {
     if (formData.rooms.length === 0) return null;
     
-    const prices = formData.rooms.map(room => room.price).filter(price => price > 0);
+    const prices = formData.rooms.map(room => room.pricePerNight).filter(price => price > 0);
     if (prices.length === 0) return null;
     
     const min = Math.min(...prices);
     const max = Math.max(...prices);
-    const avg = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+    const avg = prices.reduce((sum: number, price: number) => sum + price, 0) / prices.length;
     
     return { min, max, avg };
   };
@@ -203,7 +214,7 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
       marginBottom: '1rem',
       fontSize: '0.875rem'
     },
-    // ✅ NOVO: Estilos para estatísticas de preço
+    // ✅ Estilos para estatísticas de preço
     priceStats: {
       background: '#f0f9ff',
       border: '1px solid #bae6fd',
@@ -235,7 +246,7 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
       fontWeight: 'bold',
       color: '#059669'
     },
-    // ✅ NOVO: Estilo para dica de preço
+    // ✅ Estilo para dica de preço
     priceHint: {
       fontSize: '0.75rem',
       color: '#6b7280',
@@ -282,7 +293,7 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
         Todos os preços devem ser em <strong>Metical (MT)</strong>.
       </p>
 
-      {/* ✅ NOVO: Estatísticas de preços */}
+      {/* ✅ Estatísticas de preços */}
       {priceStats && (
         <div style={styles.priceStats}>
           <h4 style={styles.priceStatsTitle}>Resumo de Preços</h4>
@@ -326,15 +337,15 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
               <div style={styles.roomHeader}>
                 <h3 style={styles.roomTitle}>
                   Quarto {index + 1} 
-                  {room.type && ` - ${room.type}`}
-                  {room.price > 0 && (
+                  {room.name ? ` - ${room.name}` : room.type ? ` - ${room.type}` : ''}
+                  {room.pricePerNight > 0 && (
                     <span style={{ fontSize: '0.875rem', color: '#059669', marginLeft: '0.5rem' }}>
-                      ({formatMetical(room.price)})
+                      ({formatMetical(room.pricePerNight)})
                     </span>
                   )}
                 </h3>
                 <button 
-                  onClick={() => removeRoom(room.id)}
+                  onClick={() => removeRoom(room.id!)}
                   style={styles.removeButton}
                   onMouseEnter={handleRemoveButtonHover}
                   onMouseLeave={handleRemoveButtonLeave}
@@ -346,25 +357,39 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
               <div style={styles.roomForm}>
                 <div style={styles.formRow}>
                   <div style={styles.formField}>
+                    <label style={styles.label}>Nome do Quarto</label>
+                    <input
+                      type="text"
+                      value={room.name || ''}
+                      onChange={(e) => updateRoom(room.id!, 'name', e.target.value)}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
+                      placeholder="Ex: Quarto Standard Vista Mar"
+                      style={styles.input}
+                    />
+                  </div>
+                  
+                  <div style={styles.formField}>
                     <label style={styles.label}>Tipo de Quarto *</label>
                     <input
                       type="text"
                       value={room.type}
-                      onChange={(e) => updateRoom(room.id, 'type', e.target.value)}
+                      onChange={(e) => updateRoom(room.id!, 'type', e.target.value)}
                       onFocus={handleInputFocus}
                       onBlur={handleInputBlur}
-                      placeholder="Ex: Standard Duplo, Luxo, Suite Presidencial"
+                      placeholder="Ex: Standard, Deluxe, Suite"
                       style={styles.input}
                       required
                     />
                   </div>
-                  
-                  {/* ✅ CORREÇÃO: PriceInput em vez de input number */}
+                </div>
+                
+                <div style={styles.formRow}>
                   <div style={styles.formField}>
                     <label style={styles.label}>Preço por Noite (MT) *</label>
                     <PriceInput
-                      value={room.price}
-                      onChange={(price) => updateRoom(room.id, 'price', price)}
+                      value={room.pricePerNight}
+                      onChange={(price) => updateRoom(room.id!, 'pricePerNight', price)}
                       placeholder="1500,00"
                       label=""
                     />
@@ -372,15 +397,13 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
                       Digite o valor em Metical (ex: 1500,00)
                     </div>
                   </div>
-                </div>
-                
-                <div style={styles.formRow}>
+                  
                   <div style={styles.formField}>
                     <label style={styles.label}>Capacidade (pessoas) *</label>
                     <input
                       type="number"
-                      value={room.capacity}
-                      onChange={(e) => updateRoom(room.id, 'capacity', Number(e.target.value))}
+                      value={room.maxOccupancy}
+                      onChange={(e) => updateRoom(room.id!, 'maxOccupancy', Number(e.target.value))}
                       onFocus={handleInputFocus}
                       onBlur={handleInputBlur}
                       min="1"
@@ -389,13 +412,15 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
                       required
                     />
                   </div>
-                  
+                </div>
+                
+                <div style={styles.formRow}>
                   <div style={styles.formField}>
                     <label style={styles.label}>Quantidade de Quartos *</label>
                     <input
                       type="number"
                       value={room.quantity}
-                      onChange={(e) => updateRoom(room.id, 'quantity', Number(e.target.value))}
+                      onChange={(e) => updateRoom(room.id!, 'quantity', Number(e.target.value))}
                       onFocus={handleInputFocus}
                       onBlur={handleInputBlur}
                       min="1"
@@ -403,13 +428,59 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
                       required
                     />
                   </div>
+                  
+                  <div style={styles.formField}>
+                    <label style={styles.label}>Tamanho (m²)</label>
+                    <input
+                      type="number"
+                      value={room.size || ''}
+                      onChange={(e) => updateRoom(room.id!, 'size', Number(e.target.value))}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
+                      min="10"
+                      max="200"
+                      style={styles.input}
+                      placeholder="Ex: 25"
+                    />
+                  </div>
+                </div>
+                
+                <div style={styles.formRow}>
+                  <div style={styles.formField}>
+                    <label style={styles.label}>Tipo de Cama</label>
+                    <input
+                      type="text"
+                      value={room.bedType || ''}
+                      onChange={(e) => updateRoom(room.id!, 'bedType', e.target.value)}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
+                      placeholder="Ex: Cama de Casal, 2 Camas de Solteiro"
+                      style={styles.input}
+                    />
+                  </div>
+                  
+                  <div style={styles.formField}>
+                    <label style={styles.label}>Varanda</label>
+                    <Switch
+                      checked={room.hasBalcony || false}
+                      onCheckedChange={(checked: boolean) => updateRoom(room.id!, 'hasBalcony', checked)}
+                    />
+                  </div>
+                  
+                  <div style={styles.formField}>
+                    <label style={styles.label}>Vista Mar</label>
+                    <Switch
+                      checked={room.hasSeaView || false}
+                      onCheckedChange={(checked: boolean) => updateRoom(room.id!, 'hasSeaView', checked)}
+                    />
+                  </div>
                 </div>
                 
                 <div style={{ ...styles.formField, ...styles.fullWidth }}>
                   <label style={styles.label}>Descrição</label>
                   <textarea
-                    value={room.description}
-                    onChange={(e) => updateRoom(room.id, 'description', e.target.value)}
+                    value={room.description || ''}
+                    onChange={(e) => updateRoom(room.id!, 'description', e.target.value)}
                     onFocus={handleInputFocus}
                     onBlur={handleInputBlur}
                     placeholder="Descreva as características do quarto, mobília, vista, comodidades incluídas, etc..."
@@ -418,8 +489,8 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
                   />
                 </div>
 
-                {/* ✅ NOVO: Preview do preço formatado */}
-                {room.price > 0 && (
+                {/* ✅ Preview do preço formatado */}
+                {room.pricePerNight > 0 && (
                   <div style={{ 
                     background: '#f0fdf4', 
                     border: '1px solid #bbf7d0', 
@@ -429,7 +500,7 @@ const HotelRooms: React.FC<HotelRoomsProps> = ({
                   }}>
                     <strong>Preço exibido aos clientes:</strong>{' '}
                     <span style={{ color: '#059669', fontWeight: 'bold' }}>
-                      {formatMetical(room.price)} por noite
+                      {formatMetical(room.pricePerNight)} por noite
                     </span>
                   </div>
                 )}

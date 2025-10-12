@@ -1,7 +1,7 @@
 import apiService from '@/services/api';
 import { auth } from '@/shared/lib/firebaseConfig';
 
-// Interfaces existentes
+// Interfaces (unchanged, included for completeness)
 export interface CreateAccommodationRequest {
   name: string;
   type: string;
@@ -106,7 +106,6 @@ export interface HotelRoom {
   updatedAt?: string;
 }
 
-// ✅ CORREÇÃO: Interface HotelFormData corrigida para aceitar tanto File quanto string
 export interface HotelFormData {
   name: string;
   description: string;
@@ -122,7 +121,6 @@ export interface HotelFormData {
   longitude?: number;
   amenities: string[];
   rooms: HotelRoomType[];
-  // ✅ CORREÇÃO: Aceitar tanto File quanto string
   images: (File | string)[];
   existingImages: string[];
 }
@@ -155,7 +153,6 @@ interface ApiResponse<T = any> {
   [key: string]: any;
 }
 
-// Interface para tipagem melhor do apiService
 interface ExtendedApiService {
   createAccommodation?: (data: any) => Promise<any>;
   getRoomTypes?: (accommodationId: string) => Promise<any>;
@@ -336,14 +333,16 @@ export const accommodationService = {
 
   createRoomType: async (data: CreateRoomTypeRequest): Promise<any> => {
     try {
-      console.log('AccommodationService: Criando tipo de quarto', data);
+      console.log('🛏️ AccommodationService: Criando tipo de quarto', JSON.stringify(data, null, 2));
       
       const user = getCurrentUser();
       
       const roomTypeDataWithHost = {
         ...data,
         hostId: user.uid,
-        createdBy: user.uid
+        createdBy: user.uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       console.log('📤 Enviando tipo de quarto com hostId:', user.uid);
@@ -351,24 +350,38 @@ export const accommodationService = {
       const token = await user.getIdToken();
 
       const extendedApi = apiService as ExtendedApiService;
+      let response;
       if (extendedApi.createRoomType) {
-        return await extendedApi.createRoomType(roomTypeDataWithHost);
+        response = await extendedApi.createRoomType(roomTypeDataWithHost);
+      } else {
+        response = await fetch('/api/hotels/room-types', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(roomTypeDataWithHost)
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Erro HTTP:', response.status, errorText);
+          throw new Error(`Erro ao criar tipo de quarto: ${response.statusText}`);
+        }
+        
+        response = await response.json();
       }
+
+      const safeResp = safeResponse(response);
+      const roomTypeId = safeResp.id || safeResp.data?.id || safeResp.roomTypeId;
       
-      const response = await fetch('/api/hotels/room-types', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(roomTypeDataWithHost)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erro ao criar tipo de quarto: ${response.statusText}`);
+      if (!roomTypeId) {
+        console.error('❌ NENHUM ID ENCONTRADO NA RESPOSTA DO TIPO DE QUARTO!');
+        throw new Error('Falha ao obter ID do tipo de quarto criado. Resposta: ' + JSON.stringify(safeResp));
       }
-      
-      return await response.json();
+
+      console.log('✅ Tipo de quarto criado com ID:', roomTypeId);
+      return { ...safeResp, id: roomTypeId };
     } catch (error) {
       console.error('❌ Erro ao criar tipo de quarto:', error);
       throw new Error(`Erro ao criar tipo de quarto: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
@@ -377,7 +390,7 @@ export const accommodationService = {
 
   createRoom: async (data: CreateRoomRequest): Promise<any> => {
     try {
-      console.log('AccommodationService: Criando quarto', data);
+      console.log('🛏️ AccommodationService: Criando quarto', JSON.stringify(data, null, 2));
       
       const user = getCurrentUser();
       
@@ -418,7 +431,7 @@ export const accommodationService = {
 
   getRoomTypes: async (accommodationId: string): Promise<RoomType[]> => {
     try {
-      console.log('AccommodationService: Buscando tipos de quarto para', accommodationId);
+      console.log('🛏️ AccommodationService: Buscando tipos de quarto para', accommodationId);
       
       const extendedApi = apiService as ExtendedApiService;
       if (extendedApi.getRoomTypes) {
@@ -434,14 +447,14 @@ export const accommodationService = {
       const data = await response.json();
       return data.data || data;
     } catch (error) {
-      console.error('Erro ao buscar tipos de quarto:', error);
+      console.error('❌ Erro ao buscar tipos de quarto:', error);
       return [];
     }
   },
 
   getRooms: async (accommodationId: string): Promise<HotelRoom[]> => {
     try {
-      console.log('AccommodationService: Buscando quartos para', accommodationId);
+      console.log('🛏️ AccommodationService: Buscando quartos para', accommodationId);
       
       const extendedApi = apiService as ExtendedApiService;
       if (extendedApi.getRooms) {
@@ -457,7 +470,7 @@ export const accommodationService = {
       const data = await response.json();
       return data.data || data;
     } catch (error) {
-      console.error('Erro ao buscar quartos:', error);
+      console.error('❌ Erro ao buscar quartos:', error);
       throw error;
     }
   },
@@ -604,19 +617,17 @@ export const accommodationService = {
       
       throw new Error('Método bookHotel não disponível');
     } catch (error) {
-      console.error('Erro ao criar reserva:', error);
+      console.error('❌ Erro ao criar reserva:', error);
       throw error;
     }
   },
 
-  // ✅ CORREÇÃO CRÍTICA: Função createHotel completamente reformulada
   createHotel: async (hotelData: HotelFormData): Promise<CreateHotelResponse> => {
     console.log('🛠️ === DEBUG createHotel INICIANDO ===');
     
     try {
       const user = getCurrentUser();
 
-      // ✅ CORREÇÃO: Criar acomodação básica primeiro
       const accommodationData: CreateAccommodationRequest = {
         name: hotelData.name,
         type: 'hotel',
@@ -652,7 +663,6 @@ export const accommodationService = {
 
       console.log('✅ Acomodação criada com ID:', accommodationId);
 
-      // ✅ CORREÇÃO: Criar tipos de quarto sequencialmente para melhor debug
       if (hotelData.rooms && hotelData.rooms.length > 0) {
         console.log('🛏️ Criando', hotelData.rooms.length, 'tipos de quarto...');
         
@@ -660,7 +670,6 @@ export const accommodationService = {
           const room = hotelData.rooms[index];
           console.log(`📦 Criando tipo de quarto ${index + 1}:`, room.type);
           
-          // ✅ CORREÇÃO CRÍTICA: Validação rigorosa do preço
           if (room.price === null || room.price === undefined) {
             console.error(`❌ Erro: Preço é null/undefined para o quarto ${index + 1}:`, room.price);
             throw new Error(`Preço é obrigatório para ${room.type}. Valor recebido: ${room.price}`);
@@ -681,7 +690,6 @@ export const accommodationService = {
             throw new Error(`O campo 'type' é obrigatório para o tipo de quarto ${index + 1}.`);
           }
 
-          // ✅ CORREÇÃO CRÍTICA: Garantir que pricePerNight tenha valor
           const pricePerNight = Number(room.price);
           if (isNaN(pricePerNight) || pricePerNight <= 0) {
             console.error(`❌ Erro CRÍTICO: pricePerNight inválido após conversão:`, pricePerNight);
@@ -692,7 +700,7 @@ export const accommodationService = {
             accommodationId: accommodationId,
             name: room.type,
             type: 'standard',
-            pricePerNight: pricePerNight, // ✅ CORREÇÃO: Usar valor convertido e validado
+            pricePerNight: pricePerNight,
             description: room.description,
             maxOccupancy: room.capacity,
             amenities: room.amenities || [],
@@ -739,7 +747,6 @@ export const accommodationService = {
         console.log('✅ Todos os tipos de quarto criados com sucesso');
       }
 
-      // ✅ CORREÇÃO: Filtrar apenas arquivos File para upload
       const fileImages = hotelData.images.filter((img): img is File => img instanceof File);
       
       if (fileImages.length > 0) {
@@ -765,10 +772,8 @@ export const accommodationService = {
     }
   },
 
-  // ✅ CORREÇÃO: Função uploadHotelImages atualizada para aceitar (File | string)[]
   uploadHotelImages: async (hotelId: string, images: (File | string)[]): Promise<void> => {
     try {
-      // ✅ CORREÇÃO: Filtrar apenas arquivos File para upload
       const fileImages = images.filter((img): img is File => img instanceof File);
       
       const uploadPromises = fileImages.map(async (image, index) => {
@@ -843,7 +848,6 @@ export const accommodationService = {
       const result = await response.json();
       const hotelId = result.hotelId || result.id;
 
-      // ✅ CORREÇÃO: Filtrar apenas arquivos File para upload
       const fileImages = hotelData.images.filter((img): img is File => img instanceof File);
       
       if (fileImages.length > 0) {

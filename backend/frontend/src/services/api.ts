@@ -2,6 +2,95 @@ import { auth } from '@/shared/lib/firebaseConfig';
 import { Booking, RideBookingRequest, HotelBookingRequest } from '@/shared/types/booking';
 
 /**
+ * Interfaces para tipagem
+ */
+interface Hotel {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  address: string;
+  contactEmail: string;
+  contactPhone: string;
+  amenities: string[];
+  images: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RoomType {
+  id: string;
+  hotelId: string;
+  name: string;
+  type: string;
+  description?: string;
+  pricePerNight: number;
+  totalRooms: number;
+  availableRooms: number;
+  maxGuests: number;
+  images?: string[];
+  amenities?: string[];
+  size?: number;
+  bedType?: string;
+  hasBalcony: boolean;
+  hasSeaView: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface HotelStats {
+  totalBookings: number;
+  monthlyRevenue: number;
+  averageRating: number;
+  averageOccupancy: number;
+  totalEvents: number;
+  upcomingEvents: number;
+  activePartnerships: number;
+  partnershipEarnings: number;
+  totalRoomTypes: number;
+  totalRooms: number;
+  availableRooms: number;
+}
+
+interface HotelEvent {
+  id: string;
+  title: string;
+  description: string;
+  eventType: string;
+  venue: string;
+  startDate: string;
+  endDate: string;
+  ticketPrice: number;
+  maxTickets: number;
+  ticketsSold: number;
+  status: string;
+  organizerId?: string;
+}
+
+interface DriverPartnership {
+  id: string;
+  driver: string;
+  route: string;
+  commission: number;
+  clientsBrought: number;
+  totalEarnings: number;
+  lastMonth: number;
+  rating: number;
+  joinedDate: string;
+  status: string;
+}
+
+interface ChatMessage {
+  id: number;
+  sender: string;
+  message: string;
+  time: string;
+  isHotel: boolean;
+}
+
+/**
  * Serviço central de API para todas as apps
  * Gerencia autenticação Firebase e comunicação com Railway backend
  */
@@ -16,12 +105,14 @@ class ApiService {
   private async getAuthHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     try {
-      if (auth?.currentUser) {
-        const token = await auth.currentUser.getIdToken();
+      const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+      if (token) {
         headers.Authorization = `Bearer ${token}`;
+      } else {
+        console.debug('No auth token available');
       }
     } catch (error) {
-      console.debug('No auth token available:', error);
+      console.debug('Error fetching auth token:', error);
     }
     return headers;
   }
@@ -37,20 +128,20 @@ class ApiService {
     if (data && method !== 'GET') config.body = JSON.stringify(data);
     const response = await fetch(url, config);
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`${response.status}: ${error}`);
+      const errorText = await response.text();
+      throw new Error(`${response.status}: ${errorText || 'Request failed'}`);
     }
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   // ===== RIDES API =====
-  async searchRides(params: { from?: string; to?: string; passengers?: number; date?: string }) {
+  async searchRides(params: { from?: string; to?: string; passengers?: number; date?: string }): Promise<any[]> {
     const searchParams = new URLSearchParams();
     if (params.from) searchParams.append('from', params.from);
     if (params.to) searchParams.append('to', params.to);
     if (params.passengers) searchParams.append('passengers', params.passengers.toString());
     if (params.date) searchParams.append('date', params.date);
-    return this.request('GET', `/api/rides-simple/search?${searchParams.toString()}`);
+    return this.request<any[]>('GET', `/api/rides-simple/search?${searchParams.toString()}`);
   }
 
   async createRide(rideData: {
@@ -61,7 +152,7 @@ class ApiService {
     availableSeats: number;
     vehicleType?: string;
     additionalInfo?: string;
-  }) {
+  }): Promise<any> {
     return this.request('POST', '/api/rides-simple/create', rideData);
   }
 
@@ -74,7 +165,6 @@ class ApiService {
     return this.request('POST', '/api/bookings/create', bookingData);
   }
 
-  // ===== MÉTODO UNIFICADO createBooking =====
   async createBooking(
     bookingData: RideBookingRequest | HotelBookingRequest
   ): Promise<{ success: boolean; booking: Booking }> {
@@ -119,16 +209,16 @@ class ApiService {
   }
 
   // ===== USER/AUTH API =====
-  async getUserProfile() {
+  async getUserProfile(): Promise<any> {
     return this.request('GET', '/api/auth/profile');
   }
 
-  async updateUserProfile(userData: any) {
+  async updateUserProfile(userData: any): Promise<any> {
     return this.request('PUT', '/api/auth/profile', userData);
   }
 
   // ===== HOTELS API =====
-  async searchAccommodations(params: { location?: string; checkIn?: string; checkOut?: string; guests?: number }) {
+  async searchAccommodations(params: { location?: string; checkIn?: string; checkOut?: string; guests?: number }): Promise<Hotel[]> {
     const searchParams = new URLSearchParams();
     if (params.location) searchParams.append('address', params.location);
     if (params.checkIn) searchParams.append('checkIn', params.checkIn);
@@ -138,70 +228,108 @@ class ApiService {
     return this.request('GET', `/api/hotels?${searchParams.toString()}`);
   }
 
-  async createAccommodation(accommodationData: any) {
+  async createAccommodation(accommodationData: any): Promise<any> {
     return this.request('POST', '/api/hotels', accommodationData);
   }
 
-  // ===== HOTELS DETAIL/UPDATE/DELETE API =====
-  async getHotelById(hotelId: string) {
+  async getUserAccommodations(): Promise<Hotel[]> {
+    try {
+      return await this.request<Hotel[]>('GET', '/api/hotels/my-hotels');
+    } catch (error) {
+      console.error('Erro ao buscar acomodações do usuário:', error);
+      return [];
+    }
+  }
+
+  async getHotelById(hotelId: string): Promise<Hotel> {
     return this.request('GET', `/api/hotels/${hotelId}`);
   }
 
-  async updateAccommodation(hotelId: string, accommodationData: any) {
-    return this.request('PUT', `/api/hotels/${hotelId}`, accommodationData);
+  async updateHotel(hotelId: string, hotelData: Partial<Hotel>): Promise<Hotel> {
+    return this.request('PUT', `/api/hotels/${hotelId}`, hotelData);
   }
 
-  async deleteAccommodation(hotelId: string) {
+  async deleteHotel(hotelId: string): Promise<void> {
     return this.request('DELETE', `/api/hotels/${hotelId}`);
   }
 
-  // ===== ADMIN API =====
-  async getAdminStats() {
-    return this.request('GET', '/api/admin/stats');
+  async updateRoom(roomId: string, roomData: Partial<RoomType>): Promise<RoomType> {
+    return this.request('PUT', `/api/rooms/${roomId}`, roomData);
   }
 
-  async getAdminRides() {
-    return this.request('GET', '/api/admin/rides');
+  async getHotelStats(hotelId: string): Promise<HotelStats> {
+    return this.request('GET', `/api/hotels/${hotelId}/stats`);
   }
 
-  async getAdminBookings() {
-    return this.request('GET', '/api/admin/bookings');
+  // ===== ROOMS API =====
+  async getRoomsByHotelId(hotelId: string): Promise<RoomType[]> {
+    return this.request('GET', `/api/hotels/${hotelId}/rooms`);
+  }
+
+  async createRoom(roomData: Partial<RoomType>): Promise<RoomType> {
+    return this.request('POST', '/api/rooms', roomData);
+  }
+
+  async deleteRoom(roomId: string): Promise<void> {
+    return this.request('DELETE', `/api/rooms/${roomId}`);
   }
 
   // ===== PARTNERSHIPS API =====
-  async createPartnership(partnershipData: { partnerId: string; type: 'driver-hotel' | 'hotel-driver'; terms: string }) {
+  async createPartnership(partnershipData: { partnerId: string; type: 'driver-hotel' | 'hotel-driver'; terms: string }): Promise<any> {
     return this.request('POST', '/api/partnerships/create', partnershipData);
   }
 
-  async getPartnershipRequests() {
+  async getPartnershipRequests(): Promise<any[]> {
     return this.request('GET', '/api/partnerships/requests');
   }
 
-  // ===== EVENTS API =====
-  async getEvents() {
-    return this.request('GET', '/api/events');
+  async getDriverPartnerships(hotelId: string): Promise<DriverPartnership[]> {
+    return this.request('GET', `/api/partnerships/driver?hotelId=${hotelId}`);
   }
 
-  async createEvent(eventData: any) {
+  // ===== EVENTS API =====
+  async getEvents(hotelId?: string): Promise<HotelEvent[]> {
+    const url = hotelId ? `/api/events?hotelId=${hotelId}` : '/api/events';
+    return this.request('GET', url);
+  }
+
+  async createEvent(eventData: any): Promise<HotelEvent> {
     return this.request('POST', '/api/events/create', eventData);
   }
 
+  async updateEvent(eventId: string, eventData: Partial<HotelEvent>): Promise<HotelEvent> {
+    return this.request('PUT', `/api/events/${eventId}`, eventData);
+  }
+
   // ===== FEATURED OFFERS API =====
-  async getFeaturedOffers() {
+  async getFeaturedOffers(): Promise<any[]> {
     return this.request('GET', '/api/offers/featured');
   }
 
   // ===== CHAT API =====
-  async getChatRooms() {
+  async getChatRooms(): Promise<any[]> {
     return this.request('GET', '/api/chat/rooms');
   }
 
-  async getChatMessages(roomId: string) {
+  async getChatMessages(roomId: string): Promise<ChatMessage[]> {
     return this.request('GET', `/api/chat/messages/${roomId}`);
   }
 
-  async sendMessage(roomId: string, message: string) {
-    return this.request('POST', `/api/chat/messages/${roomId}`, { message });
+  async sendChatMessage(roomId: string, messageData: { message: string }): Promise<ChatMessage> {
+    return this.request('POST', `/api/chat/messages/${roomId}`, messageData);
+  }
+
+  // ===== ADMIN API =====
+  async getAdminStats(): Promise<any> {
+    return this.request('GET', '/api/admin/stats');
+  }
+
+  async getAdminRides(): Promise<any[]> {
+    return this.request('GET', '/api/admin/rides');
+  }
+
+  async getAdminBookings(): Promise<Booking[]> {
+    return this.request('GET', '/api/admin/bookings');
   }
 }
 

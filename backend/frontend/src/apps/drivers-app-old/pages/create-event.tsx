@@ -12,10 +12,12 @@ import { Badge } from "@/shared/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import DateInput from "@/shared/components/DateInput";
 import { CalendarDays, MapPin, DollarSign, Users, Ticket, Image, Shield } from "lucide-react";
+import { useAuth } from "@/shared/hooks/useAuth";
 
 export default function CreateEvent() {
   const [activeService] = useState<"rides" | "stays">("rides");
   const { toast } = useToast();
+  const { user, firebaseUser } = useAuth();
   
   const [eventData, setEventData] = useState({
     title: "",
@@ -97,9 +99,67 @@ export default function CreateEvent() {
 
     setIsSubmitting(true);
     try {
-      // Here we would submit the event data to the server
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+      // ✅ CORREÇÃO: Montar payload real para envio ao backend
+      const payload = {
+        title: eventData.title,
+        description: eventData.description,
+        category: eventData.category,
+        venue: eventData.location,
+        address: eventData.address,
+        startDate: eventData.startDate,
+        endDate: eventData.endDate || eventData.startDate, // Se não tiver endDate, usa startDate
+        startTime: eventData.startTime,
+        endTime: eventData.endTime,
+        isPaid: eventData.isPaid,
+        ticketPrice: eventData.isPaid ? eventData.price : 0,
+        maxTickets: eventData.maxTickets,
+        
+        // Partnership options
+        enablePartnerships: eventData.enablePartnerships,
+        accommodationDiscount: eventData.enablePartnerships ? eventData.accommodationDiscount : 0,
+        transportDiscount: eventData.enablePartnerships ? eventData.transportDiscount : 0,
+        
+        // Organizer info
+        organizerName: eventData.organizerName || user?.name || firebaseUser?.displayName || "",
+        organizerContact: eventData.organizerContact,
+        organizerEmail: eventData.organizerEmail || user?.email || firebaseUser?.email || "",
+        
+        // Additional settings
+        requiresApproval: eventData.requiresApproval,
+        isPublic: eventData.isPublic,
+        tags: eventData.tags,
+        
+        // Default values for required fields
+        eventType: "public",
+        status: "pending", // Todos os eventos começam como pendentes
+        isFeatured: false,
+        hasPartnerships: eventData.enablePartnerships
+      };
+
+      // ✅ CORREÇÃO: Obter token de autenticação
+      const token = firebaseUser ? await firebaseUser.getIdToken() : localStorage.getItem('token');
       
+      console.log("🚀 Enviando evento para o backend:", payload);
+
+      // ✅ CORREÇÃO: Fazer requisição real para o backend
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Erro ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log("✅ Evento criado com sucesso:", result);
+
       toast({
         title: "Evento Criado",
         description: "O seu evento foi criado com sucesso e está em análise.",
@@ -107,10 +167,11 @@ export default function CreateEvent() {
       
       // Redirect to events page
       window.location.href = "/events";
-    } catch (error) {
+    } catch (error: any) {
+      console.error("❌ Erro ao criar evento:", error);
       toast({
         title: "Erro na Criação",
-        description: "Ocorreu um erro ao criar o evento. Tente novamente.",
+        description: error.message || "Ocorreu um erro ao criar o evento. Tente novamente.",
         variant: "destructive"
       });
     } finally {
@@ -154,7 +215,7 @@ export default function CreateEvent() {
           </CardContent>
         </Card>
 
-        <form className="space-y-6">
+        <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
           {/* Basic Information */}
           <Card>
             <CardHeader>

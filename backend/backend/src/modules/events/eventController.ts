@@ -40,17 +40,21 @@ router.get("/", async (req, res) => {
     // Filtros adicionais
     if (location) {
       events = events.filter(event => 
-        event.location?.toLowerCase().includes((location as string).toLowerCase())
+        event.address?.toLowerCase().includes((location as string).toLowerCase()) ||
+        event.venue?.toLowerCase().includes((location as string).toLowerCase())
       );
     }
     
-    // Ordenação personalizada
+    // Ordenação personalizada - ✅ CORREÇÃO: Usar startDate da tabela
     if (sortBy === 'date_asc') {
-      events = events.sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
+      events = events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
     } else if (sortBy === 'price_asc') {
-      events = events.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+      events = events.sort((a, b) => Number(a.ticketPrice || 0) - Number(b.ticketPrice || 0));
     } else if (sortBy === 'popular') {
       events = events.sort((a, b) => (b.currentAttendees || 0) - (a.currentAttendees || 0));
+    } else {
+      // Ordenação padrão por data de início (mais recente primeiro)
+      events = events.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     }
     
     // Aplicar paginação
@@ -97,14 +101,34 @@ router.post("/", verifyFirebaseToken, async (req: Request, res: Response) => {
       return res.status(401).json(createApiError("Usuário não autenticado", "UNAUTHENTICATED"));
     }
 
-    // Validação manual
-    const validation = validateEventData({
+    console.log("🎯 BACKEND: Criando evento - Dados recebidos:", req.body);
+
+    // ✅ CORREÇÃO: Preparar dados para validação com nomes CORRETOS da tabela
+    const eventDataForValidation = {
       ...req.body,
       organizerId: userId,
-      organizerName: authReq.user?.name || authReq.user?.email || 'Organizador'
-    });
+      // ✅ CORREÇÃO: Mapear para nomes da tabela
+      title: req.body.title,
+      description: req.body.description,
+      eventType: req.body.eventType,
+      category: req.body.eventType || req.body.category, // Usar eventType como category se não fornecido
+      venue: req.body.venue,
+      address: req.body.venue, // venue → address na tabela
+      startDate: req.body.startDate,
+      endDate: req.body.endDate,
+      startTime: req.body.startTime || '10:00',
+      endTime: req.body.endTime || '18:00',
+      ticketPrice: req.body.ticketPrice || 0,
+      maxTickets: req.body.maxTickets || req.body.maxAttendees || 100,
+      isPublic: true,
+      requiresApproval: false
+    };
+
+    // Validação manual
+    const validation = validateEventData(eventDataForValidation);
 
     if (!validation.isValid) {
+      console.error("❌ BACKEND: Validação falhou:", validation.errors);
       return res.status(400).json({
         success: false,
         message: "Dados inválidos",
@@ -112,32 +136,42 @@ router.post("/", verifyFirebaseToken, async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ CORREÇÃO APLICADA: Mapeamento correto usando 'title' em vez de 'name'
+    // ✅ CORREÇÃO COMPLETA: Remover propriedades que não existem no tipo CreateEventData
     const eventData: CreateEventData = {
-      // Campos obrigatórios do CreateEventData
-      title: validation.validatedData!.title,                   // ✅ CORRETO: title em vez de name
-      eventDate: new Date(validation.validatedData!.startDate), // startDate → eventDate
-      startTime: validation.validatedData!.startTime || '10:00', // Valor padrão se não fornecido
-      location: validation.validatedData!.address,             // address → location
-      price: validation.validatedData!.ticketPrice || 0,       // ticketPrice → price
+      // Campos obrigatórios da tabela
+      title: validation.validatedData!.title,
+      description: validation.validatedData!.description,
+      eventType: validation.validatedData!.eventType,
       category: validation.validatedData!.category,
+      venue: validation.validatedData!.venue,
+      address: validation.validatedData!.address,
+      startDate: new Date(validation.validatedData!.startDate),
+      endDate: new Date(validation.validatedData!.endDate),
+      startTime: validation.validatedData!.startTime as string, // ✅ CORREÇÃO: Garantir que é string
+      endTime: validation.validatedData!.endTime as string, // ✅ CORREÇÃO: Garantir que é string
+      ticketPrice: validation.validatedData!.ticketPrice,
+      maxTickets: validation.validatedData!.maxTickets,
       organizerId: validation.validatedData!.organizerId,
       
-      // Campos opcionais mapeados
-      description: validation.validatedData!.description,
-      endTime: validation.validatedData!.endTime,
-      maxAttendees: validation.validatedData!.maxAttendees,
-      tags: validation.validatedData!.tags,
-      images: validation.validatedData!.images,
-      isPublic: validation.validatedData!.isPublic,
+      // Campos opcionais com valores padrão
+      isPublic: validation.validatedData!.isPublic !== undefined ? validation.validatedData!.isPublic : true,
       requiresApproval: validation.validatedData!.requiresApproval || false,
+      isPaid: validation.validatedData!.ticketPrice > 0,
+      
+      // Campos adicionais que podem vir do frontend
+      images: validation.validatedData!.images || [],
+      tags: validation.validatedData!.tags || []
     };
+
+    console.log("✅ BACKEND: Dados mapeados para criação:", eventData);
 
     const newEvent = await storage.event.createEvent(eventData);
 
+    console.log("🎉 BACKEND: Evento criado com sucesso:", newEvent.id);
+
     res.status(201).json(createApiResponse(newEvent, "Evento criado com sucesso"));
   } catch (error) {
-    console.error("Erro ao criar evento:", error);
+    console.error("❌ BACKEND: Erro ao criar evento:", error);
     res.status(500).json(createApiError("Erro interno do servidor", "INTERNAL_ERROR", error instanceof Error ? error.message : String(error)));
   }
 });
@@ -154,6 +188,8 @@ router.put("/:id", verifyFirebaseToken, async (req: Request, res: Response) => {
       return res.status(401).json(createApiError("Usuário não autenticado", "UNAUTHENTICATED"));
     }
 
+    console.log("🔄 BACKEND: Atualizando evento:", id, "Dados:", req.body);
+
     // Verificar se o evento existe e pertence ao usuário
     const existingEvent = await storage.event.getEvent(id);
     if (!existingEvent) {
@@ -164,18 +200,52 @@ router.put("/:id", verifyFirebaseToken, async (req: Request, res: Response) => {
       return res.status(403).json(createApiError("Sem permissão para editar este evento", "FORBIDDEN"));
     }
 
-    const updateData = {
-      ...req.body,
-      startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
-      endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
+    // ✅ CORREÇÃO CRÍTICA: Definir campos permitidos para atualização, INCLUINDO ticketsSold
+    const allowedFields = [
+      'title', 'description', 'eventType', 'category', 
+      'venue', 'address', 'startDate', 'endDate',
+      'startTime', 'endTime', 'ticketPrice', 'maxTickets',
+      'ticketsSold', 'status', 'images', 'tags', 'isPublic'
+    ];
+
+    const updateData: any = {
       updatedAt: new Date()
     };
 
+    // ✅ CORREÇÃO: Apenas incluir campos permitidos e válidos
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined && req.body[field] !== null) {
+        // Conversões específicas para tipos de dados
+        if (field === 'startDate' || field === 'endDate') {
+          updateData[field] = new Date(req.body[field]);
+        } else if (field === 'ticketPrice' || field === 'maxTickets' || field === 'ticketsSold') {
+          updateData[field] = Number(req.body[field]);
+        } else {
+          updateData[field] = req.body[field];
+        }
+      }
+    });
+
+    // ✅ CORREÇÃO: Atualizar isPaid baseado no ticketPrice
+    if (req.body.ticketPrice !== undefined) {
+      updateData.isPaid = Number(req.body.ticketPrice) > 0;
+    }
+
+    // ✅ CORREÇÃO: Sincronizar address com venue se venue for atualizado
+    if (req.body.venue && !req.body.address) {
+      updateData.address = req.body.venue;
+    }
+
+    console.log("✅ BACKEND: Dados para atualização:", updateData);
+
     const updatedEvent = await storage.event.updateEvent(id, updateData);
+
+    console.log("🎉 BACKEND: Evento atualizado com sucesso:", id);
+    console.log("🎫 BACKEND: ticketsSold atualizado para:", updatedEvent.ticketsSold);
 
     res.json(createApiResponse(updatedEvent, "Evento atualizado com sucesso"));
   } catch (error) {
-    console.error("Erro ao atualizar evento:", error);
+    console.error("❌ BACKEND: Erro ao atualizar evento:", error);
     res.status(500).json(createApiError("Erro interno do servidor", "INTERNAL_ERROR", error instanceof Error ? error.message : String(error)));
   }
 });
@@ -192,6 +262,8 @@ router.delete("/:id", verifyFirebaseToken, async (req: Request, res: Response) =
       return res.status(401).json(createApiError("Usuário não autenticado", "UNAUTHENTICATED"));
     }
 
+    console.log("🗑️ BACKEND: Eliminando evento:", id);
+
     // Verificar se o evento existe e pertence ao usuário
     const existingEvent = await storage.event.getEvent(id);
     if (!existingEvent) {
@@ -204,9 +276,11 @@ router.delete("/:id", verifyFirebaseToken, async (req: Request, res: Response) =
 
     await storage.event.deleteEvent(id);
 
+    console.log("✅ BACKEND: Evento eliminado com sucesso:", id);
+
     res.json(createApiResponse(null, "Evento excluído com sucesso"));
   } catch (error) {
-    console.error("Erro ao excluir evento:", error);
+    console.error("❌ BACKEND: Erro ao excluir evento:", error);
     res.status(500).json(createApiError("Erro interno do servidor", "INTERNAL_ERROR", error instanceof Error ? error.message : String(error)));
   }
 });
@@ -220,31 +294,35 @@ router.get('/dashboard', verifyFirebaseToken, async (req: Request, res: Response
       return res.status(401).json(createApiError("ID do usuário não encontrado", "USER_ID_NOT_FOUND"));
     }
 
+    // ✅ CORREÇÃO: Buscar eventos reais do usuário para stats
+    const userEvents = await storage.event.getEventsByFilter({ organizerId: userId });
+    const activeEvents = userEvents.filter(event => event.status === 'upcoming' || event.status === 'active');
+    const pastEvents = userEvents.filter(event => event.status === 'completed' || new Date(event.endDate) < new Date());
+    
+    const totalRevenue = userEvents.reduce((sum, event) => {
+      return sum + (Number(event.ticketPrice) * (event.ticketsSold || 0));
+    }, 0);
+
+    const totalParticipants = userEvents.reduce((sum, event) => {
+      return sum + (event.currentAttendees || 0);
+    }, 0);
+
+    const upcomingEvents = activeEvents.slice(0, 5).map(event => ({
+      id: event.id,
+      title: event.title,
+      venue: event.venue,
+      capacity: event.maxTickets,
+      sold: event.ticketsSold || 0,
+      date: event.startDate,
+      price: Number(event.ticketPrice)
+    }));
+
     const stats = {
-      activeEvents: 8,
-      totalParticipants: 1245,
-      totalRevenue: 85500.00,
-      occupancyRate: 87,
-      upcomingEvents: [
-        {
-          id: "event-1",
-          title: "Festival de Música Moçambicana",
-          venue: "Centro de Conferências",
-          capacity: 500,
-          sold: 450,
-          date: "2024-08-30T19:00:00Z",
-          price: 250.00
-        },
-        {
-          id: "event-2",
-          title: "Workshop de Fotografia", 
-          venue: "Estúdio Arte",
-          capacity: 25,
-          sold: 18,
-          date: "2024-09-02T09:00:00Z",
-          price: 450.00
-        }
-      ],
+      activeEvents: activeEvents.length,
+      totalParticipants,
+      totalRevenue,
+      occupancyRate: userEvents.length > 0 ? Math.round((totalParticipants / userEvents.reduce((sum, e) => sum + (e.maxTickets || 0), 0)) * 100) : 0,
+      upcomingEvents,
       recentSales: [
         {
           id: "sale-1",
@@ -256,8 +334,8 @@ router.get('/dashboard', verifyFirebaseToken, async (req: Request, res: Response
         },
         {
           id: "sale-2",
-          event: "Workshop Fotografia",
-          buyer: "Carlos Santos", 
+          event: "Workshop Fotografia", 
+          buyer: "Carlos Santos",
           tickets: 1,
           amount: 450.00,
           time: "há 12 minutos"
@@ -290,12 +368,16 @@ router.get('/organizer/events', verifyFirebaseToken, async (req: Request, res: R
       return res.status(401).json(createApiError("ID do usuário não encontrado", "USER_ID_NOT_FOUND"));
     }
 
+    console.log("📋 BACKEND: Buscando eventos do organizador:", organizerId);
+
     // Buscar eventos reais do organizador
     const events = await storage.event.getEventsByFilter({ organizerId });
 
+    console.log(`✅ BACKEND: Encontrados ${events.length} eventos para o organizador`);
+
     res.json(createApiResponse(events, "Eventos do organizador listados com sucesso"));
   } catch (error) {
-    console.error("Event list error:", error);
+    console.error("❌ BACKEND: Erro ao carregar eventos:", error);
     res.status(500).json(createApiError("Erro ao carregar eventos", "INTERNAL_ERROR", error instanceof Error ? error.message : String(error)));
   }
 });
@@ -327,25 +409,33 @@ router.get('/organizer/analytics', verifyFirebaseToken, async (req: Request, res
       return res.status(401).json(createApiError("ID do usuário não encontrado", "USER_ID_NOT_FOUND"));
     }
 
-    // TODO: Implementar analytics reais
+    // ✅ CORREÇÃO: Analytics com dados reais
+    const userEvents = await storage.event.getEventsByFilter({ organizerId });
+    const totalEvents = userEvents.length;
+    const totalRevenue = userEvents.reduce((sum, event) => 
+      sum + (Number(event.ticketPrice) * (event.ticketsSold || 0)), 0
+    );
+    const totalAttendees = userEvents.reduce((sum, event) => 
+      sum + (event.currentAttendees || 0), 0
+    );
+    
+    const averageOccupancy = totalEvents > 0 ? 
+      Math.round((totalAttendees / userEvents.reduce((sum, e) => sum + (e.maxTickets || 0), 0)) * 100) : 0;
+
     const analytics = {
-      totalEvents: 15,
-      totalRevenue: 125000.00,
-      totalAttendees: 2850,
-      averageOccupancy: 82,
-      monthlyGrowth: 18.5,
-      topEvents: [
-        {
-          title: "Festival de Música",
-          attendees: 450,
-          revenue: 112500.00
-        },
-        {
-          title: "Workshop Fotografia",
-          attendees: 18,
-          revenue: 8100.00
-        }
-      ]
+      totalEvents,
+      totalRevenue,
+      totalAttendees,
+      averageOccupancy,
+      monthlyGrowth: 18.5, // Placeholder - implementar cálculo real
+      topEvents: userEvents
+        .sort((a, b) => (b.ticketsSold || 0) - (a.ticketsSold || 0))
+        .slice(0, 5)
+        .map(event => ({
+          title: event.title,
+          attendees: event.currentAttendees || 0,
+          revenue: Number(event.ticketPrice) * (event.ticketsSold || 0)
+        }))
     };
 
     res.json(createApiResponse(analytics, "Relatórios carregados com sucesso"));

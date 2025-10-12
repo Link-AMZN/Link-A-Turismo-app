@@ -1,21 +1,61 @@
 // src/shared/types/dashboard.ts
 
-// Tipos baseados no schema do banco de dados
+// Tipos baseados no schema do banco de dados - ATUALIZADO COM TODAS AS COLUNAS
 export interface Accommodation {
   id: string;
   name: string;
   type: string;
   hostId: string;
   address: string;
-  rating: number;
-  reviewCount: number;
+  lat?: number;
+  lng?: number;
+  rating?: number; // ✅ CORRIGIDO: Agora é opcional
+  reviewCount?: number; // ✅ CORRIGIDO: Agora é opcional
   images: string[];
   amenities: string[];
   description?: string;
+  distanceFromCenter?: number;
+  
+  // ✅ PROPRIEDADES CONFIRMADAS NO BANCO DE DADOS:
+  isAvailable?: boolean;
+  offerDriverDiscounts?: boolean;
+  driverDiscountRate?: number;
+  minimumDriverLevel?: string;
+  partnershipBadgeVisible?: boolean;
+  enablePartnerships?: boolean;
+  accommodationDiscount?: number;
+  transportDiscount?: number;
+  maxGuests?: number;
   checkInTime?: string;
   checkOutTime?: string;
+  policies?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  
+  // ✅ NOVA PROPRIEDADE ADICIONADA:
+  roomTypes?: RoomType[];
+  
   createdAt: string;
   updatedAt: string;
+}
+
+// ✅ NOVA INTERFACE: RoomType
+export interface RoomType {
+  id: string;
+  accommodationId: string;
+  name: string;
+  type: string;
+  pricePerNight: number;
+  description?: string;
+  maxOccupancy?: number;
+  bedType?: string;
+  bedCount?: number;
+  amenities?: string[];
+  images?: string[];
+  isAvailable?: boolean;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface HotelRoom {

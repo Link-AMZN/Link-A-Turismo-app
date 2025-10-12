@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/shared/hooks/useAuth';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { Button } from '@/shared/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/shared/components/ui/dialog';
@@ -12,7 +12,6 @@ import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
 import { Switch } from '@/shared/components/ui/switch';
-import { useMutation } from '@tanstack/react-query';
 import { 
   Hotel, 
   Plus, 
@@ -34,28 +33,67 @@ import {
   Send,
   Clock,
   Building2,
-  Home
+  Home,
+  Trash2,
+  RefreshCw,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import LocationAutocomplete from '@/shared/components/LocationAutocomplete';
 import apiService from '@/services/api';
 import { useToast } from '@/shared/hooks/use-toast';
-import { useAccommodations } from '@/shared/hooks/useAccommodations';
 import { AppUser } from '@/shared/hooks/useAuth';
 import HotelCreationWizard from '@/components/hotel-wizard/HotelCreationWizard';
+import { HotelFormData } from '@/components/hotel-wizard/types';
 
+// ✅ CORREÇÃO: SafeNumber helper para garantir valores numéricos
+const SafeNumber = {
+  toNumber: (value: any, defaultValue: number = 0): number => {
+    if (value === null || value === undefined || value === '') return defaultValue;
+    const num = Number(value);
+    return isNaN(num) ? defaultValue : num;
+  },
+  toInt: (value: any, defaultValue: number = 0): number => {
+    return Math.floor(SafeNumber.toNumber(value, defaultValue));
+  },
+  toFloat: (value: any, defaultValue: number = 0): number => {
+    return SafeNumber.toNumber(value, defaultValue);
+  }
+};
+
+// Define the API response structure
+interface ApiResponse {
+  success: boolean;
+  data: any[];
+}
+
+// ✅ ATUALIZADO: Interface para compatibilidade com backend
 interface HotelEvent {
   id: string;
   title: string;
   description: string;
   eventType: string;
+  category: string;
   venue: string;
+  address: string;
   startDate: string;
   endDate: string;
+  startTime: string;
+  endTime: string;
   ticketPrice: number;
   maxTickets: number;
   ticketsSold: number;
+  currentAttendees: number;
   status: string;
-  organizerId?: string;
+  organizerId: string;
+  isPublic: boolean;
+  requiresApproval: boolean;
+  isPaid: boolean;
+  images: string[];
+  tags: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface HotelStats {
@@ -65,6 +103,7 @@ interface HotelStats {
   averageOccupancy: number;
   totalEvents: number;
   upcomingEvents: number;
+  activeEvents: number;
   activePartnerships: number;
   partnershipEarnings: number;
   totalRoomTypes: number;
@@ -93,6 +132,23 @@ interface ChatMessage {
   isHotel: boolean;
 }
 
+interface Hotel {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  address: string;
+  contactEmail: string;
+  contactPhone: string;
+  amenities: string[];
+  images: string[];
+  rating?: number;
+  reviewCount?: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface RoomType {
   id: string;
   hotelId: string;
@@ -102,6 +158,7 @@ interface RoomType {
   pricePerNight: number;
   totalRooms: number;
   availableRooms: number;
+  maxGuests: number;
   images?: string[];
   amenities?: string[];
   size?: number;
@@ -111,67 +168,553 @@ interface RoomType {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  address?: string;
-  rating?: number;
-  reviewCount?: number;
 }
 
-interface ExtendedCreateAccommodationRequest {
-  name: string;
-  type: string;
-  address?: string;
-  description?: string;
-  pricePerNight?: number;
-  maxGuests?: number;
-  amenities?: string[];
-  images?: string[];
-  bedrooms?: number;
-  bathrooms?: number;
-  isAvailable?: boolean;
-  unavailableDates?: string[];
+// ✅ ADICIONADO: Configuração de paginação
+const EVENTS_PER_PAGE = 5;
+
+// ✅ CORREÇÃO: Hook customizado para gestão de quartos - VERSÃO CORRIGIDA
+const useHotelRooms = (hotelId: string | null) => {
+  const [rooms, setRooms] = useState<RoomType[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  const fetchRooms = useCallback(async (id: string) => {
+    if (!id) return [];
+    
+    try {
+      setLoading(true);
+      console.log(`🔄 Buscando quartos para hotel: ${id}`);
+      const response = await fetch(`/api/hotels/${id}/rooms`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📦 Dados recebidos da API:', data);
+        
+        // ✅ CORREÇÃO: Múltiplas formas de acessar os dados
+        let roomsData = [];
+        
+        if (data.rooms && Array.isArray(data.rooms)) {
+          roomsData = data.rooms;
+        } else if (data.data?.rooms && Array.isArray(data.data.rooms)) {
+          roomsData = data.data.rooms;
+        } else if (data.data && Array.isArray(data.data)) {
+          roomsData = data.data;
+        } else if (Array.isArray(data)) {
+          roomsData = data;
+        }
+        
+        console.log(`✅ ${roomsData.length} quartos carregados`);
+        return roomsData;
+      } else {
+        console.error('❌ Erro na resposta da API:', response.status);
+        toast({
+          title: 'Erro',
+          description: `Falha ao carregar quartos (${response.status})`,
+          variant: 'destructive',
+        });
+      }
+      return [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar quartos:', error);
+      toast({
+        title: 'Erro',
+        description: 'Falha ao conectar com o servidor',
+        variant: 'destructive',
+      });
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (hotelId) {
+      console.log(`🏨 Hotel selecionado mudou: ${hotelId}`);
+      fetchRooms(hotelId).then(rooms => {
+        console.log(`🎯 Quartos definidos no estado:`, rooms);
+        setRooms(rooms);
+      });
+    } else {
+      console.log('🏨 Nenhum hotel selecionado, limpando quartos');
+      setRooms([]);
+    }
+  }, [hotelId, fetchRooms]);
+
+  const refetch = useCallback(() => {
+    if (hotelId) {
+      console.log('🔄 Recarregando quartos...');
+      fetchRooms(hotelId).then(setRooms);
+    }
+  }, [hotelId, fetchRooms]);
+
+  return { rooms, loading, refetch };
+};
+
+// ✅ CORREÇÃO: Helper para atualização de estado
+const useFormState = <T,>(initialState: T) => {
+  const [form, setForm] = useState<T>(initialState);
+
+  const updateForm = useCallback((updates: Partial<T>) => {
+    setForm(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const resetForm = useCallback(() => {
+    setForm(initialState);
+  }, [initialState]);
+
+  return { form, updateForm, resetForm, setForm };
+};
+
+// ✅ CORREÇÃO: Interface LocalAppUser para resolver erro do uid
+interface LocalAppUser {
+  uid: string;
+  id?: string;
+  email?: string;
+  getIdToken?: () => Promise<string>;
 }
 
 export default function HotelsHome() {
-  const { user } = useAuth() as { user: AppUser | null };
+  const { user } = useAuth() as { user: LocalAppUser | null };
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [showHotelSetup, setShowHotelSetup] = useState(false);
-  const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [showCreatePartnership, setShowCreatePartnership] = useState(false);
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [activeTab, setActiveTab] = useState('accommodations');
+  
+  // ✅ CORREÇÃO: Estados unificados e simplificados
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedChat, setSelectedChat] = useState<number | null>(null);
   const [newMessage, setNewMessage] = useState('');
-
-  // Estados para o Hotel Wizard
+  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomType | null>(null);
   const [wizardMode, setWizardMode] = useState<'create' | 'edit'>('create');
-
-  const [accommodationForm, setAccommodationForm] = useState<ExtendedCreateAccommodationRequest>({
-    name: '',
-    address: '',
-    type: 'hotel_room',
-    pricePerNight: 0,
-    amenities: [],
-    description: '',
-    images: [],
-    isAvailable: true,
-    maxGuests: 2,
+  
+  // ✅ CORREÇÃO: Estados modais unificados
+  const [modals, setModals] = useState({
+    createRoom: false,
+    createEvent: false,
+    createPartnership: false,
+    editHotel: false
   });
 
-  const [eventForm, setEventForm] = useState({
+  // ✅ ADICIONADO: Estado para modal de edição rápida
+  const [quickEditModal, setQuickEditModal] = useState<{
+    open: boolean;
+    room: RoomType | null;
+  }>({
+    open: false,
+    room: null
+  });
+
+  // ✅ ADICIONADO: Estado para modal de eliminação
+  const [deleteModal, setDeleteModal] = useState<{
+    open: boolean;
+    room: RoomType | null;
+  }>({
+    open: false,
+    room: null
+  });
+
+  // ✅ ADICIONADO: Estados para gestão de eventos
+  const [editEventModalOpen, setEditEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<HotelEvent | null>(null);
+  const [deleteEventModalOpen, setDeleteEventModalOpen] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<HotelEvent | null>(null);
+
+  // ✅ ADICIONADO: Estados para paginação
+  const [currentEventsPage, setCurrentEventsPage] = useState(1);
+
+  // ✅ ADICIONADO: Estado para controlar visibilidade do cadastro
+  const [showHotelCreation, setShowHotelCreation] = useState(false);
+
+  const toggleModal = useCallback((modal: keyof typeof modals, isOpen: boolean) => {
+    setModals(prev => ({ ...prev, [modal]: isOpen }));
+  }, []);
+
+  // ✅ CORREÇÃO: Hook customizado para quartos
+  const { rooms: hotelRooms, loading: roomsLoading, refetch: refetchRooms } = useHotelRooms(selectedHotelId);
+
+  // ✅ CORREÇÃO: Mutations atualizadas para incluir autenticação
+  const updateRoomMutation = useMutation({
+    mutationFn: async ({ roomId, roomData }: { roomId: string; roomData: any }) => {
+      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
+      
+      const response = await fetch(`/api/hotels/${userHotel?.id}/rooms/${roomId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
+        },
+        body: JSON.stringify(roomData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao atualizar quarto');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Quarto atualizado com sucesso!' });
+      refetchRooms();
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro', description: error.message || 'Erro ao atualizar quarto', variant: 'destructive' });
+    }
+  });
+
+  const deleteRoomMutation = useMutation({
+    mutationFn: async (roomId: string) => {
+      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
+      
+      const response = await fetch(`/api/hotels/${userHotel?.id}/rooms/${roomId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao eliminar quarto');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Quarto eliminado com sucesso!' });
+      refetchRooms();
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro', description: error.message || 'Erro ao eliminar quarto', variant: 'destructive' });
+    }
+  });
+
+  // ✅ CORREÇÃO: Query para buscar eventos do usuário atual - usando user?.id em vez de user?.uid
+  const { data: userEvents, isLoading: eventsLoading, refetch: refetchEvents } = useQuery({
+    queryKey: ['user-events', user?.id],
+    queryFn: async () => {
+      const token = await user?.getIdToken?.();
+      console.log("📋 FRONTEND: Buscando eventos do organizador...");
+      
+      const response = await fetch('/api/events/organizer/events', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error("❌ FRONTEND: Erro ao buscar eventos");
+        throw new Error('Falha ao carregar eventos');
+      }
+      
+      const result = await response.json();
+      console.log(`✅ FRONTEND: Encontrados ${result.data?.length || 0} eventos`);
+      return result.data || [];
+    },
+    enabled: !!user?.id
+  });
+
+  // ✅ ADICIONADO: Paginação para eventos
+  const paginatedEvents = useMemo(() => {
+    if (!userEvents) return [];
+    const startIndex = (currentEventsPage - 1) * EVENTS_PER_PAGE;
+    const endIndex = startIndex + EVENTS_PER_PAGE;
+    return userEvents.slice(startIndex, endIndex);
+  }, [userEvents, currentEventsPage]);
+
+  const totalEventsPages = useMemo(() => {
+    if (!userEvents) return 0;
+    return Math.ceil(userEvents.length / EVENTS_PER_PAGE);
+  }, [userEvents]);
+
+  // ✅ ADICIONADO: Funções de navegação da paginação
+  const nextEventsPage = () => {
+    if (currentEventsPage < totalEventsPages) {
+      setCurrentEventsPage(prev => prev + 1);
+    }
+  };
+
+  const prevEventsPage = () => {
+    if (currentEventsPage > 1) {
+      setCurrentEventsPage(prev => prev - 1);
+    }
+  };
+
+  // ✅ CORREÇÃO: Mutation para criar eventos com endpoint CORRETO
+  const createEventMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const token = await user?.getIdToken?.();
+      
+      console.log("🎯 FRONTEND: Enviando dados para criar evento:", data);
+      
+      const response = await fetch('/api/events', { // ✅ ENDPOINT CORRETO
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          // ✅ CORREÇÃO: Mapear campos conforme esperado pelo backend
+          title: data.title,
+          description: data.description,
+          eventType: data.eventType,
+          category: data.eventType, // Usar eventType como category
+          venue: data.venue,
+          address: data.venue, // venue → address no backend
+          startDate: data.startDate,
+          endDate: data.endDate,
+          startTime: data.startTime || '10:00',
+          endTime: data.endTime || '18:00',
+          ticketPrice: Number(data.ticketPrice) || 0,
+          maxTickets: Number(data.maxTickets) || 100,
+          isPublic: true,
+          requiresApproval: false,
+          images: data.images || [],
+          tags: data.tags || []
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("❌ FRONTEND: Erro na resposta:", errorData);
+        throw new Error(errorData.message || 'Falha ao criar evento');
+      }
+
+      const result = await response.json();
+      console.log("✅ FRONTEND: Evento criado com sucesso:", result);
+      return result;
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Evento criado com sucesso!' });
+      toggleModal('createEvent', false);
+      eventForm.resetForm();
+      queryClient.invalidateQueries({ queryKey: ['user-events'] });
+      setCurrentEventsPage(1); // Reset para primeira página
+    },
+    onError: (error: any) => {
+      console.error("❌ FRONTEND: Erro ao criar evento:", error);
+      toast({ 
+        title: 'Erro', 
+        description: error.message || 'Erro ao criar evento', 
+        variant: 'destructive' 
+      });
+    }
+  });
+
+  // ✅ CORREÇÃO: Mutation para atualizar eventos (COM CONTADOR DE BILHETES E INVALIDATE CORRETO)
+  const updateEventMutation = useMutation({
+    mutationFn: async (eventData: Partial<HotelEvent>) => {
+      const token = await user?.getIdToken?.();
+      
+      console.log("🎯 FRONTEND: Atualizando evento:", eventData);
+      
+      const response = await fetch(`/api/events/${eventData.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: eventData.title,
+          description: eventData.description,
+          eventType: eventData.eventType,
+          category: eventData.eventType,
+          venue: eventData.venue,
+          address: eventData.venue,
+          startDate: eventData.startDate,
+          endDate: eventData.endDate,
+          startTime: eventData.startTime,
+          endTime: eventData.endTime,
+          ticketPrice: SafeNumber.toFloat(eventData.ticketPrice) || 0,
+          maxTickets: SafeNumber.toInt(eventData.maxTickets) || 100,
+          ticketsSold: SafeNumber.toInt(eventData.ticketsSold) || 0, // ✅ ADICIONADO: Contador de bilhetes
+          status: eventData.status,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao atualizar evento');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Evento atualizado com sucesso!' });
+      // ✅ CORREÇÃO: Invalidação mais agressiva para garantir atualização
+      queryClient.invalidateQueries({ queryKey: ['user-events'] });
+      queryClient.refetchQueries({ queryKey: ['user-events'] });
+      setEditEventModalOpen(false);
+      setEditingEvent(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Falha ao atualizar o evento',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // ✅ ADICIONADO: Mutation para eliminar eventos
+  const deleteEventMutation = useMutation({
+    mutationFn: async (eventId: string) => {
+      const token = await user?.getIdToken?.();
+      
+      const response = await fetch(`/api/events/${eventId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao eliminar evento');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Evento eliminado com sucesso!' });
+      queryClient.invalidateQueries({ queryKey: ['user-events'] });
+      setDeleteEventModalOpen(false);
+      setEventToDelete(null);
+      // Ajustar paginação se necessário
+      if (paginatedEvents.length === 1 && currentEventsPage > 1) {
+        setCurrentEventsPage(prev => prev - 1);
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Falha ao eliminar o evento',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // ✅ ADICIONADO: Botão para recarregar eventos
+  const reloadEvents = () => {
+    refetchEvents();
+    setCurrentEventsPage(1);
+    toast({ title: 'Eventos atualizados', description: 'Lista de eventos atualizada com sucesso!' });
+  };
+
+  // ✅ ADICIONADO: Handlers para as ações de eventos
+  const handleEditEvent = (event: HotelEvent) => {
+    console.log('Editing event:', event);
+    setEditingEvent(event);
+    setEditEventModalOpen(true);
+  };
+
+  const handleUpdateEvent = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingEvent) return;
+
+    const formData = new FormData(e.currentTarget);
+    const updatedEvent = {
+      id: editingEvent.id,
+      title: formData.get('title') as string,
+      description: formData.get('description') as string,
+      eventType: formData.get('eventType') as string,
+      venue: formData.get('venue') as string,
+      startDate: formData.get('startDate') as string,
+      endDate: formData.get('endDate') as string,
+      startTime: formData.get('startTime') as string,
+      endTime: formData.get('endTime') as string,
+      ticketPrice: SafeNumber.toFloat(formData.get('ticketPrice') as string),
+      maxTickets: SafeNumber.toInt(formData.get('maxTickets') as string),
+      ticketsSold: SafeNumber.toInt(formData.get('ticketsSold') as string), // ✅ ADICIONADO
+      status: formData.get('status') as string,
+    };
+
+    updateEventMutation.mutate(updatedEvent);
+  };
+
+  const handleOpenDeleteConfirmation = (event: HotelEvent) => {
+    setEventToDelete(event);
+    setDeleteEventModalOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (eventToDelete) {
+      deleteEventMutation.mutate(eventToDelete.id);
+    }
+  };
+
+  // ✅ ADICIONADO: Handler para criar novo hotel
+  const handleCreateNewHotel = () => {
+    setShowHotelCreation(true);
+    setIsWizardOpen(true);
+    setWizardMode('create');
+  };
+
+  // ✅ ADICIONADO: Handler para sucesso do wizard
+  const handleWizardSuccess = (hotelId: string) => {
+    toast({
+      title: wizardMode === 'create' ? "Hotel Criado" : "Hotel Atualizado",
+      description: wizardMode === 'create' 
+        ? "Hotel criado com sucesso!" 
+        : "Hotel foi atualizado com sucesso"
+    });
+    
+    setIsWizardOpen(false);
+    setShowHotelCreation(false);
+    setEditingRoom(null);
+    setWizardMode('create');
+    queryClient.invalidateQueries({ queryKey: ['user-hotels'] });
+    refetchRooms();
+  };
+
+  // ✅ ADICIONADO: Handler para cancelar wizard
+  const handleWizardCancel = () => {
+    setIsWizardOpen(false);
+    setShowHotelCreation(false);
+    setEditingRoom(null);
+  };
+
+  // ✅ CORREÇÃO: Form states usando helper - REMOVIDO o formulário antigo que estava causando problemas
+  const roomForm = useFormState({
+    name: '',
+    type: 'standard',
+    description: '',
+    pricePerNight: 0,
+    totalRooms: 1,
+    maxGuests: 2,
+    amenities: [] as string[],
+    bedType: 'Cama de Casal',
+    hasBalcony: false,
+    hasSeaView: false,
+    size: 25
+  });
+
+  const hotelForm = useFormState({
+    name: '',
+    address: '',
+    description: '',
+    contactEmail: '',
+    contactPhone: '',
+    amenities: [] as string[],
+    images: [] as string[],
+    isActive: true
+  });
+
+  const eventForm = useFormState({
     title: '',
     description: '',
     eventType: 'festival',
     venue: '',
     startDate: '',
     endDate: '',
+    startTime: '10:00',
+    endTime: '18:00',
     ticketPrice: 0,
     maxTickets: 100
   });
 
-  const [partnershipForm, setPartnershipForm] = useState({
+  const partnershipForm = useFormState({
     title: '',
     description: '',
     commission: 10,
@@ -180,103 +723,231 @@ export default function HotelsHome() {
     targetRoutes: [] as string[]
   });
 
-  // Fetch hotel profile
-  const { data: hotelProfile } = useQuery({
-    queryKey: ['hotel-profile', user?.id],
-    queryFn: () => apiService.getUserProfile(),
-    enabled: !!user?.id
-  });
-
-  // Fetch hotel stats
-  const { data: hotelStats } = useQuery<HotelStats>({
-    queryKey: ['hotel-stats', user?.id],
-    queryFn: async (): Promise<HotelStats> => {
+  // ✅ CORREÇÃO: Fetch dos hotéis do usuário com useMemo para otimização
+  const { data: userHotels, isLoading: hotelsLoading } = useQuery<Hotel[], Error>({
+    queryKey: ['user-hotels', user?.id],
+    queryFn: async (): Promise<Hotel[]> => {
       try {
-        return {
-          totalBookings: 73,
-          monthlyRevenue: 224500,
-          averageRating: 4.8,
-          averageOccupancy: 82,
-          totalEvents: 1,
-          upcomingEvents: 1,
-          activePartnerships: 2,
-          partnershipEarnings: 11000,
-          totalRoomTypes: 2,
-          totalRooms: 8,
-          availableRooms: 6
-        };
-      } catch (error) {
-        return {
-          totalBookings: 73,
-          monthlyRevenue: 224500,
-          averageRating: 4.8,
-          averageOccupancy: 82,
-          totalEvents: 1,
-          upcomingEvents: 1,
-          activePartnerships: 2,
-          partnershipEarnings: 11000,
-          totalRoomTypes: 2,
-          totalRooms: 8,
-          availableRooms: 6
-        };
-      }
-    },
-    enabled: !!user?.id
-  });
+        console.log('Fetching user hotels for user:', user?.id);
+        const response = await apiService.getUserAccommodations() as unknown as ApiResponse;
+        console.log('API response:', response);
+        
+        if (!response.success || !Array.isArray(response.data)) {
+          console.error('Invalid API response structure:', response);
+          throw new Error('Invalid response structure from API');
+        }
 
-  // Fetch hotel events
-  const { data: hotelEvents } = useQuery<HotelEvent[]>({
-    queryKey: ['hotel-events', user?.id],
-    queryFn: async (): Promise<HotelEvent[]> => {
-      try {
-        const result = await (apiService.getEvents?.() || Promise.resolve([]));
-        return Array.isArray(result) ? result : [];
+        const hotels = response.data
+          .filter((acc: any) => acc.type === 'hotel')
+          .map((acc: any) => ({
+            id: acc.id,
+            userId: user?.id || '',
+            name: acc.name,
+            description: acc.description || 'Hotel de qualidade com excelente localização',
+            address: acc.address || 'Endereço não definido',
+            contactEmail: acc.contactEmail || user?.email || '',
+            contactPhone: acc.contactPhone || '',
+            amenities: acc.amenities || [],
+            images: acc.images || [],
+            isActive: acc.isAvailable !== false,
+            createdAt: acc.createdAt || '2024-01-01',
+            updatedAt: acc.updatedAt || '2024-09-07',
+          }));
+        
+        console.log('Processed hotels:', hotels);
+        return hotels;
       } catch (error) {
+        console.error('Error fetching hotels:', error);
+        toast({
+          title: 'Erro',
+          description: 'Falha ao carregar hotéis',
+          variant: 'destructive',
+        });
         return [];
       }
     },
     enabled: !!user?.id,
-    initialData: [
-      {
-        id: '1',
-        title: 'Festival de Verão na Costa',
-        description: 'Evento musical com artistas locais',
-        eventType: 'festival',
-        venue: 'Costa do Sol Beach',
-        startDate: '2025-09-20',
-        endDate: '2025-09-22',
-        ticketPrice: 150,
-        maxTickets: 200,
-        ticketsSold: 45,
-        status: 'upcoming'
-      }
-    ]
+    retry: false,
   });
 
-  // Use accommodations hook
-  const { 
-    accommodations: realAccommodations, 
-    loading: accommodationsLoading, 
-    createAccommodation,
-    error: accommodationsError 
-  } = useAccommodations();
+  // ✅ CORREÇÃO CRÍTICA: useEffect corrigido para evitar loop infinito
+  const userHotel = useMemo(() => {
+    if (!userHotels || userHotels.length === 0) return null;
+    return userHotels.find((hotel: Hotel) => hotel.id === selectedHotelId) || userHotels[0];
+  }, [userHotels, selectedHotelId]);
 
-  // Mutation for creating event
-  const createEventMutation = useMutation({
-    mutationFn: (data: any) => apiService.createEvent?.(data) || Promise.resolve({ success: true }),
-    onSuccess: () => {
-      toast({ title: 'Sucesso', description: 'Evento criado com sucesso!' });
-      setShowCreateEvent(false);
-      setEventForm({ title: '', description: '', eventType: 'festival', venue: '', startDate: '', endDate: '', ticketPrice: 0, maxTickets: 100 });
-      queryClient.invalidateQueries({ queryKey: ['hotel-events'] });
+  // ✅ CORREÇÃO: useEffect otimizado para atualizar hotelForm apenas quando necessário
+  useEffect(() => {
+    if (hotelsLoading || !userHotel) return;
+
+    // ✅ CORREÇÃO: Verificar se os dados realmente mudaram antes de atualizar
+    const currentHotelData = {
+      name: userHotel.name,
+      address: userHotel.address,
+      description: userHotel.description,
+      contactEmail: userHotel.contactEmail,
+      contactPhone: userHotel.contactPhone,
+      amenities: userHotel.amenities,
+      images: userHotel.images,
+      isActive: userHotel.isActive
+    };
+
+    const existingHotelData = {
+      name: hotelForm.form.name,
+      address: hotelForm.form.address,
+      description: hotelForm.form.description,
+      contactEmail: hotelForm.form.contactEmail,
+      contactPhone: hotelForm.form.contactPhone,
+      amenities: hotelForm.form.amenities,
+      images: hotelForm.form.images,
+      isActive: hotelForm.form.isActive
+    };
+
+    // ✅ CORREÇÃO: Só atualiza se os dados forem diferentes
+    if (JSON.stringify(currentHotelData) !== JSON.stringify(existingHotelData)) {
+      console.log('🔄 Atualizando hotel form com dados do hotel selecionado');
+      hotelForm.setForm(currentHotelData);
+    }
+
+    // ✅ CORREÇÃO: Só define selectedHotelId se não estiver definido
+    if (!selectedHotelId && userHotel.id) {
+      setSelectedHotelId(userHotel.id);
+    }
+  }, [userHotel, hotelsLoading, selectedHotelId]); // ✅ REMOVIDO: hotelForm.updateForm das dependências
+
+  // ✅ CORREÇÃO: Usar hotelRooms do hook customizado
+  const displayedRooms = hotelRooms;
+
+  // ✅ CORREÇÃO: Mutação para atualizar hotel
+  const updateHotelMutation = useMutation({
+    mutationFn: async (hotelData: Partial<Hotel>) => {
+      return await apiService.updateHotel(userHotel!.id, {
+        name: hotelData.name,
+        address: hotelData.address,
+        description: hotelData.description,
+        contactEmail: hotelData.contactEmail,
+        contactPhone: hotelData.contactPhone,
+        amenities: hotelData.amenities,
+        images: hotelData.images,
+        isActive: hotelData.isActive,
+      });
     },
-    onError: () => {
-      toast({ title: 'Erro', description: 'Erro ao criar evento', variant: 'destructive' });
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Hotel atualizado com sucesso!' });
+      toggleModal('editHotel', false);
+      queryClient.invalidateQueries({ queryKey: ['user-hotels'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Falha ao atualizar hotel',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // ✅ ATUALIZADO: Hotel stats com useMemo para performance - VERSÃO COM EVENTOS REAIS
+  const hotelStats = useMemo((): HotelStats => {
+    const activeRooms = displayedRooms.filter(room => 
+      room.isActive !== false // ✅ Considera true ou undefined como ativo
+    );
+    
+    const totalRooms = activeRooms.reduce((sum, room) => 
+      sum + SafeNumber.toInt(room.totalRooms), 0
+    );
+    const availableRooms = activeRooms.reduce((sum, room) => 
+      sum + SafeNumber.toInt(room.availableRooms), 0
+    );
+
+    // ✅ USAR EVENTOS REAIS do usuário
+    const userEventsList = userEvents || [];
+    const upcomingEvents = userEventsList.filter((event: any) => 
+      new Date(event.startDate) > new Date()
+    ).length;
+
+    const activeEvents = userEventsList.filter((event: any) => 
+      event.status === 'upcoming' || event.status === 'active'
+    ).length;
+
+    console.log(`📊 Stats calculados: ${activeRooms.length} tipos, ${totalRooms} total, ${availableRooms} disponíveis, ${userEventsList.length} eventos totais, ${upcomingEvents} eventos futuros`);
+    
+    return {
+      totalBookings: 73,
+      monthlyRevenue: 224500,
+      averageRating: 4.8,
+      averageOccupancy: 82,
+      totalEvents: userEventsList.length, // ✅ Eventos totais REAIS
+      upcomingEvents: upcomingEvents, // ✅ Eventos futuros REAIS
+      activeEvents: activeEvents, // ✅ Eventos ativos
+      activePartnerships: 2,
+      partnershipEarnings: 11000,
+      totalRoomTypes: activeRooms.length, // ✅ Número de TIPOS de quarto ativos
+      totalRooms,
+      availableRooms
+    };
+  }, [displayedRooms, userEvents]);
+
+  // ✅ CORREÇÃO: Mutation para criar quarto usando SafeNumber - ATUALIZADA COM AUTENTICAÇÃO
+  const createRoomMutation = useMutation({
+    mutationFn: async (roomData: typeof roomForm.form) => {
+      if (!userHotel?.id) {
+        throw new Error('Hotel não selecionado');
+      }
+
+      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
+
+      const response = await fetch(`/api/hotels/${userHotel.id}/rooms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
+        },
+        body: JSON.stringify({
+          accommodationId: userHotel.id,
+          roomNumber: `Room-${Date.now()}`,
+          roomType: roomData.type,
+          description: roomData.description,
+          pricePerNight: SafeNumber.toFloat(roomData.pricePerNight),
+          maxOccupancy: SafeNumber.toInt(roomData.maxGuests),
+          bedType: roomData.bedType,
+          bedCount: 1,
+          hasPrivateBathroom: true,
+          hasAirConditioning: roomData.type === 'deluxe' || roomData.type === 'suite',
+          hasWifi: true,
+          hasTV: true,
+          hasBalcony: roomData.hasBalcony,
+          hasKitchen: roomData.type === 'suite',
+          amenities: roomData.amenities,
+          images: [],
+          isAvailable: true,
+          status: 'available'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao criar quarto');
+      }
+
+      return await response.json();
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        toast({ title: 'Sucesso', description: 'Quarto criado com sucesso!' });
+        toggleModal('createRoom', false);
+        roomForm.resetForm();
+        refetchRooms();
+      } else {
+        toast({ title: 'Erro', description: result.error || 'Falha ao criar quarto', variant: 'destructive' });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro', description: error.message || 'Erro ao criar quarto', variant: 'destructive' });
     }
   });
 
-  // Partnership and chat data
-  const driverPartnerships: DriverPartnership[] = [
+  // ✅ CORREÇÃO: Partnership and chat data com useMemo
+  const driverPartnerships = useMemo((): DriverPartnership[] => [
     {
       id: '1',
       driver: 'João M.',
@@ -301,9 +972,9 @@ export default function HotelsHome() {
       joinedDate: '2023-10-20',
       status: 'active'
     }
-  ];
+  ], []);
 
-  const driverChats = [
+  const driverChats = useMemo(() => [
     {
       id: 1,
       driver: 'João M.',
@@ -326,9 +997,9 @@ export default function HotelsHome() {
       status: 'active',
       rating: 4.9
     }
-  ];
+  ], []);
 
-  const chatMessages: Record<number, ChatMessage[]> = {
+  const chatMessages = useMemo((): Record<number, ChatMessage[]> => ({
     1: [
       { id: 1, sender: 'João M.', message: 'Olá! Vi o post sobre parceria com 15% de comissão', time: '13:00', isHotel: false },
       { id: 2, sender: 'Eu', message: 'Olá João! Sim, procuramos motoristas regulares para Beira', time: '13:15', isHotel: true },
@@ -339,136 +1010,49 @@ export default function HotelsHome() {
       { id: 2, sender: 'Eu', message: 'Excelente Maria! Já temos a reserva confirmada', time: '10:30', isHotel: true },
       { id: 3, sender: 'Maria S.', message: 'Cliente confirmado para amanhã', time: '11:15', isHotel: false }
     ]
-  };
+  }), []);
 
-  // Convert existing accommodations to room types
-  const roomTypes: RoomType[] = realAccommodations?.map((acc: any) => ({
-    id: acc.id,
-    hotelId: acc.hostId || '1',
-    name: acc.name,
-    type: acc.type === 'hotel_room' ? 'standard' : acc.type === 'hotel_suite' ? 'suite' : 'standard',
-    description: acc.description || '',
-    pricePerNight: Number(acc.pricePerNight),
-    totalRooms: 4,
-    availableRooms: acc.isAvailable ? 3 : 0,
-    images: acc.images || [],
-    amenities: acc.amenities || [],
-    size: 25,
-    bedType: 'Cama de Casal',
-    hasBalcony: (acc.amenities || []).includes('Varanda'),
-    hasSeaView: (acc.amenities || []).includes('Vista Mar'),
-    isActive: acc.isAvailable,
-    createdAt: '2024-01-01',
-    updatedAt: '2024-09-07',
-    address: acc.address,
-    rating: acc.rating || 0,
-    reviewCount: acc.reviewCount || 0
-  })) || [];
+  // ✅ CORREÇÃO: Handlers usando useCallback
+  const handleCreateEvent = useCallback(() => {
+    const eventData = {
+      ...eventForm.form,
+      organizerId: user?.id,
+      ticketPrice: SafeNumber.toFloat(eventForm.form.ticketPrice),
+      maxTickets: SafeNumber.toInt(eventForm.form.maxTickets)
+    };
+    createEventMutation.mutate(eventData);
+  }, [eventForm.form, user?.id, createEventMutation]);
 
-  const handleCreateAccommodation = async () => {
-    // Validações básicas
-    if (!accommodationForm.name?.trim()) {
-      toast({ title: "Erro", description: "Nome da propriedade é obrigatório", variant: "destructive" });
+  const handleCreateRoom = useCallback(() => {
+    if (!roomForm.form.name.trim()) {
+      toast({ title: "Erro", description: "Nome do quarto é obrigatório", variant: "destructive" });
       return;
     }
 
-    if (!accommodationForm.pricePerNight || accommodationForm.pricePerNight <= 0) {
+    if (!roomForm.form.pricePerNight || SafeNumber.toFloat(roomForm.form.pricePerNight) <= 0) {
       toast({ title: "Erro", description: "Preço por noite deve ser maior que zero", variant: "destructive" });
       return;
     }
 
-    if (!accommodationForm.address?.trim()) {
-      toast({ title: "Erro", description: "Endereço é obrigatório", variant: "destructive" });
-      return;
-    }
+    createRoomMutation.mutate(roomForm.form);
+  }, [roomForm.form, createRoomMutation, toast]);
 
-    if (!accommodationForm.description?.trim()) {
-      toast({ title: "Erro", description: "Descrição é obrigatória", variant: "destructive" });
-      return;
-    }
-
-    try {
-      const result = await createAccommodation({
-        name: accommodationForm.name,
-        type: accommodationForm.type || 'hotel_room',          // garante string
-        address: accommodationForm.address || '',               // garante string
-        description: accommodationForm.description || '',       // garante string
-        maxGuests: accommodationForm.maxGuests || 2,
-        amenities: accommodationForm.amenities || [],
-        images: accommodationForm.images || [],
-        isAvailable: accommodationForm.isAvailable ?? true,    // garante boolean
-        bedrooms: accommodationForm.bedrooms ?? 1,             // valor padrão
-        bathrooms: accommodationForm.bathrooms ?? 1,           // valor padrão
-      });
-
-      if (result.success) {
-        toast({ title: "Sucesso", description: "Acomodação criada com sucesso!" });
-        setShowHotelSetup(false);
-        setAccommodationForm({
-          name: '',
-          address: '',
-          type: 'hotel_room',
-          pricePerNight: 0,
-          amenities: [],
-          description: '',
-          images: [],
-          isAvailable: true,
-          maxGuests: 2,
-          bedrooms: 1,
-          bathrooms: 1,
-          unavailableDates: []
-        });
-      } else {
-        toast({ title: "Erro", description: result.error || "Falha ao criar acomodação", variant: "destructive" });
-      }
-    } catch (error: any) {
-      toast({ title: "Erro", description: error.message || "Erro ao criar acomodação", variant: "destructive" });
-    }
-  };
-
-  const handleCreateEvent = () => {
-    const eventData = {
-      ...eventForm,
-      organizerId: user?.id,
-      ticketPrice: parseFloat(eventForm.ticketPrice.toString()),
-      maxTickets: parseInt(eventForm.maxTickets.toString())
-    };
-    createEventMutation.mutate(eventData);
-  };
-
-  const handleCreateNewRoomType = () => {
-    console.log("Criando novo tipo de quarto...");
-    setShowHotelSetup(true);
-    toast({ 
-      title: "Novo Tipo de Quarto", 
-      description: "Adicione as informações do novo tipo de quarto." 
+  const handleWizardSubmit = useCallback((hotelId: string) => {
+    toast({
+      title: wizardMode === 'create' ? "Hotel Criado" : "Hotel Atualizado",
+      description: wizardMode === 'create' 
+        ? "Hotel criado com sucesso!" 
+        : "Hotel foi atualizado com sucesso"
     });
-  };
-
-  // Funções para manipular o Hotel Wizard
-  const handleWizardClose = () => {
+    
     setIsWizardOpen(false);
     setEditingRoom(null);
     setWizardMode('create');
-  };
+    queryClient.invalidateQueries({ queryKey: ['user-hotels'] });
+    refetchRooms();
+  }, [wizardMode, toast, queryClient, refetchRooms]);
 
-  const handleWizardSubmit = (formData: any) => {
-    console.log('Dados do wizard submetidos:', formData);
-    
-    // Aqui você pode adicionar a lógica para atualizar o quarto no backend
-    toast({
-      title: "Quarto Atualizado",
-      description: `${formData.rooms?.[0]?.name || 'Quarto'} foi atualizado com sucesso`
-    });
-    
-    handleWizardClose();
-    
-    // Recarregar os dados se necessário
-    // queryClient.invalidateQueries({ queryKey: ['accommodations'] });
-  };
-
-  const handleEditRoom = (roomType: RoomType) => {
-    console.log("Editando quarto:", roomType.id);
+  const handleEditRoom = useCallback((roomType: RoomType) => {
     setEditingRoom(roomType);
     setWizardMode('edit');
     setIsWizardOpen(true);
@@ -477,19 +1061,17 @@ export default function HotelsHome() {
       title: "Editando Quarto",
       description: `Abrindo editor para ${roomType.name}`
     });
-  };
+  }, [toast]);
 
-  const handleViewDetails = (roomType: RoomType) => {
+  const handleViewDetails = useCallback((roomType: RoomType) => {
     console.log("Visualizando detalhes do quarto:", roomType.id);
     toast({ 
       title: "Detalhes do Quarto", 
       description: `Visualizando ${roomType.name}` 
     });
-  };
+  }, [toast]);
 
-  const handleConfigureRoom = (roomType: RoomType) => {
-    console.log("Configurando quarto:", roomType.id);
-    // Você pode usar o mesmo wizard ou criar um modal específico
+  const handleConfigureRoom = useCallback((roomType: RoomType) => {
     setEditingRoom(roomType);
     setWizardMode('edit');
     setIsWizardOpen(true);
@@ -498,29 +1080,166 @@ export default function HotelsHome() {
       title: "Configurar Quarto", 
       description: `Configurando ${roomType.name}` 
     });
-  };
+  }, [toast]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = useCallback(() => {
     if (!newMessage.trim() || !selectedChat) return;
     console.log('Sending message:', newMessage, 'to driver:', selectedChat);
     setNewMessage('');
-    // TODO: Implement message sending logic
+  }, [newMessage, selectedChat]);
+
+  // ✅ CORREÇÃO: Adicionando as funções que estavam faltando
+  const handleQuickEdit = useCallback((room: RoomType) => {
+    setQuickEditModal({
+      open: true,
+      room: { ...room }
+    });
+  }, []);
+
+  const handleQuickSave = useCallback(() => {
+    if (!quickEditModal.room) return;
+
+    updateRoomMutation.mutate({
+      roomId: quickEditModal.room.id,
+      roomData: {
+        name: quickEditModal.room.name,
+        pricePerNight: SafeNumber.toFloat(quickEditModal.room.pricePerNight),
+        maxGuests: SafeNumber.toInt(quickEditModal.room.maxGuests),
+        totalRooms: SafeNumber.toInt(quickEditModal.room.totalRooms),
+        availableRooms: SafeNumber.toInt(quickEditModal.room.availableRooms),
+        description: quickEditModal.room.description,
+        isActive: quickEditModal.room.isActive
+      }
+    });
+
+    setQuickEditModal({ open: false, room: null });
+  }, [quickEditModal.room, updateRoomMutation]);
+
+  const handleDeleteRoom = useCallback((room: RoomType) => {
+    setDeleteModal({
+      open: true,
+      room
+    });
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    if (!deleteModal.room) return;
+
+    deleteRoomMutation.mutate(deleteModal.room.id);
+    setDeleteModal({ open: false, room: null });
+  }, [deleteModal.room, deleteRoomMutation]);
+
+  const stats = hotelStats;
+
+  // ✅ CORREÇÃO: getWizardInitialData com useMemo
+  const getWizardInitialData = useMemo((): HotelFormData | undefined => {
+    if (!editingRoom && wizardMode !== 'edit') return undefined;
+
+    const extractLocationInfo = (address: string) => {
+      if (address.includes('Maputo')) return { city: 'Maputo', state: 'Maputo', country: 'Moçambique', zipCode: '1100' };
+      if (address.includes('Beira')) return { city: 'Beira', state: 'Sofala', country: 'Moçambique', zipCode: '2100' };
+      if (address.includes('Nampula')) return { city: 'Nampula', state: 'Nampula', country: 'Moçambique', zipCode: '3100' };
+      return { city: 'Maputo', state: 'Maputo', country: 'Moçambique', zipCode: '1100' };
+    };
+
+    const locationInfo = extractLocationInfo(userHotel?.address || '');
+
+    return {
+      name: userHotel?.name || 'Meu Hotel',
+      description: userHotel?.description || '',
+      category: 'hotel',
+      email: userHotel?.contactEmail || user?.email || '',
+      phone: userHotel?.contactPhone || '',
+      address: userHotel?.address || '',
+      city: locationInfo.city,
+      state: locationInfo.state,
+      country: locationInfo.country,
+      zipCode: locationInfo.zipCode,
+      location: { lat: 0, lng: 0 },
+      amenities: userHotel?.amenities || [],
+      rooms: editingRoom ? [{
+        id: editingRoom.id,
+        name: editingRoom.name,
+        type: editingRoom.type,
+        maxOccupancy: SafeNumber.toInt(editingRoom.maxGuests),
+        quantity: SafeNumber.toInt(editingRoom.totalRooms),
+        pricePerNight: SafeNumber.toFloat(editingRoom.pricePerNight),
+        description: editingRoom.description || '',
+        amenities: editingRoom.amenities || [],
+        images: editingRoom.images || [],
+        size: SafeNumber.toInt(editingRoom.size),
+        bedType: editingRoom.bedType,
+        hasBalcony: editingRoom.hasBalcony,
+        hasSeaView: editingRoom.hasSeaView
+      }] : [],
+      images: userHotel?.images || [],
+      existingImages: userHotel?.images || [],
+      checkInTime: '15:00',
+      checkOutTime: '11:00',
+      policies: ['Cancelamento gratuito até 24h antes'],
+      isActive: true
+    };
+  }, [editingRoom, wizardMode, userHotel, user]);
+
+  // ✅ ADICIONADO: Componente de Paginação para Eventos
+  const EventsPagination = () => {
+    if (!userEvents || userEvents.length <= EVENTS_PER_PAGE) return null;
+
+    return (
+      <div className="flex items-center justify-between mt-6">
+        <div className="text-sm text-gray-600">
+          Mostrando {((currentEventsPage - 1) * EVENTS_PER_PAGE) + 1} - {Math.min(currentEventsPage * EVENTS_PER_PAGE, userEvents.length)} de {userEvents.length} eventos
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={prevEventsPage}
+            disabled={currentEventsPage === 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Anterior
+          </Button>
+          <span className="text-sm font-medium">
+            Página {currentEventsPage} de {totalEventsPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={nextEventsPage}
+            disabled={currentEventsPage === totalEventsPages}
+          >
+            Próxima
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
   };
 
-  // Complete stats based on room types and hotelStats
-  const stats = hotelStats || {
-    totalRoomTypes: roomTypes?.length || 0,
-    totalRooms: roomTypes?.reduce((sum, rt) => sum + rt.totalRooms, 0) || 0,
-    availableRooms: roomTypes?.reduce((sum, rt) => sum + rt.availableRooms, 0) || 0,
-    monthlyRevenue: 224500,
-    averageRating: roomTypes?.reduce((sum, rt) => sum + (rt.rating || 0), 0) / (roomTypes?.length || 1) || 0,
-    averageOccupancy: 82,
-    totalEvents: hotelEvents?.length || 0,
-    upcomingEvents: hotelEvents?.filter(e => e.status === 'upcoming').length || 0,
-    activePartnerships: driverPartnerships.filter(p => p.status === 'active').length || 0,
-    partnershipEarnings: driverPartnerships.reduce((sum, p) => sum + p.lastMonth, 0) || 0,
-    totalBookings: 73
-  };
+  // ✅ CORREÇÃO: Debug para verificar estado atual
+  console.log('🔍 DEBUG - Estado atual:');
+  console.log('  selectedHotelId:', selectedHotelId);
+  console.log('  userHotel:', userHotel);
+  console.log('  hotelRooms:', hotelRooms);
+  console.log('  displayedRooms:', displayedRooms);
+  console.log('  roomsLoading:', roomsLoading);
+  console.log('  userEvents:', userEvents);
+
+  // ✅ MODIFICADO: Renderização condicional baseada em showHotelCreation
+  if (showHotelCreation) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <HotelCreationWizard
+          open={isWizardOpen}
+          onCancel={handleWizardCancel}
+          onSuccess={handleWizardSuccess}
+          mode={wizardMode}
+          initialData={getWizardInitialData}
+        />
+      </div>
+    );
+  }
 
   if (!user) {
     return (
@@ -543,27 +1262,68 @@ export default function HotelsHome() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-teal-600 bg-clip-text text-transparent">
-              Link-A Alojamentos
-            </h1>
+            {hotelsLoading ? (
+              <div className="w-[200px] h-10 flex items-center justify-center">
+                <span className="text-gray-500">Carregando hotéis...</span>
+              </div>
+            ) : (
+              <Select
+                value={selectedHotelId || userHotels?.[0]?.id || ''}
+                onValueChange={(value) => {
+                  setSelectedHotelId(value);
+                }}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Selecione um hotel" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userHotels?.length ? (
+                    userHotels.map((hotel) => (
+                      <SelectItem key={hotel.id} value={hotel.id}>
+                        {hotel.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-hotels" disabled>
+                      Nenhum hotel encontrado
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            )}
             <Badge className="bg-green-100 text-green-700 hover:bg-green-200">
-              Gestão Simplificada
+              {displayedRooms?.length || 0} Tipos de Quarto
             </Badge>
           </div>
-          
+
           <div className="flex items-center space-x-4">
-            {/* Botão para criar novo hotel usando o wizard */}
-            <Link href="/hotels/create">
-              <Button className="bg-green-600 hover:bg-green-700">
+            <Link href={`/hotels/manage-hotel/${selectedHotelId || userHotels?.[0]?.id}`}>
+              <Button
+                className="bg-green-600 hover:bg-green-700"
+                disabled={hotelsLoading || !userHotels?.length}
+              >
                 <Plus className="w-4 h-4 mr-2" />
-                Criar Novo Hotel
+                Adicionar Quarto
               </Button>
             </Link>
-
+            <Button
+              onClick={() => toggleModal('editHotel', true)}
+              variant="outline"
+              disabled={hotelsLoading || !userHotels?.length}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Editar Hotel
+            </Button>
+            <Button
+              onClick={handleCreateNewHotel}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <Hotel className="w-4 h-4 mr-2" />
+              Criar Novo Hotel
+            </Button>
             <Link href="/" data-testid="link-main-app">
               <Button variant="outline">
                 <Home className="w-4 h-4 mr-2" />
@@ -579,1063 +1339,1493 @@ export default function HotelsHome() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Cards de Ação Rápida */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Card de Criar Hotel */}
-          <Link href="/hotels/create">
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-dashed border-green-200 hover:border-green-400 bg-gradient-to-br from-green-50 to-green-100">
-              <CardContent className="pt-6 text-center">
-                <div className="text-green-600 mb-4">
-                  <Hotel className="w-12 h-12 mx-auto" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Criar Novo Hotel
-                </h3>
-                <p className="text-gray-600 text-sm">
-                  Use nosso wizard completo para cadastrar um novo estabelecimento
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {/* Card de Gerenciar Hotéis */}
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
-            <CardContent className="pt-6 text-center">
-              <div className="text-blue-600 mb-4">
-                <Building2 className="w-12 h-12 mx-auto" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Meus Hotéis
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Visualize e gerencie seus estabelecimentos existentes
+        {hotelsLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-pulse text-gray-500">Carregando dados do hotel...</div>
+          </div>
+        ) : !userHotels?.length ? (
+          <Card className="text-center">
+            <CardContent className="pt-6">
+              <Hotel className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-medium mb-2">Nenhum hotel cadastrado</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Comece criando um novo hotel para gerenciar quartos e reservas.
               </p>
+              <Button
+                onClick={handleCreateNewHotel}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Hotel className="w-4 h-4 mr-2" />
+                Criar Novo Hotel
+              </Button>
             </CardContent>
           </Card>
-
-          {/* Card de Relatórios */}
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
-            <CardContent className="pt-6 text-center">
-              <div className="text-purple-600 mb-4">
-                <BarChart3 className="w-12 h-12 mx-auto" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Relatórios
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Acesse relatórios e estatísticas detalhadas
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-green-50 to-green-100">
-            <CardContent className="pt-6">
-              <div className="flex items-center">
-                <div className="p-3 bg-green-500 rounded-lg">
-                  <Hotel className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-green-700">Quartos Disponíveis</p>
-                  <p className="text-3xl font-bold text-green-900">{stats.availableRooms}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
-            <CardContent className="pt-6">
-              <div className="flex items-center">
-                <div className="p-3 bg-blue-500 rounded-lg">
-                  <Users className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-blue-700">Reservas Total</p>
-                  <p className="text-3xl font-bold text-blue-900">{stats.totalBookings}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
-            <CardContent className="pt-6">
-              <div className="flex items-center">
-                <div className="p-3 bg-purple-500 rounded-lg">
-                  <TrendingUp className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-purple-700">Taxa Ocupação</p>
-                  <p className="text-3xl font-bold text-purple-900">{stats.averageOccupancy.toFixed(0)}%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100">
-            <CardContent className="pt-6">
-              <div className="flex items-center">
-                <div className="p-3 bg-yellow-500 rounded-lg">
-                  <DollarSign className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-yellow-700">Receita Mensal</p>
-                  <p className="text-3xl font-bold text-yellow-900">{stats.monthlyRevenue.toLocaleString()} MT</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tab management */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="accommodations">Acomodações</TabsTrigger>
-            <TabsTrigger value="partnerships">Parcerias</TabsTrigger>
-            <TabsTrigger value="events">Eventos</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5" />
-                  Dashboard do Alojamento
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Hotel profile */}
-                <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">Perfil do Estabelecimento</h3>
-                    <Button variant="outline" size="sm" onClick={() => setEditingProfile(!editingProfile)}>
-                      <Edit className="w-4 h-4 mr-2" />
-                      {editingProfile ? 'Cancelar' : 'Editar'}
-                    </Button>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <Card 
+                className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-dashed border-green-200 hover:border-green-400 bg-gradient-to-br from-green-50 to-green-100"
+                onClick={() => toggleModal('createRoom', true)}
+              >
+                <CardContent className="pt-6 text-center">
+                  <div className="text-green-600 mb-4">
+                    <Plus className="w-12 h-12 mx-auto" />
                   </div>
-                  
-                  {!editingProfile ? (
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-sm text-gray-600">Nome do Hotel</p>
-                        <p className="font-medium">{(hotelProfile as any)?.firstName || 'Hotel Costa do Sol'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Localização</p>
-                        <p className="font-medium">Costa do Sol, Maputo</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Descrição</p>
-                        <p className="text-sm">Hotel boutique com vista para o mar, oferecendo experiências únicas aos hóspedes.</p>
-                      </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Adicionar Quarto
+                  </h3>
+                  <p className="text-gray-600 text-sm">
+                    Crie um novo tipo de quarto no seu hotel
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                <CardContent className="pt-6 text-center">
+                  <div className="text-blue-600 mb-4">
+                    <Building2 className="w-12 h-12 mx-auto" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Meu Hotel
+                  </h3>
+                  <p className="text-gray-600 text-sm">
+                    Visualize e gerencie seu estabelecimento
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                <CardContent className="pt-6 text-center">
+                  <div className="text-purple-600 mb-4">
+                    <BarChart3 className="w-12 h-12 mx-auto" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Relatórios
+                  </h3>
+                  <p className="text-gray-600 text-sm">
+                    Acesse relatórios e estatísticas detalhadas
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                <CardContent className="pt-6">
+                  <div className="flex items-center">
+                    <div className="p-3 bg-green-500 rounded-lg">
+                      <Hotel className="h-6 w-6 text-white" />
                     </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="hotel-name">Nome do Hotel</Label>
-                        <Input id="hotel-name" defaultValue={(hotelProfile as any)?.firstName || 'Hotel Costa do Sol'} />
-                      </div>
-                      <div>
-                        <Label htmlFor="hotel-location">Localização</Label>
-                        <LocationAutocomplete
-                          id="hotel-location"
-                          value="Costa do Sol, Maputo"
-                          onChange={(value) => console.log(value)}
-                          placeholder="Localização do hotel..."
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="hotel-description">Descrição</Label>
-                        <Textarea 
-                          id="hotel-description" 
-                          defaultValue="Hotel boutique com vista para o mar, oferecendo experiências únicas aos hóspedes."
-                          rows={3}
-                        />
-                      </div>
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                        <Save className="w-4 h-4 mr-2" />
-                        Salvar Perfil
-                      </Button>
+                    <div className="ml-4">
+                      <p className="text-sm font-medium text-green-700">Quartos Disponíveis</p>
+                      <p className="text-3xl font-bold text-green-900">{stats.availableRooms}</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                {/* Dashboard statistics */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">{stats.availableRooms}</p>
-                    <p className="text-sm text-gray-600">Quartos Disponíveis</p>
-                  </div>
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <p className="text-2xl font-bold text-blue-600">{stats.totalBookings}</p>
-                    <p className="text-sm text-gray-600">Reservas Total</p>
-                  </div>
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-2xl font-bold text-yellow-600">{stats.monthlyRevenue.toLocaleString()}</p>
-                    <p className="text-sm text-gray-600">Receita (MT)</p>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <p className="text-2xl font-bold text-purple-600">{stats.activePartnerships}</p>
-                    <p className="text-sm text-gray-600">Parcerias Ativas</p>
-                  </div>
-                </div>
-                
-                {/* Additional statistics */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 bg-orange-50 rounded-lg">
-                    <p className="text-2xl font-bold text-orange-600">{stats.averageRating.toFixed(1)}</p>
-                    <p className="text-sm text-gray-600">Avaliação Média</p>
-                  </div>
-                  <div className="text-center p-4 bg-indigo-50 rounded-lg">
-                    <p className="text-2xl font-bold text-indigo-600">{stats.upcomingEvents}</p>
-                    <p className="text-sm text-gray-600">Eventos Próximos</p>
-                  </div>
-                  <div className="text-center p-4 bg-teal-50 rounded-lg">
-                    <p className="text-2xl font-bold text-teal-600">{stats.partnershipEarnings.toLocaleString()}</p>
-                    <p className="text-sm text-gray-600">Ganhos Parcerias (MT)</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="accommodations">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="w-5 h-5" />
-                    Gestão de Quartos
-                  </CardTitle>
-                  <div className="flex gap-2">
-                    <Link href="/hotels/create">
-                      <Button className="bg-green-600 hover:bg-green-700">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Novo Hotel (Wizard)
-                      </Button>
-                    </Link>
-                    <Button 
-                      onClick={handleCreateNewRoomType}
-                      variant="outline"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Tipo de Quarto Rápido
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="published">
-                  <TabsList>
-                    <TabsTrigger value="published">Publicadas ({stats.availableRooms})</TabsTrigger>
-                    <TabsTrigger value="reservations">Reservas</TabsTrigger>
-                    <TabsTrigger value="conditions">Condições</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="published" className="space-y-4">
-                    {accommodationsLoading ? (
-                      <div>Carregando acomodações...</div>
-                    ) : accommodationsError ? (
-                      <div>Erro ao carregar acomodações</div>
-                    ) : realAccommodations.length === 0 ? (
-                      <div className="text-center py-12 text-gray-500">
-                        <Building2 className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                        <h3 className="text-lg font-medium mb-2">Nenhuma acomodação criada</h3>
-                        <p className="text-sm mb-4">Use nosso wizard completo para criar seu primeiro hotel com todos os detalhes.</p>
-                        <Link href="/hotels/create">
-                          <Button className="bg-green-600 hover:bg-green-700">
-                            <Hotel className="w-4 h-4 mr-2" />
-                            Criar Primeiro Hotel
-                          </Button>
-                        </Link>
-                      </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        {roomTypes?.filter(rt => rt.isActive).map((roomType: RoomType) => (
-                          <Card key={roomType.id} className="border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
-                            <CardContent className="pt-6">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <div className="p-2 bg-green-100 rounded-lg">
-                                      <Building2 className="h-5 w-5 text-green-600" />
-                                    </div>
-                                    <div>
-                                      <h3 className="font-semibold text-lg">{roomType.name}</h3>
-                                      <Badge variant="secondary" className="mt-1">{roomType.type}</Badge>
-                                      <Badge 
-                                        variant={roomType.isActive ? "default" : "secondary"}
-                                        className={`ml-2 ${roomType.isActive ? 'bg-green-100 text-green-800' : ''}`}
-                                      >
-                                        {roomType.isActive ? 'Ativo' : 'Inativo'}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="space-y-2 mb-4">
-                                    <div className="flex items-center gap-2 text-gray-600">
-                                      <MapPin className="h-4 w-4" />
-                                      <span className="text-sm">{roomType.address}</span>
-                                    </div>
-                                    
-                                    {roomType.amenities && roomType.amenities.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {roomType.amenities.map((amenity: string, index: number) => (
-                                          <Badge key={index} variant="outline" className="text-xs">{amenity}</Badge>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                    <div className="flex items-center gap-1 text-gray-600">
-                                      <Star className="h-4 w-4 text-yellow-500" />
-                                      <span>{roomType.rating} ({roomType.reviewCount})</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-gray-600">
-                                      <DollarSign className="h-4 w-4" />
-                                      <span className="font-semibold">{roomType.pricePerNight.toLocaleString()} MT</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-gray-600">
-                                      <Users className="h-4 w-4" />
-                                      <span>{roomType.totalRooms} quartos</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-gray-600">
-                                      <TrendingUp className="h-4 w-4" />
-                                      <span>{roomType.availableRooms} disponíveis</span>
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-col gap-2 ml-4">
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    onClick={() => handleEditRoom(roomType)}
-                                  >
-                                    <Edit className="w-4 h-4 mr-1" />
-                                    Editar
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    onClick={() => handleViewDetails(roomType)}
-                                  >
-                                    <Eye className="w-4 h-4 mr-1" />
-                                    Ver Detalhes
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    onClick={() => handleConfigureRoom(roomType)}
-                                  >
-                                    <Settings className="w-4 h-4 mr-1" />
-                                    Configurar
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="reservations">
-                    <div className="text-center py-8 text-gray-500">
-                      <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">Gestão de Reservas</h3>
-                      <p className="text-sm mb-4">Gerir reservas ativas, confirmadas e canceladas.</p>
-                      <Button variant="outline">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Ver Todas as Reservas
-                      </Button>
+              <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                <CardContent className="pt-6">
+                  <div className="flex items-center">
+                    <div className="p-3 bg-blue-500 rounded-lg">
+                      <Users className="h-6 w-6 text-white" />
                     </div>
-                  </TabsContent>
+                    <div className="ml-4">
+                      <p className="text-sm font-medium text-blue-700">Reservas Total</p>
+                      <p className="text-3xl font-bold text-blue-900">{stats.totalBookings}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                  <TabsContent value="conditions">
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold mb-4">Condições de Reserva</h3>
+              <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                <CardContent className="pt-6">
+                  <div className="flex items-center">
+                    <div className="p-3 bg-purple-500 rounded-lg">
+                      <TrendingUp className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm font-medium text-purple-700">Taxa Ocupação</p>
+                      <p className="text-3xl font-bold text-purple-900">{stats.averageOccupancy.toFixed(0)}%</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100">
+                <CardContent className="pt-6">
+                  <div className="flex items-center">
+                    <div className="p-3 bg-yellow-500 rounded-lg">
+                      <DollarSign className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm font-medium text-yellow-700">Receita Mensal</p>
+                      <p className="text-3xl font-bold text-yellow-900">{stats.monthlyRevenue.toLocaleString()} MT</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+                <TabsTrigger value="accommodations">Quartos</TabsTrigger>
+                <TabsTrigger value="partnerships">Parcerias</TabsTrigger>
+                <TabsTrigger value="events">Eventos</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="dashboard">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5" />
+                      Dashboard do Hotel - {userHotel?.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-lg">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold">Perfil do Hotel</h3>
+                        <Button variant="outline" size="sm" onClick={() => toggleModal('editHotel', !modals.editHotel)}>
+                          <Edit className="w-4 h-4 mr-2" />
+                          {modals.editHotel ? 'Cancelar' : 'Editar'}
+                        </Button>
+                      </div>
                       
-                      <div className="grid gap-4">
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="space-y-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <h4 className="font-medium">Política de Cancelamento</h4>
-                                  <p className="text-sm text-gray-600">Cancelamento gratuito até 24 horas antes</p>
-                                </div>
-                                <Switch defaultChecked />
-                              </div>
-                              
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <h4 className="font-medium">Check-in Automático</h4>
-                                  <p className="text-sm text-gray-600">Permitir check-in sem presença do anfitrião</p>
-                                </div>
-                                <Switch />
-                              </div>
-                              
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <h4 className="font-medium">Reserva Instantânea</h4>
-                                  <p className="text-sm text-gray-600">Aprovação automática de reservas</p>
-                                </div>
-                                <Switch defaultChecked />
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        
-                        <Card>
-                          <CardContent className="pt-6">
-                            <h4 className="font-medium mb-4">Horários de Check-in/Check-out</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label>Check-in</Label>
-                                <Input type="time" defaultValue="15:00" />
-                              </div>
-                              <div>
-                                <Label>Check-out</Label>
-                                <Input type="time" defaultValue="11:00" />
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
+                      {modals.editHotel ? (
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="hotel-name">Nome do Hotel</Label>
+                            <Input
+                              id="hotel-name"
+                              value={hotelForm.form.name}
+                              onChange={(e) =>
+                                hotelForm.updateForm({ name: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="hotel-location">Localização</Label>
+                            <LocationAutocomplete
+                              id="hotel-location"
+                              value={hotelForm.form.address}
+                              onChange={(value) =>
+                                hotelForm.updateForm({ address: value })
+                              }
+                              placeholder="Localização do hotel..."
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="hotel-description">Descrição</Label>
+                            <Textarea
+                              id="hotel-description"
+                              value={hotelForm.form.description}
+                              onChange={(e) =>
+                                hotelForm.updateForm({ description: e.target.value })
+                              }
+                              rows={3}
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                              updateHotelMutation.mutate({
+                                name: hotelForm.form.name || userHotel?.name,
+                                address: hotelForm.form.address || userHotel?.address,
+                                description: hotelForm.form.description || userHotel?.description,
+                                contactEmail: hotelForm.form.contactEmail || userHotel?.contactEmail,
+                                contactPhone: hotelForm.form.contactPhone || userHotel?.contactPhone,
+                                amenities: hotelForm.form.amenities || userHotel?.amenities,
+                                images: hotelForm.form.images || userHotel?.images,
+                                isActive: hotelForm.form.isActive !== undefined ? hotelForm.form.isActive : userHotel?.isActive,
+                              });
+                            }}
+                            disabled={updateHotelMutation.isPending}
+                          >
+                            <Save className="w-4 h-4 mr-2" />
+                            {updateHotelMutation.isPending ? 'Salvando...' : 'Salvar Perfil'}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-sm text-gray-600">Nome do Hotel</p>
+                            <p className="font-medium">{userHotel?.name}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Localização</p>
+                            <p className="font-medium">{userHotel?.address}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Descrição</p>
+                            <p className="text-sm">{userHotel?.description}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Contacto</p>
+                            <p className="font-medium">{userHotel?.contactEmail}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="text-center p-4 bg-green-50 rounded-lg">
+                        <p className="text-2xl font-bold text-green-600">{stats.availableRooms}</p>
+                        <p className="text-sm text-gray-600">Quartos Disponíveis</p>
+                      </div>
+                      <div className="text-center p-4 bg-blue-50 rounded-lg">
+                        <p className="text-2xl font-bold text-blue-600">{stats.totalBookings}</p>
+                        <p className="text-sm text-gray-600">Reservas Total</p>
+                      </div>
+                      <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                        <p className="text-2xl font-bold text-yellow-600">{stats.monthlyRevenue.toLocaleString()}</p>
+                        <p className="text-sm text-gray-600">Receita (MT)</p>
+                      </div>
+                      <div className="text-center p-4 bg-purple-50 rounded-lg">
+                        <p className="text-2xl font-bold text-purple-600">{stats.activePartnerships}</p>
+                        <p className="text-sm text-gray-600">Parcerias Ativas</p>
                       </div>
                     </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
-          <TabsContent value="partnerships">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Partnership list */}
-              <div className="lg:col-span-2">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="text-center p-4 bg-orange-50 rounded-lg">
+                        <p className="text-2xl font-bold text-orange-600">{stats.averageRating.toFixed(1)}</p>
+                        <p className="text-sm text-gray-600">Avaliação Média</p>
+                      </div>
+                      <div className="text-center p-4 bg-indigo-50 rounded-lg">
+                        <p className="text-2xl font-bold text-indigo-600">{stats.upcomingEvents}</p>
+                        <p className="text-sm text-gray-600">Eventos Próximos</p>
+                      </div>
+                      <div className="text-center p-4 bg-teal-50 rounded-lg">
+                        <p className="text-2xl font-bold text-teal-600">{stats.partnershipEarnings.toLocaleString()}</p>
+                        <p className="text-sm text-gray-600">Ganhos Parcerias (MT)</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="accommodations">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2">
-                        <Handshake className="w-5 h-5" />
-                        Parcerias com Motoristas
+                        <Building2 className="w-5 h-5" />
+                        Gestão de Quartos - {userHotel?.name}
                       </CardTitle>
-                      <Button onClick={() => setShowCreatePartnership(true)} size="sm" className="bg-green-600 hover:bg-green-700">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Nova Parceria
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {driverPartnerships.map((partnership) => (
-                        <Card key={partnership.id} className="border-l-4 border-l-blue-500">
-                          <CardContent className="pt-4">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-2">
-                                  <div className="p-2 bg-blue-100 rounded-lg">
-                                    <Users className="h-4 w-4 text-blue-600" />
-                                  </div>
-                                  <div>
-                                    <h4 className="font-semibold">{partnership.driver}</h4>
-                                    <p className="text-sm text-gray-600">{partnership.route}</p>
-                                  </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                  <div>
-                                    <span className="text-gray-600">Comissão:</span>
-                                    <p className="font-semibold">{partnership.commission}%</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Clientes:</span>
-                                    <p className="font-semibold">{partnership.clientsBrought}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Este mês:</span>
-                                    <p className="font-semibold">{partnership.lastMonth.toLocaleString()} MT</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Avaliação:</span>
-                                    <div className="flex items-center gap-1">
-                                      <Star className="h-3 w-3 text-yellow-500" />
-                                      <span className="font-semibold">{partnership.rating}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <div className="flex flex-col gap-2">
-                                <Badge 
-                                  variant={partnership.status === 'active' ? 'default' : 'secondary'}
-                                  className={partnership.status === 'active' ? 'bg-green-100 text-green-800' : ''}
-                                >
-                                  {partnership.status === 'active' ? 'Ativa' : 'Inactiva'}
-                                </Badge>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline" 
-                                  onClick={() => setSelectedChat(parseInt(partnership.id))}
-                                >
-                                  <MessageCircle className="w-3 h-3 mr-1" />
-                                  Chat
-                                </Button>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-              
-              {/* Integrated chat */}
-              <div>
-                <Card className="h-fit">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <MessageCircle className="w-4 h-4" />
-                      Chat Motoristas
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {!selectedChat ? (
-                      <div className="text-center py-8 text-gray-500">
-                        <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Selecione uma parceria para iniciar o chat</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* Chat header */}
-                        <div className="flex items-center gap-3 pb-3 border-b">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <Users className="h-4 w-4 text-blue-600" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium">{driverChats.find(c => c.id === selectedChat)?.driver}</h4>
-                            <p className="text-xs text-gray-600">{driverChats.find(c => c.id === selectedChat)?.route}</p>
-                          </div>
-                        </div>
-                        
-                        {/* Messages */}
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                          {chatMessages[selectedChat]?.map((msg) => (
-                            <div key={msg.id} className={`flex ${msg.isHotel ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-xs p-3 rounded-lg text-sm ${
-                                msg.isHotel 
-                                  ? 'bg-green-600 text-white' 
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                <p>{msg.message}</p>
-                                <p className={`text-xs mt-1 ${
-                                  msg.isHotel ? 'text-green-100' : 'text-gray-500'
-                                }`}>
-                                  {msg.time}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                                               
-                        {/* Message input */}
-                        <div className="flex gap-2 pt-3 border-t">
-                          <Input 
-                            placeholder="Escreva sua mensagem..."
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                          />
-                          <Button 
-                            size="sm" 
-                            onClick={handleSendMessage}
-                            disabled={!newMessage.trim()}
-                          >
-                            <Send className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="events">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <PartyPopper className="w-5 h-5" />
-                    Eventos do Hotel
-                  </CardTitle>
-                  <Button onClick={() => setShowCreateEvent(true)} className="bg-green-600 hover:bg-green-700">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Criar Evento
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="active">
-                  <TabsList>
-                    <TabsTrigger value="active">Ativos ({stats.upcomingEvents})</TabsTrigger>
-                    <TabsTrigger value="past">Anteriores</TabsTrigger>
-                    <TabsTrigger value="draft">Rascunhos</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="active" className="space-y-4">
-                    {hotelEvents?.filter((e: HotelEvent) => e.status === 'upcoming').length === 0 ? (
-                      <div className="text-center py-12 text-gray-500">
-                        <PartyPopper className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                        <h3 className="text-lg font-medium mb-2">Nenhum evento ativo</h3>
-                        <p className="text-sm mb-4">Crie eventos para atrair mais hóspedes ao seu hotel.</p>
+                      <Link href={`/hotels/manage-hotel/${selectedHotelId || userHotels?.[0]?.id}`}>
                         <Button 
-                          onClick={() => setShowCreateEvent(true)}
                           className="bg-green-600 hover:bg-green-700"
+                          disabled={hotelsLoading || !userHotels?.length}
                         >
                           <Plus className="w-4 h-4 mr-2" />
-                          Criar Primeiro Evento
+                          Novo Tipo de Quarto
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs defaultValue="published">
+                      <TabsList>
+                        {/* ✅ CORREÇÃO: Mostra número de TIPOS de quarto ativos, não quartos disponíveis */}
+                        <TabsTrigger value="published">
+                          Publicados ({
+                            displayedRooms.filter(rt => rt.isActive !== false).length
+                          })
+                        </TabsTrigger>
+                        <TabsTrigger value="reservations">Reservas</TabsTrigger>
+                        <TabsTrigger value="conditions">Condições</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="published" className="space-y-4">
+                        {roomsLoading ? (
+                          <div className="flex items-center justify-center p-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                            <span className="ml-2">Carregando quartos...</span>
+                          </div>
+                        ) : displayedRooms.length === 0 ? (
+                          <div className="text-center py-12 text-gray-500">
+                            <Building2 className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium mb-2">Nenhum quarto cadastrado</h3>
+                            <p className="text-sm mb-4">
+                              Comece adicionando os tipos de quarto disponíveis no seu hotel.
+                            </p>
+                            <Link href={`/hotels/manage-hotel/${selectedHotelId || userHotels?.[0]?.id}`}>
+                              <Button 
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Adicionar Primeiro Quarto
+                              </Button>
+                            </Link>
+                          </div>
+                        ) : (
+                          <div className="grid gap-4">
+                            {/* ✅ CORREÇÃO: Filtro mais flexível para isActive */}
+                            {displayedRooms
+                              .filter(rt => rt.isActive !== false) // ✅ Mostra se true ou undefined
+                              .map((roomType: RoomType) => (
+                              <Card key={roomType.id} className="border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
+                                <CardContent className="pt-6">
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-3 mb-3">
+                                        <div className="p-2 bg-green-100 rounded-lg">
+                                          <Building2 className="h-5 w-5 text-green-600" />
+                                        </div>
+                                        <div>
+                                          <h3 className="font-semibold text-lg">{roomType.name}</h3>
+                                          <Badge variant="secondary" className="mt-1">{roomType.type}</Badge>
+                                          <Badge 
+                                            variant={roomType.isActive !== false ? "default" : "secondary"}
+                                            className={`ml-2 ${roomType.isActive !== false ? 'bg-green-100 text-green-800' : ''}`}
+                                          >
+                                            {roomType.isActive !== false ? 'Ativo' : 'Inativo'}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="space-y-2 mb-4">
+                                        <p className="text-sm text-gray-700">{roomType.description}</p>
+                                        
+                                        {roomType.amenities && roomType.amenities.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {roomType.amenities.map((amenity: string, index: number) => (
+                                              <Badge key={index} variant="outline" className="text-xs">{amenity}</Badge>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                        <div className="flex items-center gap-1 text-gray-600">
+                                          <DollarSign className="h-4 w-4" />
+                                          <span className="font-semibold">{SafeNumber.toFloat(roomType.pricePerNight).toLocaleString()} MT/noite</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-gray-600">
+                                          <Users className="h-4 w-4" />
+                                          <span>Até {SafeNumber.toInt(roomType.maxGuests)} hóspedes</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-gray-600">
+                                          <Building2 className="h-4 w-4" />
+                                          <span>{SafeNumber.toInt(roomType.availableRooms)}/{SafeNumber.toInt(roomType.totalRooms)} disponíveis</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-gray-600">
+                                          <TrendingUp className="h-4 w-4" />
+                                          <span>{SafeNumber.toInt(roomType.size)}m²</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* ✅ ATUALIZADO: Botões com as novas funcionalidades */}
+                                    <div className="flex flex-col gap-2 ml-4">
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleQuickEdit(roomType)}
+                                        disabled={updateRoomMutation.isPending}
+                                      >
+                                        <Edit className="w-4 h-4 mr-1" />
+                                        {updateRoomMutation.isPending && quickEditModal.room?.id === roomType.id ? 'Salvando...' : 'Editar'}
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleViewDetails(roomType)}
+                                      >
+                                        <Eye className="w-4 h-4 mr-1" />
+                                        Ver Detalhes
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleConfigureRoom(roomType)}
+                                      >
+                                        <Settings className="w-4 h-4 mr-1" />
+                                        Configurar
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="destructive" 
+                                        onClick={() => handleDeleteRoom(roomType)}
+                                        disabled={deleteRoomMutation.isPending}
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-1" />
+                                        {deleteRoomMutation.isPending && deleteModal.room?.id === roomType.id ? 'Eliminando...' : 'Eliminar'}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="reservations">
+                        <div className="text-center py-8 text-gray-500">
+                          <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <h3 className="text-lg font-medium mb-2">Gestão de Reservas</h3>
+                          <p className="text-sm mb-4">Gerir reservas ativas, confirmadas e canceladas.</p>
+                          <Button variant="outline">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Ver Todas as Reservas
+                          </Button>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="conditions">
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold mb-4">Condições de Reserva</h3>
+                          
+                          <div className="grid gap-4">
+                            <Card>
+                              <CardContent className="pt-6">
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <h4 className="font-medium">Política de Cancelamento</h4>
+                                      <p className="text-sm text-gray-600">Cancelamento gratuito até 24 horas antes</p>
+                                    </div>
+                                    <Switch defaultChecked />
+                                  </div>
+                                  
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <h4 className="font-medium">Check-in Automático</h4>
+                                      <p className="text-sm text-gray-600">Permitir check-in sem presença do anfitrião</p>
+                                    </div>
+                                    <Switch />
+                                  </div>
+                                  
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <h4 className="font-medium">Reserva Instantânea</h4>
+                                      <p className="text-sm text-gray-600">Aprovação automática de reservas</p>
+                                    </div>
+                                    <Switch defaultChecked />
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                            
+                            <Card>
+                              <CardContent className="pt-6">
+                                <h4 className="font-medium mb-4">Horários de Check-in/Check-out</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <Label>Check-in</Label>
+                                    <Input type="time" defaultValue="15:00" />
+                                  </div>
+                                  <div>
+                                    <Label>Check-out</Label>
+                                    <Input type="time" defaultValue="11:00" />
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="partnerships">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2">
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2">
+                            <Handshake className="w-5 h-5" />
+                            Parcerias com Motoristas
+                          </CardTitle>
+                          <Button onClick={() => toggleModal('createPartnership', true)} size="sm" className="bg-green-600 hover:bg-green-700">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Nova Parceria
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {driverPartnerships.map((partnership) => (
+                            <Card key={partnership.id} className="border-l-4 border-l-blue-500">
+                              <CardContent className="pt-4">
+                                <div className="flex justify-between items-start">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                      <div className="p-2 bg-blue-100 rounded-lg">
+                                        <Users className="h-4 w-4 text-blue-600" />
+                                      </div>
+                                      <div>
+                                        <h4 className="font-semibold">{partnership.driver}</h4>
+                                        <p className="text-sm text-gray-600">{partnership.route}</p>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-gray-600">Comissão:</span>
+                                        <p className="font-semibold">{partnership.commission}%</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600">Clientes:</span>
+                                        <p className="font-semibold">{partnership.clientsBrought}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600">Este mês:</span>
+                                        <p className="font-semibold">{partnership.lastMonth.toLocaleString()} MT</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600">Avaliação:</span>
+                                        <div className="flex items-center gap-1">
+                                          <Star className="h-3 w-3 text-yellow-500" />
+                                          <span className="font-semibold">{partnership.rating}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex flex-col gap-2">
+                                    <Badge 
+                                      variant={partnership.status === 'active' ? 'default' : 'secondary'}
+                                      className={partnership.status === 'active' ? 'bg-green-100 text-green-800' : ''}
+                                    >
+                                      {partnership.status === 'active' ? 'Ativa' : 'Inactiva'}
+                                    </Badge>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      onClick={() => setSelectedChat(SafeNumber.toInt(partnership.id))}
+                                    >
+                                      <MessageCircle className="w-3 h-3 mr-1" />
+                                      Chat
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div>
+                    <Card className="h-fit">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <MessageCircle className="w-4 h-4" />
+                          Chat Motoristas
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {!selectedChat ? (
+                          <div className="text-center py-8 text-gray-500">
+                            <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">Selecione uma parceria para iniciar o chat</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-3 pb-3 border-b">
+                              <div className="p-2 bg-blue-100 rounded-lg">
+                                <Users className="h-4 w-4 text-blue-600" />
+                              </div>
+                              <div>
+                                <h4 className="font-medium">{driverChats.find(c => c.id === selectedChat)?.driver}</h4>
+                                <p className="text-xs text-gray-600">{driverChats.find(c => c.id === selectedChat)?.route}</p>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-3 max-h-64 overflow-y-auto">
+                              {chatMessages[selectedChat]?.map((msg) => (
+                                <div key={msg.id} className={`flex ${msg.isHotel ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`max-w-xs p-3 rounded-lg text-sm ${
+                                    msg.isHotel 
+                                      ? 'bg-green-600 text-white' 
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    <p>{msg.message}</p>
+                                    <p className={`text-xs mt-1 ${
+                                      msg.isHotel ? 'text-green-100' : 'text-gray-500'
+                                    }`}>
+                                      {msg.time}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            <div className="flex gap-2 pt-3 border-t">
+                              <Input 
+                                placeholder="Escreva sua mensagem..."
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                              />
+                              <Button 
+                                size="sm" 
+                                onClick={handleSendMessage}
+                                disabled={!newMessage.trim()}
+                              >
+                                <Send className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="events">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <PartyPopper className="w-5 h-5" />
+                        Eventos do Hotel
+                      </CardTitle>
+                      <div className="flex gap-2">
+                        <Button onClick={reloadEvents} variant="outline" size="sm">
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Atualizar
+                        </Button>
+                        <Button onClick={() => toggleModal('createEvent', true)} className="bg-green-600 hover:bg-green-700">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Criar Evento
                         </Button>
                       </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        {hotelEvents?.filter((e: HotelEvent) => e.status === 'upcoming').map((event: HotelEvent) => (
-                          <Card key={event.id} className="border-l-4 border-l-purple-500">
-                            <CardContent className="pt-6">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <div className="p-2 bg-purple-100 rounded-lg">
-                                      <PartyPopper className="h-5 w-5 text-purple-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs defaultValue="active">
+                      <TabsList>
+                        <TabsTrigger value="active">Ativos ({stats.upcomingEvents})</TabsTrigger>
+                        <TabsTrigger value="past">Anteriores</TabsTrigger>
+                        <TabsTrigger value="draft">Rascunhos</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="active" className="space-y-4">
+                        {eventsLoading ? (
+                          <div className="flex items-center justify-center p-8">
+                            <Loader2 className="h-8 w-8 animate-spin mr-2" />
+                            <span>Carregando eventos...</span>
+                          </div>
+                        ) : paginatedEvents.length > 0 ? (
+                          <>
+                            <div className="grid gap-4">
+                              {paginatedEvents
+                                .filter((event: HotelEvent) => event.status === 'upcoming' || event.status === 'active')
+                                .map((event: HotelEvent) => (
+                                <Card key={event.id} className="border-l-4 border-l-purple-500">
+                                  <CardContent className="pt-6">
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-3">
+                                          <div className="p-2 bg-purple-100 rounded-lg">
+                                            <PartyPopper className="h-5 w-5 text-purple-600" />
+                                          </div>
+                                          <div>
+                                            <h3 className="font-semibold text-lg">{event.title}</h3>
+                                            <Badge variant="secondary" className="mt-1">{event.eventType}</Badge>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="space-y-2 mb-4">
+                                          <p className="text-sm text-gray-700">{event.description}</p>
+                                          <div className="flex items-center gap-2 text-gray-600">
+                                            <MapPin className="h-4 w-4" />
+                                            <span className="text-sm">{event.venue}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 text-gray-600">
+                                            <Calendar className="h-4 w-4" />
+                                            <span className="text-sm">{event.startDate} - {event.endDate}</span>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                          <div>
+                                            <span className="text-gray-600">Preço:</span>
+                                            <p className="font-semibold">{SafeNumber.toFloat(event.ticketPrice)} MT</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-600">Vendidos:</span>
+                                            <p className="font-semibold">{SafeNumber.toInt(event.ticketsSold)}/{SafeNumber.toInt(event.maxTickets)}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-600">Status:</span>
+                                            <Badge variant="default" className="bg-green-100 text-green-800">
+                                              {event.status === 'upcoming' ? 'Próximo' : event.status}
+                                            </Badge>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-600">Progresso:</span>
+                                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                                              <div 
+                                                className="bg-green-600 h-2 rounded-full" 
+                                                style={{ 
+                                                  width: `${Math.min(100, (SafeNumber.toInt(event.ticketsSold) / SafeNumber.toInt(event.maxTickets)) * 100)}%` 
+                                                }}
+                                              ></div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex flex-col gap-2 ml-4">
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={() => handleEditEvent(event)}
+                                        >
+                                          <Edit className="w-4 h-4 mr-1" />
+                                          Editar
+                                        </Button>
+                                        <Button size="sm" variant="outline">
+                                          <Eye className="w-4 h-4 mr-1" />
+                                          Ver Detalhes
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="destructive"
+                                          onClick={() => handleOpenDeleteConfirmation(event)}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-1" />
+                                          Eliminar
+                                        </Button>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <h3 className="font-semibold text-lg">{event.title}</h3>
-                                      <Badge variant="secondary" className="mt-1">{event.eventType}</Badge>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="space-y-2 mb-4">
-                                    <p className="text-sm text-gray-700">{event.description}</p>
-                                    <div className="flex items-center gap-2 text-gray-600">
-                                      <MapPin className="h-4 w-4" />
-                                      <span className="text-sm">{event.venue}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-gray-600">
-                                      <Calendar className="h-4 w-4" />
-                                      <span className="text-sm">{event.startDate} - {event.endDate}</span>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                                    <div>
-                                      <span className="text-gray-600">Preço:</span>
-                                      <p className="font-semibold">{event.ticketPrice} MT</p>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-600">Vendidos:</span>
-                                      <p className="font-semibold">{event.ticketsSold}/{event.maxTickets}</p>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-600">Status:</span>
-                                      <Badge variant="default" className="bg-green-100 text-green-800">
-                                        {event.status === 'upcoming' ? 'Próximo' : event.status}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-col gap-2 ml-4">
-                                  <Button size="sm" variant="outline">
-                                    <Edit className="w-4 h-4 mr-1" />
-                                    Editar
-                                  </Button>
-                                  <Button size="sm" variant="outline">
-                                    <Eye className="w-4 h-4 mr-1" />
-                                    Ver Detalhes
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                                  </CardContent>
+                                </Card>
+                              ))}
+                            </div>
+                            
+                            {/* ✅ ADICIONADO: Paginação */}
+                            <EventsPagination />
+                          </>
+                        ) : (
+                          <div className="text-center py-12 text-gray-500">
+                            <PartyPopper className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium mb-2">Nenhum evento ativo</h3>
+                            <p className="text-sm mb-4">Crie eventos para atrair mais hóspedes ao seu hotel.</p>
+                            <Button 
+                              onClick={() => toggleModal('createEvent', true)}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Criar Primeiro Evento
+                            </Button>
+                          </div>
+                        )}
+                      </TabsContent>
+                      
+                      <TabsContent value="past">
+                        <div className="text-center py-8 text-gray-500">
+                          <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>Eventos anteriores aparecerão aqui</p>
+                        </div>
+                      </TabsContent>
+                      
+                      <TabsContent value="draft">
+                        <div className="text-center py-8 text-gray-500">
+                          <Edit className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>Rascunhos de eventos aparecerão aqui</p>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {/* ✅ ATUALIZADO: Modal de Edição de Eventos COM CONTADOR DE BILHETES E REFETCH CORRETO */}
+            <Dialog open={editEventModalOpen} onOpenChange={setEditEventModalOpen}>
+              <DialogContent className="sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle>Editar Evento</DialogTitle>
+                  <DialogDescription>
+                    Atualize as informações do evento e acompanhe a venda de bilhetes.
+                  </DialogDescription>
+                </DialogHeader>
+                {editingEvent && (
+                  <form onSubmit={handleUpdateEvent} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-event-title">Título do Evento</Label>
+                        <Input
+                          id="edit-event-title"
+                          name="title"
+                          defaultValue={editingEvent.title}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-event-type">Tipo de Evento</Label>
+                        <Select 
+                          name="eventType" 
+                          defaultValue={editingEvent.eventType}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar tipo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="festival">Festival</SelectItem>
+                            <SelectItem value="conference">Conferência</SelectItem>
+                            <SelectItem value="workshop">Workshop</SelectItem>
+                            <SelectItem value="concert">Concerto</SelectItem>
+                            <SelectItem value="cultural">Cultural</SelectItem>
+                            <SelectItem value="business">Negócios</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-event-description">Descrição</Label>
+                      <Textarea
+                        id="edit-event-description"
+                        name="description"
+                        defaultValue={editingEvent.description}
+                        rows={3}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-event-venue">Local do Evento</Label>
+                      <Input
+                        id="edit-event-venue"
+                        name="venue"
+                        defaultValue={editingEvent.venue}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-start-date">Data de Início</Label>
+                        <Input
+                          id="edit-start-date"
+                          name="startDate"
+                          type="date"
+                          defaultValue={editingEvent.startDate}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-end-date">Data de Fim</Label>
+                        <Input
+                          id="edit-end-date"
+                          name="endDate"
+                          type="date"
+                          defaultValue={editingEvent.endDate}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-start-time">Hora de Início</Label>
+                        <Input
+                          id="edit-start-time"
+                          name="startTime"
+                          type="time"
+                          defaultValue={editingEvent.startTime}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-end-time">Hora de Fim</Label>
+                        <Input
+                          id="edit-end-time"
+                          name="endTime"
+                          type="time"
+                          defaultValue={editingEvent.endTime}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="edit-ticket-price">Preço do Bilhete (MT)</Label>
+                        <Input
+                          id="edit-ticket-price"
+                          name="ticketPrice"
+                          type="number"
+                          defaultValue={editingEvent.ticketPrice}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-max-tickets">Máximo de Bilhetes</Label>
+                        <Input
+                          id="edit-max-tickets"
+                          name="maxTickets"
+                          type="number"
+                          defaultValue={editingEvent.maxTickets}
+                        />
+                      </div>
+                      {/* ✅ ADICIONADO: Contador de Bilhetes Vendidos */}
+                      <div>
+                        <Label htmlFor="edit-tickets-sold">Bilhetes Vendidos</Label>
+                        <Input
+                          id="edit-tickets-sold"
+                          name="ticketsSold"
+                          type="number"
+                          defaultValue={editingEvent.ticketsSold || 0}
+                          min="0"
+                          max={editingEvent.maxTickets}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-status">Status</Label>
+                      <Select name="status" defaultValue={editingEvent.status}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="upcoming">Próximo</SelectItem>
+                          <SelectItem value="active">Ativo</SelectItem>
+                          <SelectItem value="completed">Concluído</SelectItem>
+                          <SelectItem value="cancelled">Cancelado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {/* ✅ ADICIONADO: Barra de Progresso Visual */}
+                    {editingEvent.maxTickets > 0 && (
+                      <div className="pt-2">
+                        <Label>Progresso de Vendas</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                              style={{ 
+                                width: `${Math.min(100, ((editingEvent.ticketsSold || 0) / editingEvent.maxTickets) * 100)}%` 
+                              }}
+                            ></div>
+                          </div>
+                          <span className="text-xs text-gray-600 whitespace-nowrap">
+                            {Math.round(((editingEvent.ticketsSold || 0) / editingEvent.maxTickets) * 100)}%
+                          </span>
+                        </div>
                       </div>
                     )}
-                  </TabsContent>
-                  
-                  <TabsContent value="past">
-                    <div className="text-center py-8 text-gray-500">
-                      <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>Eventos anteriores aparecerão aqui</p>
+                    
+                    <div className="flex space-x-2 pt-4">
+                      <Button 
+                        type="submit" 
+                        disabled={updateEventMutation.isPending}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {updateEventMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setEditEventModalOpen(false)}
+                      >
+                        Cancelar
+                      </Button>
                     </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="draft">
-                    <div className="text-center py-8 text-gray-500">
-                      <Edit className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>Rascunhos de eventos aparecerão aqui</p>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                  </form>
+                )}
+              </DialogContent>
+            </Dialog>
 
-        {/* Hotel Creation Wizard */}
-        <HotelCreationWizard
-          open={isWizardOpen}
-          onClose={handleWizardClose}
-          onSubmit={handleWizardSubmit}
-          mode={wizardMode}
-          initialData={editingRoom ? {
-            rooms: [{
-              id: editingRoom.id,
-              name: editingRoom.name,
-              type: editingRoom.type,
-              capacity: 2, // valor padrão
-              quantity: editingRoom.totalRooms,
-              price: editingRoom.pricePerNight,
-              description: editingRoom.description,
-              amenities: editingRoom.amenities || [],
-              images: editingRoom.images || []
-            }]
-          } : undefined}
-        />
-
-        {/* Modals */}
-        
-        {/* Modal for hotel setup */}
-        <Dialog open={showHotelSetup} onOpenChange={setShowHotelSetup}>
-          <DialogContent className="sm:max-w-[600px]" aria-describedby="hotel-setup-description">
-            <DialogHeader>
-              <DialogTitle>Configurar Perfil do Hotel</DialogTitle>
-            </DialogHeader>
-            <DialogDescription id="hotel-setup-description">
-              Formulário para configurar o perfil do hotel incluindo nome, localização, tipo de quarto, preço, comodidades e descrição.
-            </DialogDescription>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="hotel-name">Nome do Hotel</Label>
-                  <Input 
-                    id="hotel-name" 
-                    placeholder="ex: Hotel Vista Mar Maputo"
-                    value={accommodationForm.name}
-                    onChange={(e) => setAccommodationForm(prev => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="type">Tipo de Quarto</Label>
-                  <Select 
-                    value={accommodationForm.type || 'hotel_room'} 
-                    onValueChange={(value) => setAccommodationForm(prev => ({ ...prev, type: value }))}
+            {/* ✅ ADICIONADO: Modal de Confirmação de Eliminação de Eventos */}
+            <Dialog open={deleteEventModalOpen} onOpenChange={setDeleteEventModalOpen}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">Confirmar Eliminação</DialogTitle>
+                  <DialogDescription>
+                    Tem certeza que deseja eliminar o evento "{eventToDelete?.title}"? Esta ação não pode ser desfeita.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex space-x-2">
+                  <Button
+                    variant="destructive"
+                    onClick={handleConfirmDelete}
+                    disabled={deleteEventMutation.isPending}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hotel_room">Quarto de Hotel</SelectItem>
-                      <SelectItem value="hotel_suite">Suite</SelectItem>
-                      <SelectItem value="apartment">Apartamento</SelectItem>
-                      <SelectItem value="guesthouse">Casa de Hóspedes</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    {deleteEventMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Eliminando...
+                      </>
+                    ) : (
+                      'Sim, Eliminar'
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setDeleteEventModalOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
                 </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="address">Localização</Label>
-                <LocationAutocomplete 
-                  id="accommodation-address"
-                  value={accommodationForm.address || ''}
-                  onChange={(value) => setAccommodationForm(prev => ({ ...prev, address: value }))}
-                  placeholder="Endereço do alojamento..."
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="price">Preço por Noite (MT)</Label>
-                  <Input 
-                    id="price" 
-                    type="number"
-                    placeholder="2500"
-                    value={accommodationForm.pricePerNight}
-                    onChange={(e) => setAccommodationForm(prev => ({ 
-                      ...prev, 
-                      pricePerNight: Number(e.target.value) 
-                    }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="occupancy">Máximo de Hóspedes</Label>
-                  <Input 
-                    id="occupancy" 
-                    type="number"
-                    placeholder="2"
-                    value={accommodationForm.maxGuests}
-                    onChange={(e) => setAccommodationForm(prev => ({ 
-                      ...prev, 
-                      maxGuests: Number(e.target.value) 
-                    }))}
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="amenities">Comodidades (separadas por vírgula)</Label>
-                <Input 
-                  id="amenities" 
-                  placeholder="Wi-Fi, Ar Condicionado, Vista Mar"
-                  value={accommodationForm.amenities?.join(', ') || ''}
-                  onChange={(e) => setAccommodationForm(prev => ({ 
-                    ...prev, 
-                    amenities: e.target.value.split(',').map(a => a.trim()).filter(a => a) 
-                  }))}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="description">Descrição do Quarto</Label>
-                <Textarea 
-                  id="description" 
-                  placeholder="Descreva o quarto e suas características..."
-                  value={accommodationForm.description || ''}
-                  onChange={(e) => setAccommodationForm(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
+              </DialogContent>
+            </Dialog>
 
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="is-available"
-                  checked={accommodationForm.isAvailable}
-                  onCheckedChange={(checked) => setAccommodationForm(prev => ({ ...prev, isAvailable: checked }))}
-                />
-                <Label htmlFor="is-available">Disponível para reservas</Label>
-              </div>
-              
-              <div className="flex gap-3 pt-4">
-                <Button 
-                  onClick={handleCreateAccommodation}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={accommodationsLoading}
-                >
-                  {accommodationsLoading ? 'Criando...' : 'Criar Acomodação'}
-                </Button>
-                <Button variant="outline" onClick={() => setShowHotelSetup(false)}>
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-        
-        {/* Modal for creating event */}
-        <Dialog open={showCreateEvent} onOpenChange={setShowCreateEvent}>
-          <DialogContent className="sm:max-w-[600px]" aria-describedby="event-creation-description">
-            <DialogHeader>
-              <DialogTitle>Criar Novo Evento</DialogTitle>
-            </DialogHeader>
-            <DialogDescription id="event-creation-description">
-              Crie um novo evento para o seu hotel, especificando título, tipo, descrição, local, datas e preço dos bilhetes.
-            </DialogDescription>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="event-title">Título do Evento</Label>
-                  <Input 
-                    id="event-title" 
-                    placeholder="ex: Festival de Verão"
-                    value={eventForm.title}
-                    onChange={(e) => setEventForm(prev => ({ ...prev, title: e.target.value }))}
-                  />
+            {/* ✅ ADICIONADO: Modal de Edição Rápida */}
+            <Dialog open={quickEditModal.open} onOpenChange={(open) => setQuickEditModal(prev => ({ ...prev, open }))}>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Editar Quarto - {quickEditModal.room?.name}</DialogTitle>
+                </DialogHeader>
+                <DialogDescription>
+                  Edite rapidamente as informações básicas do quarto.
+                </DialogDescription>
+                
+                {quickEditModal.room && (
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="edit-name">Nome do Quarto</Label>
+                      <Input 
+                        id="edit-name"
+                        value={quickEditModal.room.name}
+                        onChange={(e) => setQuickEditModal(prev => ({
+                          ...prev,
+                          room: prev.room ? { ...prev.room, name: e.target.value } : null
+                        }))}
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-price">Preço por Noite (MT)</Label>
+                        <Input 
+                          id="edit-price"
+                          type="number"
+                          value={quickEditModal.room.pricePerNight}
+                          onChange={(e) => setQuickEditModal(prev => ({
+                            ...prev,
+                            room: prev.room ? { ...prev.room, pricePerNight: SafeNumber.toFloat(e.target.value) } : null
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-guests">Máx. Hóspedes</Label>
+                        <Input 
+                          id="edit-guests"
+                          type="number"
+                          value={quickEditModal.room.maxGuests}
+                          onChange={(e) => setQuickEditModal(prev => ({
+                            ...prev,
+                            room: prev.room ? { ...prev.room, maxGuests: SafeNumber.toInt(e.target.value) } : null
+                          }))}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-total">Total de Quartos</Label>
+                        <Input 
+                          id="edit-total"
+                          type="number"
+                          value={quickEditModal.room.totalRooms}
+                          onChange={(e) => setQuickEditModal(prev => ({
+                            ...prev,
+                            room: prev.room ? { ...prev.room, totalRooms: SafeNumber.toInt(e.target.value) } : null
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-available">Disponíveis</Label>
+                        <Input 
+                          id="edit-available"
+                          type="number"
+                          value={quickEditModal.room.availableRooms}
+                          onChange={(e) => setQuickEditModal(prev => ({
+                            ...prev,
+                            room: prev.room ? { ...prev.room, availableRooms: SafeNumber.toInt(e.target.value) } : null
+                          }))}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="edit-description">Descrição</Label>
+                      <Textarea
+                        id="edit-description"
+                        value={quickEditModal.room.description || ''}
+                        onChange={(e) => setQuickEditModal(prev => ({
+                          ...prev,
+                          room: prev.room ? { ...prev.room, description: e.target.value } : null
+                        }))}
+                        rows={3}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        checked={quickEditModal.room.isActive}
+                        onCheckedChange={(checked) => setQuickEditModal(prev => ({
+                          ...prev,
+                          room: prev.room ? { ...prev.room, isActive: checked } : null
+                        }))}
+                      />
+                      <Label>Quarto Ativo</Label>
+                    </div>
+                    
+                    <div className="flex gap-3 pt-4">
+                      <Button 
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={handleQuickSave}
+                        disabled={updateRoomMutation.isPending}
+                      >
+                        {updateRoomMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setQuickEditModal({ open: false, room: null })}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+
+            {/* ✅ ADICIONADO: Modal de Confirmação de Eliminação */}
+            <Dialog open={deleteModal.open} onOpenChange={(open) => setDeleteModal(prev => ({ ...prev, open }))}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">Eliminar Quarto</DialogTitle>
+                </DialogHeader>
+                <DialogDescription>
+                  Tem certeza que deseja eliminar o quarto <strong>"{deleteModal.room?.name}"</strong>? 
+                  Esta ação não pode ser desfeita.
+                </DialogDescription>
+                
+                <div className="flex gap-3 pt-4">
+                  <Button 
+                    variant="destructive"
+                    onClick={confirmDelete}
+                    disabled={deleteRoomMutation.isPending}
+                    className="flex-1"
+                  >
+                    {deleteRoomMutation.isPending ? 'Eliminando...' : 'Sim, Eliminar'}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setDeleteModal({ open: false, room: null })}
+                  >
+                    Cancelar
+                  </Button>
                 </div>
-                <div>
-                  <Label htmlFor="event-type">Tipo de Evento</Label>
-                  <Select value={eventForm.eventType} onValueChange={(value) => setEventForm(prev => ({ ...prev, eventType: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="festival">Festival</SelectItem>
-                      <SelectItem value="conference">Conferência</SelectItem>
-                      <SelectItem value="workshop">Workshop</SelectItem>
-                      <SelectItem value="concert">Concerto</SelectItem>
-                      <SelectItem value="cultural">Cultural</SelectItem>
-                      <SelectItem value="business">Negócios</SelectItem>
-                    </SelectContent>
-                  </Select>
+              </DialogContent>
+            </Dialog>
+
+            <HotelCreationWizard
+              open={isWizardOpen}
+              onCancel={() => setIsWizardOpen(false)}
+              onSuccess={handleWizardSubmit}
+              mode={wizardMode}
+              initialData={getWizardInitialData}
+            />
+
+            {/* ✅ REMOVIDO: Formulário antigo de edição de hotel que estava causando problemas */}
+            
+            <Dialog open={modals.createRoom} onOpenChange={(open) => toggleModal('createRoom', open)}>
+              <DialogContent className="sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle>Adicionar Novo Tipo de Quarto</DialogTitle>
+                </DialogHeader>
+                <DialogDescription>
+                  Adicione um novo tipo de quarto ao seu hotel {userHotel?.name}
+                </DialogDescription>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="room-name">Nome do Quarto</Label>
+                      <Input 
+                        id="room-name"
+                        placeholder="ex: Quarto Standard Vista Mar"
+                        value={roomForm.form.name}
+                        onChange={(e) => roomForm.updateForm({ name: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="room-type">Tipo de Quarto</Label>
+                      <Select 
+                        value={roomForm.form.type}
+                        onValueChange={(value) => roomForm.updateForm({ type: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecionar tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">Standard</SelectItem>
+                          <SelectItem value="deluxe">Deluxe</SelectItem>
+                          <SelectItem value="suite">Suite</SelectItem>
+                          <SelectItem value="family">Família</SelectItem>
+                          <SelectItem value="executive">Executivo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="room-description">Descrição</Label>
+                    <Textarea
+                      id="room-description"
+                      placeholder="Descreva as características do quarto..."
+                      value={roomForm.form.description}
+                      onChange={(e) => roomForm.updateForm({ description: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="room-price">Preço por Noite (MT)</Label>
+                      <Input
+                        id="room-price"
+                        type="number"
+                        value={roomForm.form.pricePerNight}
+                        onChange={(e) => roomForm.updateForm({ pricePerNight: SafeNumber.toFloat(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="total-rooms">Total de Quartos</Label>
+                      <Input
+                        id="total-rooms"
+                        type="number"
+                        value={roomForm.form.totalRooms}
+                        onChange={(e) => roomForm.updateForm({ totalRooms: SafeNumber.toInt(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="max-guests">Máx. Hóspedes</Label>
+                      <Input
+                        id="max-guests"
+                        type="number"
+                        value={roomForm.form.maxGuests}
+                        onChange={(e) => roomForm.updateForm({ maxGuests: SafeNumber.toInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <Button 
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      onClick={handleCreateRoom}
+                      disabled={createRoomMutation.isPending}
+                    >
+                      {createRoomMutation.isPending ? 'Criando...' : 'Criar Quarto'}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => toggleModal('createRoom', false)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="event-description">Descrição</Label>
-                <Textarea 
-                  id="event-description" 
-                  placeholder="Descreva o evento..."
-                  value={eventForm.description}
-                  onChange={(e) => setEventForm(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="event-venue">Local do Evento</Label>
-                <LocationAutocomplete 
-                  id="event-venue"
-                  value={eventForm.venue}
-                  onChange={(value) => setEventForm(prev => ({ ...prev, venue: value }))}
-                  placeholder="Local onde será realizado..."
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="start-date">Data de Início</Label>
-                  <Input 
-                    id="start-date" 
-                    type="date"
-                    value={eventForm.startDate}
-                    onChange={(e) => setEventForm(prev => ({ ...prev, startDate: e.target.value }))}
-                  />
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={modals.createEvent} onOpenChange={(open) => toggleModal('createEvent', open)}>
+              <DialogContent className="sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle>Criar Novo Evento</DialogTitle>
+                </DialogHeader>
+                <DialogDescription>
+                  Crie um novo evento para o seu hotel, especificando título, tipo, descrição, local, datas e preço dos bilhetes.
+                </DialogDescription>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="event-title">Título do Evento</Label>
+                      <Input 
+                        id="event-title" 
+                        placeholder="ex: Festival de Verão"
+                        value={eventForm.form.title}
+                        onChange={(e) => eventForm.updateForm({ title: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="event-type">Tipo de Evento</Label>
+                      <Select value={eventForm.form.eventType} onValueChange={(value) => eventForm.updateForm({ eventType: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="festival">Festival</SelectItem>
+                          <SelectItem value="conference">Conferência</SelectItem>
+                          <SelectItem value="workshop">Workshop</SelectItem>
+                          <SelectItem value="concert">Concerto</SelectItem>
+                          <SelectItem value="cultural">Cultural</SelectItem>
+                          <SelectItem value="business">Negócios</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="event-description">Descrição</Label>
+                    <Textarea 
+                      id="event-description" 
+                      placeholder="Descreva o evento..."
+                      value={eventForm.form.description}
+                      onChange={(e) => eventForm.updateForm({ description: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="event-venue">Local do Evento</Label>
+                    <LocationAutocomplete 
+                      id="event-venue"
+                      value={eventForm.form.venue}
+                      onChange={(value) => eventForm.updateForm({ venue: value })}
+                      placeholder="Local onde será realizado..."
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="start-date">Data de Início</Label>
+                      <Input 
+                        id="start-date" 
+                        type="date"
+                        value={eventForm.form.startDate}
+                        onChange={(e) => eventForm.updateForm({ startDate: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="end-date">Data de Fim</Label>
+                      <Input 
+                        id="end-date" 
+                        type="date"
+                        value={eventForm.form.endDate}
+                        onChange={(e) => eventForm.updateForm({ endDate: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="ticket-price">Preço do Bilhete (MT)</Label>
+                      <Input 
+                        id="ticket-price" 
+                        type="number"
+                        placeholder="150"
+                        value={eventForm.form.ticketPrice}
+                        onChange={(e) => eventForm.updateForm({ ticketPrice: SafeNumber.toFloat(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="max-tickets">Máximo de Bilhetes</Label>
+                      <Input 
+                        id="max-tickets" 
+                        type="number"
+                        value={eventForm.form.maxTickets}
+                        onChange={(e) => eventForm.updateForm({ maxTickets: SafeNumber.toInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <Button 
+                      onClick={handleCreateEvent}
+                      className="bg-green-600 hover:bg-green-700"
+                      disabled={createEventMutation.isPending}
+                    >
+                      {createEventMutation.isPending ? 'Criando...' : 'Criar Evento'}
+                    </Button>
+                    <Button variant="outline" onClick={() => toggleModal('createEvent', false)}>
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="end-date">Data de Fim</Label>
-                  <Input 
-                    id="end-date" 
-                    type="date"
-                    value={eventForm.endDate}
-                    onChange={(e) => setEventForm(prev => ({ ...prev, endDate: e.target.value }))}
-                  />
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={modals.createPartnership} onOpenChange={(open) => toggleModal('createPartnership', open)}>
+              <DialogContent className="sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle>Criar Post de Parceria</DialogTitle>
+                </DialogHeader>
+                <DialogDescription>
+                  Crie um post de parceria para motoristas, especificando título, descrição, comissão, benefícios e requisitos.
+                </DialogDescription>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="partnership-title">Título da Parceria</Label>
+                    <Input 
+                      id="partnership-title" 
+                      placeholder="ex: Parceria Exclusiva - 15% Comissão"
+                      value={partnershipForm.form.title}
+                      onChange={(e) => partnershipForm.updateForm({ title: e.target.value })}
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="partnership-description">Descrição da Oferta</Label>
+                    <Textarea 
+                      id="partnership-description" 
+                      placeholder="Descreva os benefícios e condições da parceria..."
+                      value={partnershipForm.form.description}
+                      onChange={(e) => partnershipForm.updateForm({ description: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="commission">Comissão (%)</Label>
+                      <Input 
+                        id="commission" 
+                        type="number"
+                        value={partnershipForm.form.commission}
+                        onChange={(e) => partnershipForm.updateForm({ commission: SafeNumber.toInt(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="benefits">Benefícios Extras</Label>
+                      <Input 
+                        id="benefits" 
+                        placeholder="Estadia gratuita, desconto..."
+                        value={partnershipForm.form.benefits}
+                        onChange={(e) => partnershipForm.updateForm({ benefits: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="requirements">Requisitos do Motorista</Label>
+                    <Textarea 
+                      id="requirements" 
+                      placeholder="Avaliação mínima, experiência, regularidade..."
+                      value={partnershipForm.form.requirements}
+                      onChange={(e) => partnershipForm.updateForm({ requirements: e.target.value })}
+                      rows={2}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <Button 
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => {
+                        console.log('Creating partnership post:', partnershipForm.form);
+                        toast({ title: 'Sucesso', description: 'Post de parceria criado!' });
+                        toggleModal('createPartnership', false);
+                        partnershipForm.resetForm();
+                      }}
+                    >
+                      Publicar Parceria
+                    </Button>
+                    <Button variant="outline" onClick={() => toggleModal('createPartnership', false)}>
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="ticket-price">Preço do Bilhete (MT)</Label>
-                  <Input 
-                    id="ticket-price" 
-                    type="number"
-                    placeholder="150"
-                    value={eventForm.ticketPrice}
-                    onChange={(e) => setEventForm(prev => ({ ...prev, ticketPrice: parseFloat(e.target.value) }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="max-tickets">Máximo de Bilhetes</Label>
-                  <Input 
-                    id="max-tickets" 
-                    type="number"
-                    value={eventForm.maxTickets}
-                    onChange={(e) => setEventForm(prev => ({ ...prev, maxTickets: parseInt(e.target.value) }))}
-                  />
-                </div>
-              </div>
-              
-              <div className="flex gap-3 pt-4">
-                <Button 
-                  onClick={handleCreateEvent}
-                  className="bg-green-600 hover:bg-green-700"
-                  disabled={createEventMutation.isPending}
-                >
-                  {createEventMutation.isPending ? 'Criando...' : 'Criar Evento'}
-                </Button>
-                <Button variant="outline" onClick={() => setShowCreateEvent(false)}>
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-        
-        {/* Modal for creating partnership */}
-        <Dialog open={showCreatePartnership} onOpenChange={setShowCreatePartnership}>
-          <DialogContent className="sm:max-w-[600px]" aria-describedby="partnership-creation-description">
-            <DialogHeader>
-              <DialogTitle>Criar Post de Parceria</DialogTitle>
-            </DialogHeader>
-            <DialogDescription id="partnership-creation-description">
-              Crie um post de parceria para motoristas, especificando título, descrição, comissão, benefícios e requisitos.
-            </DialogDescription>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="partnership-title">Título da Parceria</Label>
-                <Input 
-                  id="partnership-title" 
-                  placeholder="ex: Parceria Exclusiva - 15% Comissão"
-                  value={partnershipForm.title}
-                  onChange={(e) => setPartnershipForm(prev => ({ ...prev, title: e.target.value }))}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="partnership-description">Descrição da Oferta</Label>
-                <Textarea 
-                  id="partnership-description" 
-                  placeholder="Descreva os benefícios e condições da parceria..."
-                  value={partnershipForm.description}
-                  onChange={(e) => setPartnershipForm(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="commission">Comissão (%)</Label>
-                  <Input 
-                    id="commission" 
-                    type="number"
-                    value={partnershipForm.commission}
-                    onChange={(e) => setPartnershipForm(prev => ({ ...prev, commission: parseInt(e.target.value) }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="benefits">Benefícios Extras</Label>
-                  <Input 
-                    id="benefits" 
-                    placeholder="Estadia gratuita, desconto..."
-                    value={partnershipForm.benefits}
-                    onChange={(e) => setPartnershipForm(prev => ({ ...prev, benefits: e.target.value }))}
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="requirements">Requisitos do Motorista</Label>
-                <Textarea 
-                  id="requirements" 
-                  placeholder="Avaliação mínima, experiência, regularidade..."
-                  value={partnershipForm.requirements}
-                  onChange={(e) => setPartnershipForm(prev => ({ ...prev, requirements: e.target.value }))}
-                  rows={2}
-                />
-              </div>
-              
-              <div className="flex gap-3 pt-4">
-                <Button 
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    console.log('Creating partnership post:', partnershipForm);
-                    toast({ title: 'Sucesso', description: 'Post de parceria criado!' });
-                    setShowCreatePartnership(false);
-                    setPartnershipForm({ title: '', description: '', commission: 10, benefits: '', requirements: '', targetRoutes: [] });
-                  }}
-                >
-                  Publicar Parceria
-                </Button>
-                <Button variant="outline" onClick={() => setShowCreatePartnership(false)}>
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
       </div>
     </div>
   );

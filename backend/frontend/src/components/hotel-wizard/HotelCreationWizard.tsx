@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { accommodationService } from '../../shared/lib/accommodationService';
+import { formatMetical } from '@/shared/utils/currency';
+import { HotelFormData, HotelCreationWizardProps, RoomFormData, HotelRoomType } from './types';
 
 // Componentes das etapas
 import HotelBasicInfo from '../steps/HotelBasicInfo';
@@ -9,64 +11,13 @@ import HotelRooms from '../steps/HotelRooms';
 import HotelImages from '../steps/HotelImages';
 import ReviewAndSubmit from '../steps/ReviewAndSubmit';
 
-// ✅ NOVO: Importar utilitários de Metical
-import { formatMetical } from '@/shared/utils/currency';
-
-// Tipos
-export interface HotelFormData {
-  // Informações básicas
-  name: string;
-  description: string;
-  category: string;
-  email: string;
-  phone: string;
-  
-  // Localização
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  zipCode: string;
-  latitude?: number;
-  longitude?: number;
-  
-  // Comodidades
-  amenities: string[];
-  
-  // Quartos
-  rooms: RoomType[];
-  
-  // ✅ CORRIGIDO: Imagens agora aceitam tanto File quanto string
-  images: (File | string)[];
-  existingImages: string[];
-}
-
-export interface RoomType {
-  id: string;
-  type: string;
-  description: string;
-  price: number; // ✅ Em Metical (MT)
-  capacity: number;
-  quantity: number;
-  amenities: string[];
-}
-
-// ✅ CORRIGIDO: Props atualizadas para suportar tipos flexíveis
-interface HotelCreationWizardProps {
-  onSuccess?: (hotelId: string) => void;
-  onCancel?: () => void;
-  mode?: 'create' | 'edit';
-  initialData?: HotelFormData;
-  hotelId?: string; // ID do hotel para edição
-}
-
 const steps = [
   'Informações Básicas',
   'Localização',
   'Comodidades',
   'Quartos',
   'Imagens',
-  'Revisão e Envio'
+  'Revisão'
 ];
 
 // Estilos usando objetos React.CSSProperties
@@ -209,7 +160,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     height: '40px',
     animation: 'spin 1s linear infinite'
   },
-  // ✅ NOVO: Estilo para exibição de preços
   priceDisplay: {
     color: '#059669',
     fontWeight: 'bold',
@@ -262,32 +212,61 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     state: '',
     country: '',
     zipCode: '',
+    location: { lat: 0, lng: 0 },
     amenities: [],
     rooms: [],
     images: [],
-    existingImages: []
+    existingImages: [],
+    checkInTime: '',
+    checkOutTime: '',
+    policies: [],
+    isActive: true
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // ✅ CORRIGIDO: Carregar dados iniciais para edição
+  // Converte RoomFormData -> HotelRoomType do service
+  const mapRoomsForService = (rooms: RoomFormData[]): HotelRoomType[] => {
+    return rooms.map(room => ({
+      id: room.id || '',
+      name: room.name,
+      type: room.type,
+      price: room.pricePerNight,
+      capacity: room.maxOccupancy,
+      quantity: room.quantity,
+      description: room.description,
+      amenities: room.amenities,
+      images: room.images,
+      size: room.size,
+      bedType: room.bedType,
+      hasBalcony: room.hasBalcony,
+      hasSeaView: room.hasSeaView
+    }));
+  };
+
   useEffect(() => {
     if (mode === 'edit' && hotelId) {
       loadHotelData();
     } else if (initialData) {
-      // ✅ CORRIGIDO: Garantir que as imagens sejam tratadas corretamente
       const processedData = {
         ...initialData,
+        state: initialData.state || '',
+        location: initialData.location || { lat: 0, lng: 0 },
         images: initialData.images || [],
-        existingImages: initialData.existingImages || []
+        existingImages: initialData.existingImages || [],
+        checkInTime: initialData.checkInTime || '',
+        checkOutTime: initialData.checkOutTime || '',
+        policies: initialData.policies || [],
+        isActive: initialData.isActive ?? true,
+        amenities: initialData.amenities || [],
+        rooms: initialData.rooms || []
       };
       setFormData(processedData);
     }
   }, [mode, hotelId, initialData]);
 
-  // ✅ CORRIGIDO: Carregar dados do hotel para edição
   const loadHotelData = async () => {
     if (!hotelId) return;
     
@@ -295,27 +274,26 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
       setIsLoading(true);
       console.log('📋 Carregando dados do hotel para edição:', hotelId);
       
-      // Se initialData foi fornecido, use-o
       if (initialData) {
-        // ✅ CORRIGIDO: Processar imagens para garantir compatibilidade
         const processedData = {
           ...initialData,
+          state: initialData.state || '',
+          location: initialData.location || { lat: 0, lng: 0 },
           images: initialData.images || [],
-          existingImages: initialData.existingImages || []
+          existingImages: initialData.existingImages || [],
+          checkInTime: initialData.checkInTime || '',
+          checkOutTime: initialData.checkOutTime || '',
+          policies: initialData.policies || [],
+          isActive: initialData.isActive ?? true,
+          amenities: initialData.amenities || [],
+          rooms: initialData.rooms || []
         };
         setFormData(processedData);
         console.log('✅ Dados iniciais carregados:', processedData);
       } else {
-        // ✅ NOVO: Tentar carregar da API se não houver initialData
         try {
-          // Aqui você implementaria a chamada API real
-          // Por enquanto, vamos simular um carregamento
           console.log('ℹ️ Tentando carregar dados da API para o hotel:', hotelId);
-          
-          // Simular delay de carregamento
           await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Se não conseguir carregar, manter dados vazios
           console.log('⚠️ Nenhum dado encontrado na API, mantendo formulário vazio');
         } catch (apiError) {
           console.error('❌ Erro na API:', apiError);
@@ -330,34 +308,30 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     }
   };
 
-  // ✅ CORRIGIDO: Calcular preço médio dos quartos
   const calculateAveragePrice = (): string => {
     if (formData.rooms.length === 0) return formatMetical(0);
     
-    const total = formData.rooms.reduce((sum, room) => sum + room.price, 0);
+    const total = formData.rooms.reduce((sum, room) => sum + room.pricePerNight, 0);
     const average = total / formData.rooms.length;
     return formatMetical(average);
   };
 
-  // ✅ CORRIGIDO: Calcular preço mínimo e máximo
   const calculatePriceRange = (): { min: string; max: string } => {
     if (formData.rooms.length === 0) {
       return { min: formatMetical(0), max: formatMetical(0) };
     }
     
-    const prices = formData.rooms.map(room => room.price);
+    const prices = formData.rooms.map(room => room.pricePerNight);
     return {
       min: formatMetical(Math.min(...prices)),
       max: formatMetical(Math.max(...prices))
     };
   };
 
-  // ✅ CORRIGIDO: Obter título baseado no modo
   const getTitle = (): string => {
     return mode === 'edit' ? 'Editar Hotel' : 'Cadastro de Hotel';
   };
 
-  // ✅ CORRIGIDO: Obter subtítulo baseado no modo
   const getSubtitle = (): string => {
     const baseText = `Preencha as informações do seu hotel em ${steps.length} etapas`;
     return mode === 'edit' 
@@ -365,7 +339,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
       : baseText;
   };
 
-  // Avançar para próxima etapa
   const handleNext = () => {
     if (validateStep(activeStep)) {
       setActiveStep((prevStep) => prevStep + 1);
@@ -374,14 +347,12 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     }
   };
 
-  // Voltar para etapa anterior
   const handleBack = () => {
     setActiveStep((prevStep) => prevStep - 1);
     setError('');
     setSuccess('');
   };
 
-  // ✅ CORRIGIDO: Validação com suporte para modo de edição
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 0: // Informações básicas
@@ -397,7 +368,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           setError('Email é obrigatório');
           return false;
         }
-        // Validação básica de email
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email)) {
           setError('Email inválido');
@@ -433,35 +403,33 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           return false;
         }
         
-        // ✅ CORRIGIDO: Validação reforçada de preços
         for (const room of formData.rooms) {
           if (!room.type.trim()) {
             setError('Tipo de quarto é obrigatório para todos os quartos');
             return false;
           }
           
-          // ✅ VALIDAÇÃO CRÍTICA DO PREÇO
-          if (room.price === null || room.price === undefined) {
+          if (room.pricePerNight === null || room.pricePerNight === undefined) {
             setError(`Preço é obrigatório para: ${room.type}`);
             return false;
           }
           
-          if (typeof room.price !== 'number' || isNaN(room.price)) {
+          if (typeof room.pricePerNight !== 'number' || isNaN(room.pricePerNight)) {
             setError(`Preço deve ser um número válido para: ${room.type}`);
             return false;
           }
           
-          if (room.price <= 0) {
+          if (room.pricePerNight <= 0) {
             setError(`Preço em Metical deve ser maior que zero para: ${room.type}`);
             return false;
           }
           
-          if (room.price < 100) {
+          if (room.pricePerNight < 100) {
             setError(`Preço muito baixo para ${room.type}. Mínimo recomendado: ${formatMetical(100)}`);
             return false;
           }
           
-          if (room.capacity <= 0) {
+          if (room.maxOccupancy <= 0) {
             setError('Capacidade deve ser maior que zero para todos os quartos');
             return false;
           }
@@ -473,13 +441,12 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
         }
         
         console.log('✅ Todos os quartos validados com preços:', 
-          formData.rooms.map(room => ({ type: room.type, price: room.price }))
+          formData.rooms.map(room => ({ type: room.type, pricePerNight: room.pricePerNight }))
         );
         return true;
       
       case 4: // Imagens
-        // ✅ CORRIGIDO: Para edição, aceita imagens existentes (strings) ou novas (Files)
-        const hasImages = formData.images.length > 0 || formData.existingImages.length > 0;
+        const hasImages = (formData.images?.length || 0) + (formData.existingImages?.length || 0) > 0;
         if (!hasImages) {
           setError('Adicione pelo menos uma imagem do hotel');
           return false;
@@ -491,33 +458,34 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     }
   };
 
-  // ✅ CORRIGIDO: Atualizar dados do formulário com tratamento de tipos
   const updateFormData = (newData: Partial<HotelFormData>) => {
     setFormData(prev => {
       const updated = { ...prev, ...newData };
       
-      // ✅ GARANTIR: Que arrays sempre existam
       if (!updated.images) updated.images = [];
       if (!updated.existingImages) updated.existingImages = [];
       if (!updated.amenities) updated.amenities = [];
       if (!updated.rooms) updated.rooms = [];
+      if (!updated.location) updated.location = { lat: 0, lng: 0 };
+      if (!updated.policies) updated.policies = [];
       
       return updated;
     });
   };
 
-  // ✅ CORRIGIDO: Helper para separar imagens por tipo
   const separateImages = () => {
-    const fileImages = formData.images.filter((img): img is File => img instanceof File);
-    const stringImages = formData.images.filter((img): img is string => typeof img === 'string');
+    const fileImages = formData.images?.filter((img: any): img is File => img instanceof File) || [];
+    const stringImages = [
+      ...(formData.images?.filter((img: any): img is string => typeof img === 'string') || []),
+      ...(formData.existingImages || [])
+    ];
     
     return {
       fileImages,
-      stringImages: [...stringImages, ...formData.existingImages]
+      stringImages
     };
   };
 
-  // ✅ CORRIGIDO: Submissão com tratamento correto de preços
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
@@ -526,9 +494,8 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
 
       console.log(`🏨 Iniciando ${mode === 'edit' ? 'edição' : 'criação'} do hotel...`, formData);
 
-      // ✅ VALIDAÇÃO CRÍTICA: Verificar se todos os quartos têm preço válido
       const invalidRooms = formData.rooms.filter(room => 
-        room.price === null || room.price === undefined || room.price <= 0
+        room.pricePerNight === null || room.pricePerNight === undefined || room.pricePerNight <= 0
       );
       
       if (invalidRooms.length > 0) {
@@ -536,66 +503,39 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
         throw new Error(`Preço inválido para os quartos: ${invalidRoomNames}. Preço mínimo: ${formatMetical(100)}`);
       }
 
-      // ✅ CORRIGIDO: Log com preços formatados em Metical
       console.log('💰 Preços validados dos quartos (MT):', 
         formData.rooms.map(room => ({
           type: room.type,
-          price: room.price,
-          formatted: formatMetical(room.price)
+          pricePerNight: room.pricePerNight,
+          formatted: formatMetical(room.pricePerNight)
         }))
       );
 
-      // ✅ CORRIGIDO: Separar imagens para processamento
       const { fileImages, stringImages } = separateImages();
       console.log('🖼️ Imagens - Files:', fileImages.length, 'URLs:', stringImages.length);
 
       let result;
       
       if (mode === 'edit' && hotelId) {
-        // ✅ CORRIGIDO: Lógica para edição com dados processados
         console.log('✏️ Editando hotel existente:', hotelId);
         
-        // Preparar dados para edição
         const editData = {
           ...formData,
-          images: fileImages, // ✅ Apenas novos arquivos para upload
-          existingImages: stringImages // ✅ URLs existentes + novas URLs
+          zipCode: formData.zipCode || '',
+          images: fileImages,
+          existingImages: stringImages,
+          rooms: mapRoomsForService(formData.rooms)
         };
         
-        // Aqui você chamaria accommodationService.updateHotel
-        // Por enquanto, vamos simular sucesso
-        result = { hotelId, success: true };
+        result = await accommodationService.updateHotel(hotelId, editData);
         setSuccess('Hotel atualizado com sucesso!');
       } else {
-        // ✅ CORRIGIDO: Preparar dados para criação com mapeamento correto
-        const createData: HotelFormData = {
-          // Informações básicas
-          name: formData.name,
-          description: formData.description,
-          category: formData.category,
-          email: formData.email,
-          phone: formData.phone,
-          
-          // Localização
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          country: formData.country,
-          zipCode: formData.zipCode,
-          latitude: formData.latitude,
-          longitude: formData.longitude,
-          
-          // Comodidades
-          amenities: formData.amenities,
-          
-          // Quartos (mantemos a estrutura original para o formData)
-          rooms: formData.rooms,
-          
-          // Imagens
+        const createData = {
+          ...formData,
+          zipCode: formData.zipCode || '',
           images: fileImages,
-          
-          // ✅ CORREÇÃO: Adicionar propriedade existingImages que estava faltando
-          existingImages: [] // ✅ Para criação, existingImages é vazio
+          existingImages: [],
+          rooms: mapRoomsForService(formData.rooms)
         };
         
         console.log('📤 Dados enviados para criação:', {
@@ -611,15 +551,12 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           }))
         });
 
-        // ✅ CORRIGIDO: Chamar o serviço com dados mapeados corretamente
-        // O accommodationService.createHotel deve lidar com o mapeamento interno
         result = await accommodationService.createHotel(createData);
         setSuccess('Hotel criado com sucesso!');
       }
       
       console.log(`✅ Hotel ${mode === 'edit' ? 'atualizado' : 'criado'} com sucesso:`, result);
 
-      // Aguardar um pouco para mostrar mensagem de sucesso
       setTimeout(() => {
         onSuccess?.(result.hotelId || hotelId || '');
       }, 2000);
@@ -637,7 +574,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     }
   };
 
-  // Handler para hover dos botões
   const handleButtonHover = (e: React.MouseEvent<HTMLButtonElement>, isPrimary: boolean) => {
     if (!isSubmitting) {
       e.currentTarget.style.backgroundColor = isPrimary 
@@ -654,7 +590,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     }
   };
 
-  // ✅ CORRIGIDO: Renderizar resumo de preços para a etapa de revisão
   const renderPriceSummary = () => {
     if (formData.rooms.length === 0) return null;
 
@@ -685,7 +620,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     );
   };
 
-  // ✅ CORRIGIDO: Renderizar badge do modo
   const renderModeBadge = () => {
     const badgeStyle = {
       ...styles.modeBadge,
@@ -701,14 +635,13 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     );
   };
 
-  // ✅ CORRIGIDO: Renderizar etapa atual com props atualizadas
   const renderStep = () => {
     const commonProps = {
       formData,
       updateFormData,
       onNext: handleNext,
       onBack: handleBack,
-      mode // ✅ Passar o modo para os componentes filhos
+      mode
     };
 
     switch (activeStep) {
@@ -759,7 +692,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
       <style>{spinnerStyle}</style>
       
       <div style={styles.paper}>
-        {/* Loading Overlay */}
         {isSubmitting && (
           <div style={styles.loadingOverlay}>
             <div style={styles.loadingSpinner}></div>
@@ -769,7 +701,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           </div>
         )}
 
-        {/* Cabeçalho */}
         <h1 style={styles.title}>{getTitle()}</h1>
         {renderModeBadge()}
         
@@ -777,7 +708,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           {getSubtitle()}
         </p>
 
-        {/* Stepper simplificado */}
         <div style={styles.stepper}>
           <div style={styles.stepperLine}></div>
           {steps.map((label, index) => {
@@ -799,26 +729,22 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           })}
         </div>
 
-        {/* Mensagem de sucesso */}
         {success && (
           <div style={{ ...styles.alert, ...styles.success }}>
             ✅ {success}
           </div>
         )}
 
-        {/* Mensagem de erro */}
         {error && (
           <div style={{ ...styles.alert, ...styles.error }}>
             ❌ {error}
           </div>
         )}
 
-        {/* Conteúdo da etapa */}
         <div style={styles.stepContent}>
           {renderStep()}
         </div>
 
-        {/* Navegação (exceto na última etapa) */}
         {activeStep < steps.length - 1 && (
           <div style={styles.navigation}>
             <button

@@ -7,39 +7,17 @@ import { Textarea } from "@/shared/components/ui/textarea";
 import { Badge } from "@/shared/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
-import { Calendar } from "@/shared/components/ui/calendar";
-import { Hotel, MapPin, Star, Users, CalendarDays, Wifi, Car as CarIcon, Coffee, Utensils, Edit, X, Plus, Bed } from "lucide-react";
-import { format } from "date-fns";
-import { pt } from "date-fns/locale";
+import { Hotel, MapPin, Star, Users, Wifi, Car as CarIcon, Coffee, Utensils, X, Plus, Bed, Eye, Settings, Edit } from "lucide-react";
+import { Link } from "wouter";
 import { useAuth } from "../hooks/useAuth";
 import { useAccommodations } from "../hooks/useAccommodations";
 import { useHotelRooms } from "../hooks/useHotelRooms";
 import { useToast } from "../hooks/use-toast";
 import LocationAutocomplete from "./LocationAutocomplete";
+import type { Accommodation } from "../hooks/useAccommodations";
 
 interface AccommodationManagerProps {
   hostId?: string;
-}
-
-interface Accommodation {
-  id: string;
-  hostId: string;
-  name: string;
-  type: string;
-  address: string;
-  description: string;
-  // ❌ REMOVIDO: pricePerNight - agora fica nos quartos
-  maxGuests: number;
-  bedrooms: number;
-  bathrooms: number;
-  amenities: string[];
-  images: string[];
-  isAvailable: boolean;
-  rating?: number;
-  reviewCount?: number;
-  unavailableDates?: string[];
-  createdAt: string;
-  updatedAt: string;
 }
 
 interface CreateAccommodationData {
@@ -48,8 +26,6 @@ interface CreateAccommodationData {
   address: string;
   description: string;
   maxGuests?: number;
-  bedrooms?: number;
-  bathrooms?: number;
   amenities?: string[];
   images?: string[];
   isAvailable?: boolean;
@@ -63,8 +39,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
   const [activeTab, setActiveTab] = useState("properties");
   const [showAddProperty, setShowAddProperty] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Accommodation | null>(null);
-
-  // Estados para criação de quartos
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [selectedPropertyForRoom, setSelectedPropertyForRoom] = useState<Accommodation | null>(null);
   const [newRoom, setNewRoom] = useState({
@@ -76,7 +50,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     amenities: [] as string[]
   });
 
-  // Usar hook real para acomodações
   const { 
     accommodations: realAccommodations, 
     loading: accommodationsLoading, 
@@ -85,7 +58,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     error: accommodationsError 
   } = useAccommodations();
 
-  // ✅ NOVO: Hook para gerenciar quartos da propriedade selecionada
   const { 
     rooms: propertyRooms, 
     loading: roomsLoading, 
@@ -95,7 +67,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     refetch: refetchRooms 
   } = useHotelRooms(selectedPropertyForRoom?.id);
 
-  // Filtrar acomodações do host atual
   const hostProperties = realAccommodations?.filter(acc => acc.hostId === currentHostId) || [];
 
   const [newProperty, setNewProperty] = useState<CreateAccommodationData>({
@@ -104,8 +75,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     address: "",
     description: "",
     maxGuests: 2,
-    bedrooms: 1,
-    bathrooms: 1,
     amenities: [],
     images: [],
     isAvailable: true
@@ -144,10 +113,17 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     { id: "room-service", label: "Room Service" }
   ];
 
+  const handleManageRooms = (hotelId: string) => {
+    const hotel = hostProperties.find(h => h.id === hotelId);
+    if (hotel) {
+      setSelectedProperty(hotel);
+      setActiveTab("rooms");
+    }
+  };
+
   const handleSubmitProperty = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validação
     if (!newProperty.name.trim()) {
       toast({ title: "Erro", description: "Nome da propriedade é obrigatório", variant: "destructive" });
       return;
@@ -164,7 +140,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     }
 
     try {
-      // ✅ CORRIGIDO: Não há mais pricePerNight para remover
       const result = await createAccommodation(newProperty);
 
       if (result.success) {
@@ -179,8 +154,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
           address: "",
           description: "",
           maxGuests: 2,
-          bedrooms: 1,
-          bathrooms: 1,
           amenities: [],
           images: [],
           isAvailable: true
@@ -211,7 +184,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     
     if (!selectedPropertyForRoom) return;
 
-    // Validação
     if (!newRoom.roomNumber.trim()) {
       toast({ title: "Erro", description: "Número do quarto é obrigatório", variant: "destructive" });
       return;
@@ -223,7 +195,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     }
 
     try {
-      // ✅ CORRIGIDO: Usando o hook useHotelRooms para criar o quarto
       const result = await createRoom({
         accommodationId: selectedPropertyForRoom.id,
         roomNumber: newRoom.roomNumber,
@@ -267,7 +238,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Deletar quarto
   const handleDeleteRoom = async (roomId: string) => {
     try {
       const result = await deleteRoom(roomId);
@@ -281,7 +251,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Atualizar disponibilidade do quarto
   const handleToggleRoomAvailability = async (roomId: string, isAvailable: boolean) => {
     try {
       const result = await updateRoom(roomId, { isAvailable });
@@ -314,49 +283,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
         ? prev.amenities.filter(a => a !== amenityId)
         : [...prev.amenities, amenityId]
     }));
-  };
-
-  const handleDateUnavailable = async (date: Date) => {
-    if (!selectedProperty) return;
-    
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const isAlreadyUnavailable = selectedProperty.unavailableDates?.includes(dateStr);
-    
-    try {
-      let updatedUnavailableDates: string[];
-      
-      if (isAlreadyUnavailable) {
-        // Remover data indisponível
-        updatedUnavailableDates = selectedProperty.unavailableDates?.filter((d: string) => d !== dateStr) || [];
-      } else {
-        // Adicionar data indisponível
-        updatedUnavailableDates = [...(selectedProperty.unavailableDates || []), dateStr];
-      }
-      
-      // Atualizar no backend
-      const result = await updateAccommodation(selectedProperty.id, {
-        unavailableDates: updatedUnavailableDates
-      });
-      
-      if (result.success) {
-        toast({ title: "Sucesso", description: "Calendário atualizado!" });
-        // Atualizar propriedade selecionada localmente
-        setSelectedProperty({
-          ...selectedProperty,
-          unavailableDates: updatedUnavailableDates
-        });
-      } else {
-        toast({ title: "Erro", description: result.error || "Erro ao atualizar calendário", variant: "destructive" });
-      }
-    } catch (error: any) {
-      toast({ title: "Erro", description: error.message || "Erro ao atualizar calendário", variant: "destructive" });
-    }
-  };
-
-  const isDateUnavailable = (date: Date) => {
-    if (!selectedProperty) return false;
-    const dateStr = format(date, 'yyyy-MM-dd');
-    return selectedProperty.unavailableDates?.includes(dateStr) || false;
   };
 
   const getPropertyTypeLabel = (type: string) => {
@@ -415,15 +341,13 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="properties">
             Propriedades ({hostProperties.length})
           </TabsTrigger>
           <TabsTrigger value="rooms">Quartos</TabsTrigger>
-          <TabsTrigger value="calendar">Calendário</TabsTrigger>
         </TabsList>
 
-        {/* Lista de Propriedades */}
         <TabsContent value="properties" className="space-y-4">
           {hostProperties.length === 0 ? (
             <Card>
@@ -449,8 +373,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
               <Card key={property.id}>
                 <CardContent className="p-6">
                   <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between space-y-4 lg:space-y-0">
-                    
-                    {/* Informações da Propriedade */}
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-3">
                         <div>
@@ -471,13 +393,40 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => handleAddRoom(property)}
+                            asChild
+                            title="Ver detalhes"
                           >
-                            <Plus className="w-4 h-4 mr-1" />
-                            Quarto
+                            <Link href={`/hotels/${property.id}/details`}>
+                              <Eye className="w-4 h-4" />
+                            </Link>
                           </Button>
-                          <Button variant="outline" size="sm">
-                            <Edit className="w-4 h-4" />
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            asChild
+                            title="Editar"
+                          >
+                            <Link href={`/hotels/${property.id}/edit`}>
+                              <Edit className="w-4 h-4" />
+                            </Link>
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            asChild
+                            title="Configurar"
+                          >
+                            <Link href={`/hotels/${property.id}/configure`}>
+                              <Settings className="w-4 h-4" />
+                            </Link>
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleAddRoom(property)}
+                            title="Adicionar quarto"
+                          >
+                            <Plus className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
@@ -494,16 +443,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                         </div>
                         
                         <div>
-                          <div className="text-sm text-gray-500">Quartos</div>
-                          <div className="font-medium">{property.bedrooms}</div>
-                        </div>
-                        
-                        <div>
-                          <div className="text-sm text-gray-500">Casas de banho</div>
-                          <div className="font-medium">{property.bathrooms}</div>
-                        </div>
-                        
-                        <div>
                           <div className="text-sm text-gray-500">Avaliação</div>
                           <div className="font-medium flex items-center">
                             <Star className="w-4 h-4 mr-1 fill-yellow-400 text-yellow-400" />
@@ -512,7 +451,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                         </div>
                       </div>
 
-                      {/* Comodidades */}
                       {property.amenities && property.amenities.length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-4">
                           {property.amenities.map((amenity) => {
@@ -528,7 +466,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                       )}
                     </div>
 
-                    {/* Preço e Ações */}
                     <div className="lg:ml-6">
                       <div className="text-right mb-4">
                         <div className="text-sm text-gray-500">Preços definidos por quarto</div>
@@ -554,16 +491,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                           <Bed className="w-4 h-4 mr-2" />
                           Gerir Quartos
                         </Button>
-                        
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => setSelectedProperty(property)}
-                          data-testid={`manage-calendar-${property.id}`}
-                        >
-                          <CalendarDays className="w-4 h-4 mr-2" />
-                          Gerir Calendário
-                        </Button>
                       </div>
                     </div>
                   </div>
@@ -573,7 +500,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
           )}
         </TabsContent>
 
-        {/* ✅ NOVA ABA: Gestão de Quartos */}
         <TabsContent value="rooms" className="space-y-4">
           {selectedProperty ? (
             <div>
@@ -706,70 +632,8 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
             </Card>
           )}
         </TabsContent>
-
-        {/* Calendário de Disponibilidade */}
-        <TabsContent value="calendar">
-          {selectedProperty ? (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Calendário - {selectedProperty.name}</CardTitle>
-                  <p className="text-sm text-gray-600">Clique nas datas para marcar como indisponíveis</p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedProperty(null)}
-                >
-                  <X className="w-4 h-4 mr-2" />
-                  Fechar
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <Calendar
-                  mode="single"
-                  onDayClick={handleDateUnavailable}
-                  className="rounded-md border"
-                  locale={pt}
-                  modifiers={{
-                    unavailable: (date) => isDateUnavailable(date)
-                  }}
-                  modifiersStyles={{
-                    unavailable: { 
-                      backgroundColor: '#fee2e2', 
-                      color: '#dc2626',
-                      fontWeight: 'bold'
-                    }
-                  }}
-                />
-                <div className="mt-4 flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
-                    <span>Disponível</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
-                    <span>Indisponível</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="text-center py-12">
-                <CalendarDays className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Selecione uma Propriedade
-                </h3>
-                <p className="text-gray-600">
-                  Escolha uma propriedade da aba "Propriedades" para gerir o calendário
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
       </Tabs>
 
-      {/* Modal para Adicionar Propriedade */}
       {showAddProperty && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -858,30 +722,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
                       data-testid="property-guests"
                     />
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="bedrooms">Quartos</Label>
-                    <Input
-                      id="bedrooms"
-                      type="number"
-                      min="0"
-                      value={newProperty.bedrooms}
-                      onChange={(e) => setNewProperty(prev => ({...prev, bedrooms: parseInt(e.target.value) || 1}))}
-                      data-testid="property-bedrooms"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="bathrooms">Casas de banho</Label>
-                    <Input
-                      id="bathrooms"
-                      type="number"
-                      min="0"
-                      value={newProperty.bathrooms}
-                      onChange={(e) => setNewProperty(prev => ({...prev, bathrooms: parseInt(e.target.value) || 1}))}
-                      data-testid="property-bathrooms"
-                    />
-                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -927,7 +767,6 @@ export default function AccommodationManager({ hostId }: AccommodationManagerPro
         </div>
       )}
 
-      {/* Modal para Adicionar Quarto */}
       {showAddRoom && selectedPropertyForRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md">
