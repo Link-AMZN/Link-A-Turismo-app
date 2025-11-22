@@ -1,0 +1,210 @@
+// API Client que usa Mock Service quando backend não está disponível
+import { MockApiService } from "../services/mockApi";
+
+// Interface para CreateAccommodationRequest
+export interface CreateAccommodationRequest {
+  name: string;
+  type: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  rating?: number;
+  images?: string[];
+  amenities?: string[];
+  description?: string;
+  hostId?: string;
+  pricePerNight?: number;
+  reviewCount?: number;
+  distanceFromCenter?: number;
+  isAvailable?: boolean;
+  offerDriverDiscounts?: boolean;
+  driverDiscountRate?: number;
+  minimumDriverLevel?: string;
+  partnershipBadgeVisible?: boolean;
+  enablePartnerships?: boolean;
+  accommodationDiscount?: number;
+  transportDiscount?: number;
+}
+
+// Função para detectar se o backend está disponível
+async function isBackendAvailable(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/health", {
+      method: "GET",
+      signal: AbortSignal.timeout(2000), // timeout 2s
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Cliente API inteligente
+export class ApiClient {
+  private static useBackend = true;
+
+  static async checkBackend() {
+    this.useBackend = await isBackendAvailable();
+    console.log(
+      `🔗 Using ${this.useBackend ? "real backend" : "mock service"}`
+    );
+  }
+
+  // ===== RIDES API =====
+  static async createRide(rideData: any) {
+    console.log("📝 API: Criando rota", rideData);
+
+    try {
+      if (this.useBackend) {
+        const response = await fetch("/api/rides-simple/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rideData),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service");
+      this.useBackend = false;
+    }
+
+    return await MockApiService.createRide(rideData);
+  }
+
+  static async searchRides(params: {
+    fromLocation?: string;
+    toLocation?: string;
+    passengers?: string;
+    departureDate?: string;
+  }) {
+    console.log("🔍 API: Buscar viagens", params);
+
+    try {
+      if (this.useBackend) {
+        const searchParams = new URLSearchParams();
+
+        if (params.fromLocation) searchParams.append("from", params.fromLocation);
+        if (params.toLocation) searchParams.append("to", params.toLocation);
+        if (params.passengers) searchParams.append("passengers", params.passengers);
+        if (params.departureDate) searchParams.append("date", params.departureDate);
+
+        const response = await fetch(`/api/rides/smart/search?${searchParams.toString()}`);
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service");
+      this.useBackend = false;
+    }
+
+    const result = await MockApiService.searchRides(params);
+    return {
+      success: true,
+      rides: result.rides,
+      message: `Encontradas ${result.rides.length} viagens disponíveis`,
+      pagination: result.pagination,
+    };
+  }
+
+  // ===== ACCOMMODATIONS API =====
+  static async searchAccommodations(params: {
+    location?: string;
+    checkIn?: string;
+    checkOut?: string;
+    guests?: string;
+  }) {
+    console.log("🏨 API: Buscar acomodações", params);
+
+    try {
+      if (this.useBackend) {
+        const searchParams = new URLSearchParams();
+
+        if (params.location) searchParams.append("address", params.location);
+        if (params.checkIn) searchParams.append("checkIn", params.checkIn);
+        if (params.checkOut) searchParams.append("checkOut", params.checkOut);
+        if (params.guests) searchParams.append("guests", params.guests);
+
+        const response = await fetch(`/api/hotels?${searchParams.toString()}`);
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service for accommodations");
+      this.useBackend = false;
+    }
+
+    return await MockApiService.searchAccommodations(params);
+  }
+
+  // Criar nova acomodação
+  static async createAccommodation(data: CreateAccommodationRequest) {
+    console.log("🏨 API: Criando acomodação", data);
+
+    try {
+      if (this.useBackend) {
+        const response = await fetch('/api/accommodations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          throw new Error('Erro ao criar acomodação');
+        }
+
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service for create accommodation");
+      this.useBackend = false;
+    }
+
+    return await MockApiService.createAccommodation(data);
+  }
+
+  // ===== BOOKINGS API =====
+  static async createBooking(bookingData: any) {
+    console.log("📋 API: Criando reserva", bookingData);
+
+    try {
+      if (this.useBackend) {
+        const response = await fetch("/api/bookings/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bookingData),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service for bookings");
+      this.useBackend = false;
+    }
+
+    return await MockApiService.createBooking(bookingData);
+  }
+
+  // ===== HEALTH CHECK =====
+  static async healthCheck() {
+    try {
+      if (this.useBackend) {
+        const response = await fetch("/api/health");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+    } catch (error) {
+      console.log("🔄 Fallback to mock service health");
+      this.useBackend = false;
+    }
+
+    return await MockApiService.healthCheck();
+  }
+}
+
+// Inicializar verificação do backend
+ApiClient.checkBackend();

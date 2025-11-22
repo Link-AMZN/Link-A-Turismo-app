@@ -1,7 +1,10 @@
 import apiService from '@/services/api';
 import { auth } from '@/shared/lib/firebaseConfig';
+// ✅ IMPORTAR AS INTERFACES UNIFICADAS
+import { Accommodation, CreateAccommodationData, SearchFilters, LocationSuggestion } from '@/shared/types/accommodation';
 
-// Interfaces (unchanged, included for completeness)
+// ==================== INTERFACES CORRIGIDAS ====================
+
 export interface CreateAccommodationRequest {
   name: string;
   type: string;
@@ -61,13 +64,6 @@ export interface AccommodationData {
   hostId?: string;
 }
 
-export interface Accommodation extends AccommodationData {
-  id: string;
-  rating: number;
-  createdAt: string;
-  updatedAt?: string;
-}
-
 export interface AccommodationSearchParams {
   location?: string;
   type?: string;
@@ -76,6 +72,9 @@ export interface AccommodationSearchParams {
   checkOut?: string;
   guests?: number;
   hostId?: string;
+  // ✅ NOVOS PARÂMETROS PARA BUSCA INTELIGENTE
+  address?: string;
+  isAvailable?: boolean;
 }
 
 export interface RoomType {
@@ -141,6 +140,24 @@ export interface CreateHotelResponse {
   message: string;
 }
 
+// ✅ NOVA INTERFACE PARA RESULTADOS DE BUSCA INTELIGENTE
+export interface IntelligentSearchResult {
+  success: boolean;
+  data: Accommodation[];
+  searchType: string;
+  location: string;
+  totalResults: number;
+  message: string;
+}
+
+// ✅ INTERFACE PARA BUSCA POR PROXIMIDADE
+export interface NearbySearchParams {
+  lat: number;
+  lng: number;
+  radius?: number;
+  limit?: number;
+}
+
 interface ApiResponse<T = any> {
   data?: T;
   accommodations?: T[];
@@ -167,6 +184,8 @@ interface ExtendedApiService {
   createRoom?: (data: any) => Promise<any>;
 }
 
+// ==================== FUNÇÕES AUXILIARES ====================
+
 const getCurrentUser = () => {
   const user = auth.currentUser;
   if (!user) {
@@ -182,34 +201,210 @@ const safeResponse = (response: any): ApiResponse => {
   return {} as ApiResponse;
 };
 
+// ✅ FUNÇÃO AUXILIAR PARA OBTER BADGE DE LOCALIZAÇÃO
+export const getLocationBadge = (matchType: number, distance?: number) => {
+  const badges = {
+    0: { label: '📍 Localização Exata', color: 'green' },
+    1: { label: '🏛️ Mesma Província', color: 'blue' },
+    2: { label: `🚗 Próximo (${Math.round((distance || 0) / 1000)}km)`, color: 'orange' }
+  };
+  
+  return badges[matchType as keyof typeof badges] || { label: '📌 Outro', color: 'gray' };
+};
+
+// ✅ FUNÇÃO DE CONVERSÃO PARA Accommodation UNIFICADO
+const convertToUnifiedAccommodation = (acc: any): Accommodation => {
+  return {
+    id: acc.id,
+    hostId: acc.hostId || '',
+    name: acc.name,
+    type: acc.type,
+    address: acc.address || acc.location || '',
+    description: acc.description || '',
+    maxGuests: acc.maxGuests || acc.availableRooms || 2,
+    bedrooms: acc.bedrooms || 1,
+    bathrooms: acc.bathrooms || 1,
+    amenities: acc.amenities || [],
+    images: acc.images || [],
+    isAvailable: acc.isAvailable !== false,
+    rating: acc.rating || 0,
+    reviewCount: acc.reviewCount || 0,
+    unavailableDates: acc.unavailableDates || [],
+    
+    // Propriedades adicionais para compatibilidade
+    lat: acc.lat,
+    lng: acc.lng,
+    distanceFromCenter: acc.distanceFromCenter,
+    offerDriverDiscounts: acc.offerDriverDiscounts || false,
+    driverDiscountRate: acc.driverDiscountRate,
+    minimumDriverLevel: acc.minimumDriverLevel,
+    partnershipBadgeVisible: acc.partnershipBadgeVisible || false,
+    enablePartnerships: acc.enablePartnerships || false,
+    accommodationDiscount: acc.accommodationDiscount,
+    transportDiscount: acc.transportDiscount,
+    checkInTime: acc.checkInTime,
+    checkOutTime: acc.checkOutTime,
+    policies: acc.policies,
+    contactEmail: acc.contactEmail,
+    contactPhone: acc.contactPhone,
+    roomTypes: acc.roomTypes || [],
+    
+    // ✅ CAMPOS ADICIONAIS PARA COMPATIBILIDADE
+    pricePerNight: acc.pricePerNight,
+    availableRooms: acc.availableRooms,
+    locality: acc.locality,
+    province: acc.province,
+    location: acc.location,
+    price: acc.price,
+    
+    // ✅ CAMPOS DA BUSCA INTELIGENTE
+    match_type: acc.match_type,
+    distance: acc.distance,
+    hasAvailableRooms: acc.hasAvailableRooms,
+    availableRoomsList: acc.availableRoomsList,
+    rooms: acc.rooms,
+    
+    createdAt: acc.createdAt || new Date().toISOString(),
+    updatedAt: acc.updatedAt || new Date().toISOString()
+  };
+};
+
+// ==================== ACCOMMODATION SERVICE ====================
+
 export const accommodationService = {
+  // ✅ BUSCA INTELIGENTE COM POSTGIS
+  searchIntelligent: async (searchParams: AccommodationSearchParams): Promise<IntelligentSearchResult> => {
+    console.log('🎯 AccommodationService: Busca inteligente com PostGIS', searchParams);
+    
+    try {
+      const { address, checkIn, checkOut, guests, isAvailable } = searchParams;
+      
+      if (!address) {
+        throw new Error('Endereço é obrigatório para busca inteligente');
+      }
+
+      const queryParams = new URLSearchParams();
+      queryParams.append('address', address);
+      if (checkIn) queryParams.append('checkIn', checkIn);
+      if (checkOut) queryParams.append('checkOut', checkOut);
+      if (guests) queryParams.append('guests', guests.toString());
+      if (isAvailable !== undefined) queryParams.append('isAvailable', isAvailable.toString());
+
+      const response = await fetch(`/api/hotels/search-intelligent?${queryParams.toString()}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro HTTP na busca inteligente:', response.status, errorText);
+        throw new Error(`Erro na busca inteligente: ${response.statusText}`);
+      }
+
+      const result: IntelligentSearchResult = await response.json();
+      
+      console.log(`🎯 Busca inteligente encontrou ${result.totalResults} resultados`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Erro na busca inteligente:', error);
+      throw new Error(`Erro na busca inteligente: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  },
+
+  // ✅ BUSCA POR PROXIMIDADE
+  searchNearby: async (params: NearbySearchParams): Promise<IntelligentSearchResult> => {
+    console.log('📍 AccommodationService: Busca por proximidade', params);
+    
+    try {
+      const { lat, lng, radius = 50, limit = 20 } = params;
+      
+      const queryParams = new URLSearchParams();
+      queryParams.append('lat', lat.toString());
+      queryParams.append('lng', lng.toString());
+      queryParams.append('radius', radius.toString());
+      queryParams.append('limit', limit.toString());
+
+      const response = await fetch(`/api/hotels/nearby?${queryParams.toString()}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro HTTP na busca por proximidade:', response.status, errorText);
+        throw new Error(`Erro na busca por proximidade: ${response.statusText}`);
+      }
+
+      const result: IntelligentSearchResult = await response.json();
+      
+      console.log(`📍 Busca por proximidade encontrou ${result.totalResults} resultados`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Erro na busca por proximidade:', error);
+      throw new Error(`Erro na busca por proximidade: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  },
+
+  // ✅ SUGESTÕES DE LOCALIZAÇÃO
+  getLocationSuggestions: async (query: string, limit = 10): Promise<LocationSuggestion[]> => {
+    console.log('💡 AccommodationService: Buscando sugestões para', query);
+    
+    try {
+      if (!query || query.length < 2) {
+        return [];
+      }
+
+      const response = await fetch(`/api/locations/suggest?query=${encodeURIComponent(query)}&limit=${limit}`);
+      
+      if (!response.ok) {
+        console.warn('⚠️ Erro ao buscar sugestões, retornando array vazio');
+        return [];
+      }
+
+      const result = await response.json();
+      
+      console.log(`💡 Encontradas ${result.totalResults} sugestões para "${query}"`);
+      
+      return result.data || [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar sugestões:', error);
+      return [];
+    }
+  },
+
+  // ✅ BUSCA COMPATÍVEL (mantém compatibilidade com código existente)
   searchAccommodations: async (searchParams: AccommodationSearchParams): Promise<Accommodation[]> => {
     console.log('🏨 AccommodationService: Buscando acomodações', searchParams);
     
-    const resp = await apiService.searchAccommodations({
-      location: searchParams.location,
-      checkIn: searchParams.checkIn,
-      checkOut: searchParams.checkOut,
-      guests: searchParams.guests
-    }) as ApiResponse;
+    // Se tem endereço, usa busca inteligente
+    if (searchParams.address || searchParams.location) {
+      try {
+        const address = searchParams.address || searchParams.location;
+        const intelligentResult = await accommodationService.searchIntelligent({
+          ...searchParams,
+          address: address!
+        });
+        
+        // ✅ CONVERSÃO PARA Accommodation UNIFICADO
+        return intelligentResult.data.map(convertToUnifiedAccommodation);
+      } catch (error) {
+        console.warn('⚠️ Busca inteligente falhou, usando busca padrão:', error);
+      }
+    }
     
-    const accommodations = (resp.data?.accommodations ?? resp.accommodations ?? []) as any[];
-    
-    return accommodations.map((acc: any) => ({
-      id: acc.id,
-      name: acc.name,
-      type: acc.type,
-      location: acc.address ?? acc.location,
-      price: parseFloat((acc.pricePerNight ?? acc.price ?? 0).toString()) || 0,
-      rating: Number(acc.rating || 0),
-      description: acc.description || '',
-      amenities: acc.amenities || [],
-      images: acc.images || [],
-      availableRooms: acc.availableRooms ?? 1,
-      hostId: acc.hostId,
-      createdAt: acc.createdAt ?? new Date().toISOString(),
-      updatedAt: acc.updatedAt ?? new Date().toISOString()
-    }));
+    // Fallback para busca padrão
+    try {
+      const resp = await apiService.searchAccommodations({
+        location: searchParams.location,
+        checkIn: searchParams.checkIn,
+        checkOut: searchParams.checkOut,
+        guests: searchParams.guests
+      }) as ApiResponse;
+      
+      const accommodations = (resp.data?.accommodations ?? resp.accommodations ?? []) as any[];
+      
+      // ✅ CONVERSÃO PARA Accommodation UNIFICADO
+      return accommodations.map(convertToUnifiedAccommodation);
+    } catch (error) {
+      console.error('❌ Erro na busca padrão:', error);
+      return [];
+    }
   },
 
   getAllAccommodations: async (): Promise<Accommodation[]> => {
@@ -301,21 +496,8 @@ export const accommodationService = {
         
         if (!acc) throw new Error('Acomodação não encontrada');
         
-        return {
-          id: acc.id,
-          name: acc.name,
-          type: acc.type,
-          location: acc.address ?? acc.location,
-          price: parseFloat((acc.pricePerNight ?? acc.price ?? 0).toString()) || 0,
-          rating: Number(acc.rating || 0),
-          description: acc.description || '',
-          amenities: acc.amenities || [],
-          images: acc.images || [],
-          availableRooms: acc.availableRooms ?? 1,
-          hostId: acc.hostId,
-          createdAt: acc.createdAt ?? new Date().toISOString(),
-          updatedAt: acc.updatedAt ?? new Date().toISOString()
-        };
+        // ✅ CONVERSÃO PARA Accommodation UNIFICADO
+        return convertToUnifiedAccommodation(acc);
       }
     } catch (error) {
       console.log('🔁 Fallback para busca geral');
@@ -621,6 +803,9 @@ export const accommodationService = {
       throw error;
     }
   },
+
+  // ✅ FUNÇÃO AUXILIAR PARA OBTER BADGE DE LOCALIZAÇÃO (para uso no frontend)
+  getLocationBadge,
 
   createHotel: async (hotelData: HotelFormData): Promise<CreateHotelResponse> => {
     console.log('🛠️ === DEBUG createHotel INICIANDO ===');

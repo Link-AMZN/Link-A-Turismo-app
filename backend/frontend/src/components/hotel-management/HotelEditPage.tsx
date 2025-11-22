@@ -178,8 +178,11 @@ export default function HotelEditPage() {
               <div className="space-y-2">
                 <Label htmlFor="address">Localização *</Label>
                 <LocationAutocomplete
+                  id="location-autocomplete"
+                  placeholder="Digite uma cidade, distrito ou província..."
                   value={formData.address}
                   onChange={(value) => setFormData(prev => ({ ...prev, address: value }))}
+                  data-testid="location-autocomplete"
                 />
               </div>
             </div>

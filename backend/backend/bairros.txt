@@ -1,0 +1,42 @@
+INFO: Open of `mozambique_shapefiles/moz_admbnda_adm3_ine_20190607.shp'
+      using driver `ESRI Shapefile' successful.
+
+Layer name: moz_admbnda_adm3_ine_20190607
+Metadata:
+  DBF_DATE_LAST_UPDATE=2019-06-07
+Geometry: Polygon
+Feature Count: 411
+Extent: (30.211725, -26.867041) - (40.840409, -10.473666)
+Layer SRS WKT:
+GEOGCRS["WGS 84",
+    DATUM["World Geodetic System 1984",
+        ELLIPSOID["WGS 84",6378137,298.257223563,
+            LENGTHUNIT["metre",1]]],
+    PRIMEM["Greenwich",0,
+        ANGLEUNIT["degree",0.0174532925199433]],
+    CS[ellipsoidal,2],
+        AXIS["latitude",north,
+            ORDER[1],
+            ANGLEUNIT["degree",0.0174532925199433]],
+        AXIS["longitude",east,
+            ORDER[2],
+            ANGLEUNIT["degree",0.0174532925199433]],
+    ID["EPSG",4326]]
+Data axis to CRS axis mapping: 2,1
+Shape_Leng: Real (19.11)
+Shape_Area: Real (19.11)
+ADM3_PT: String (50.0)
+ADM3_PCODE: String (50.0)
+ADM3_REF: String (50.0)
+ADM3ALT1PT: String (50.0)
+ADM3ALT2PT: String (50.0)
+ADM2_PT: String (50.0)
+ADM2_PCODE: String (50.0)
+ADM1_PT: String (50.0)
+ADM1_PCODE: String (50.0)
+ADM0_EN: String (50.0)
+ADM0_PT: String (50.0)
+ADM0_PCODE: String (50.0)
+date: Date
+validOn: Date
+validTo: Date

@@ -9,7 +9,16 @@ import { z } from 'zod';
 
 export const USER_ROLES = ['client', 'driver', 'hotel_manager', 'admin'] as const;
 export const VERIFICATION_STATUSES = ['pending', 'in_review', 'verified', 'rejected'] as const;
-export const BOOKING_STATUSES = ['pending', 'confirmed', 'cancelled', 'completed', 'in_progress', 'approved', 'rejected'] as const;
+export const BOOKING_STATUSES = [
+  'pending',
+  'confirmed',
+  'cancelled',
+  'completed',
+  'in_progress',
+  'approved',
+  'rejected',
+  'available', // ✅ adicionado
+] as const;
 export const BOOKING_TYPES = ['ride', 'accommodation', 'event'] as const;
 export const SERVICE_TYPES = ['ride', 'stay', 'event'] as const;
 export const DOCUMENT_TYPES = ['identity', 'profile_photo', 'vehicle_registration', 'driving_license', 'vehicle_insurance'] as const;
@@ -17,6 +26,13 @@ export const PAYMENT_METHODS = ['card', 'mpesa', 'bank', 'mobile_money', 'bank_t
 export const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'] as const;
 export const MESSAGE_TYPES = ['text', 'image', 'file', 'system'] as const;
 export const NOTIFICATION_TYPES = ['booking', 'message', 'payment', 'verification', 'system'] as const;
+export const RIDE_STATUSES = [
+  'pending',
+  'active',
+  'completed',
+  'cancelled',
+  'available', // ✅ adicionado
+] as const;
 
 // ===== TYPE UNIONS =====
 
@@ -30,6 +46,7 @@ export type PaymentMethod = typeof PAYMENT_METHODS[number];
 export type PaymentStatus = typeof PAYMENT_STATUSES[number];
 export type MessageType = typeof MESSAGE_TYPES[number];
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
+export type RideStatus = typeof RIDE_STATUSES[number];
 
 // ===== BASE INTERFACES =====
 
@@ -211,9 +228,26 @@ export const updateUserSchema = z.object({
   isBlocked: z.boolean().optional(),
 });
 
+// ✅ ADICIONADO: Schemas para validação de status
+export const bookingStatusSchema = z.enum(BOOKING_STATUSES);
+export const rideStatusSchema = z.enum(RIDE_STATUSES);
+
+// ✅ ADICIONADO: Funções helper para validação de status
+export function isValidBookingStatus(status: string): status is BookingStatus {
+  return BOOKING_STATUSES.includes(status as BookingStatus);
+}
+
+export function isValidRideStatus(status: string): status is RideStatus {
+  return RIDE_STATUSES.includes(status as RideStatus);
+}
+
+export function isValidUserRole(role: string): role is UserRole {
+  return USER_ROLES.includes(role as UserRole);
+}
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type PaginationInput = z.infer<typeof paginationSchema>;
 
-// Export all types for convenience
-export type * from "../../shared/types";
+// ✅ CORRIGIDO: Exportação correta de todos os tipos
+export * from "../../shared/types";

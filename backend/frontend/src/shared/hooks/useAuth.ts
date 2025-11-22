@@ -11,7 +11,7 @@ import {
   isFirebaseConfigured 
 } from '../lib/firebaseConfig';
 
-// Defina um tipo de usuário personalizado
+// ✅ CORREÇÃO: AppUser contém apenas dados do usuário, sem token
 export interface AppUser {
   id: string;
   name?: string;
@@ -25,7 +25,7 @@ interface AuthState {
   appUser: AppUser | null;   // 🔹 seu tipo customizado
   loading: boolean;
   error: string | null;
-  token: string | null; // ⭐⭐ NOVA PROPRIEDADE ADICIONADA
+  token: string | null; // ⭐⭐ TOKEN NO AUTHSTATE, NÃO NO APPUSER
 }
 
 interface UseAuthReturn extends AuthState {
@@ -44,7 +44,7 @@ export const useAuth = (): UseAuthReturn => {
     appUser: null,
     loading: true,
     error: null,
-    token: null, // ⭐⭐ INICIALIZADO COMO NULL
+    token: null, // ⭐⭐ INICIALIZADO COMO NULL NO AUTHSTATE
   });
 
   useEffect(() => {
@@ -77,16 +77,16 @@ export const useAuth = (): UseAuthReturn => {
 
     handleInitialRedirect();
 
-    // ✅ CORREÇÃO: Listen to auth state changes com persistência do token
+    // ✅ CORREÇÃO: Listen to auth state changes com token no AuthState
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
       if (mounted) {
         try {
           if (firebaseUser) {
-            // 🔥 OBTER E SALVAR TOKEN NO LOCALSTORAGE
+            // 🔥 OBTER TOKEN DO FIREBASE
             const token = await firebaseUser.getIdToken();
-            localStorage.setItem('token', token);
             
-            // 🔥 SALVAR INFORMAÇÕES DO USUÁRIO
+            // 🔥 SALVAR NO LOCALSTORAGE PARA PERSISTÊNCIA
+            localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify({
               id: firebaseUser.uid,
               email: firebaseUser.email,
@@ -95,7 +95,7 @@ export const useAuth = (): UseAuthReturn => {
             
             console.log('✅ Token salvo no localStorage:', token.substring(0, 20) + '...');
             
-            // ✅ CORREÇÃO: Criar AppUser com método getIdToken
+            // ✅ CORREÇÃO: Criar AppUser SEM token, apenas com método para obter token
             const appUser: AppUser = {
               id: firebaseUser.uid,
               name: firebaseUser.displayName || undefined,
@@ -104,13 +104,13 @@ export const useAuth = (): UseAuthReturn => {
               getIdToken: () => firebaseUser.getIdToken()
             };
             
-            // ⭐⭐ ATUALIZAR STATE COM TOKEN
+            // ⭐⭐ ATUALIZAR STATE COM TOKEN NO AUTHSTATE, NÃO NO APPUSER
             setAuthState({
               firebaseUser,
               appUser: appUser,
               loading: false,
               error: null,
-              token: token, // ⭐⭐ TOKEN ADICIONADO AO STATE
+              token: token, // ⭐⭐ TOKEN NO AUTHSTATE
             });
           } else {
             // 🔥 LIMPAR DADOS AO FAZER LOGOUT
@@ -229,7 +229,7 @@ export const useAuth = (): UseAuthReturn => {
     }
   };
 
-  // ✅ CORREÇÃO: Atualizar signOut para limpar localStorage
+  // ✅ CORREÇÃO: Atualizar signOut para limpar localStorage e token
   const signOut = async (): Promise<void> => {
     if (!isFirebaseConfigured) {
       throw new Error('Firebase not configured');
@@ -238,19 +238,21 @@ export const useAuth = (): UseAuthReturn => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
-      await signOutUser();
-      // 🔥 GARANTIR QUE LOCALSTORAGE SEJA LIMPO
+      // 🔥 LIMPAR LOCALSTORAGE E TOKEN DO STATE
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       
-      // Force clear the auth state immediately
+      // ⭐⭐ ATUALIZAR STATE IMEDIATAMENTE (antes do signOut do Firebase)
       setAuthState({
         firebaseUser: null,
         appUser: null,
         loading: false,
         error: null,
-        token: null, // ⭐⭐ TOKEN DEFINIDO COMO NULL NO LOGOUT
+        token: null, // ⭐⭐ TOKEN DEFINIDO COMO NULL
       });
+      
+      // Fazer sign out do Firebase
+      await signOutUser();
       
       console.log('✅ Logout realizado e localStorage limpo');
     } catch (error) {
@@ -276,6 +278,18 @@ export const useAuth = (): UseAuthReturn => {
     signOut,
     isAuthenticated: !!authState.appUser,
   };
+};
+
+// ✅ FUNÇÃO AUXILIAR: Para usar em fetch requests
+export const getAuthToken = (): string | null => {
+  // Tenta pegar do localStorage primeiro (para componentes não-hook)
+  return localStorage.getItem('token');
+};
+
+// ✅ FUNÇÃO AUXILIAR: Para usar com useAuth hook
+export const useAuthToken = (): string | null => {
+  const { token } = useAuth();
+  return token;
 };
 
 export default useAuth;

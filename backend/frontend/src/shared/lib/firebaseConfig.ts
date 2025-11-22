@@ -143,6 +143,17 @@ export const signInWithGoogle = async (): Promise<void> => {
     
     if (result.user) {
       console.log('✅ Login com Google bem-sucedido:', result.user.email);
+      
+      // ✅ CORREÇÃO: Salvar token imediatamente após login bem-sucedido
+      const token = await result.user.getIdToken(true);
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify({
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL
+      }));
+      console.log('✅ Token salvo após login com Google');
     }
     
   } catch (error: any) {
@@ -187,6 +198,18 @@ export const checkRedirectResult = async (): Promise<User | null> => {
     const result = await getRedirectResult(auth);
     if (result?.user) {
       console.log('✅ Redirect result successful:', result.user.email);
+      
+      // ✅ CORREÇÃO: Salvar token após redirect bem-sucedido
+      const token = await result.user.getIdToken(true);
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify({
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL
+      }));
+      console.log('✅ Token salvo após redirect');
+      
       return result.user;
     }
     return null;
@@ -205,6 +228,11 @@ export const signOutUser = async (): Promise<void> => {
   if (!auth) throw new Error('Firebase not configured');
   
   try {
+    // ✅ CORREÇÃO: Limpar localStorage ANTES de fazer sign out
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    console.log('🧹 Dados removidos do localStorage');
+    
     await signOut(auth);
     console.log('✅ Signed out successfully');
   } catch (error) {
@@ -218,6 +246,18 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   
   try {
     const result = await signInWithEmailAndPassword(auth, email, password);
+    
+    // ✅ CORREÇÃO: Salvar token após login com email bem-sucedido
+    const token = await result.user.getIdToken(true);
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify({
+      uid: result.user.uid,
+      email: result.user.email,
+      displayName: result.user.displayName,
+      photoURL: result.user.photoURL
+    }));
+    console.log('✅ Token salvo após login com email');
+    
     return result.user;
   } catch (error: any) {
     switch (error?.code) {
@@ -242,6 +282,18 @@ export const signUpWithEmail = async (email: string, password: string): Promise<
   
   try {
     const result = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // ✅ CORREÇÃO: Salvar token após registo bem-sucedido
+    const token = await result.user.getIdToken(true);
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify({
+      uid: result.user.uid,
+      email: result.user.email,
+      displayName: result.user.displayName,
+      photoURL: result.user.photoURL
+    }));
+    console.log('✅ Token salvo após registo com email');
+    
     return result.user;
   } catch (error: any) {
     switch (error?.code) {
@@ -302,7 +354,7 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
           photoURL: user.photoURL
         }));
         
-        console.log('✅ Token salvo no localStorage');
+        console.log('✅ Token salvo/atualizado no localStorage');
         console.log('📱 Token disponível para APIs');
         console.log('🔐 Token length:', token.length);
         
@@ -310,7 +362,7 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
         console.error('❌ Erro ao salvar token:', error);
       }
     } else {
-      // Limpar dados ao fazer logout
+      // ✅ CORREÇÃO: Limpar dados ao fazer logout
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       console.log('🧹 Dados de autenticação removidos do localStorage');
@@ -319,6 +371,22 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
     
     callback(user);
   });
+};
+
+// Função auxiliar para obter o token do localStorage
+export const getStoredToken = (): string | null => {
+  return localStorage.getItem('token');
+};
+
+// Função auxiliar para obter dados do usuário do localStorage
+export const getStoredUser = (): any => {
+  const userStr = localStorage.getItem('user');
+  return userStr ? JSON.parse(userStr) : null;
+};
+
+// Função auxiliar para verificar se o usuário está autenticado
+export const isAuthenticated = (): boolean => {
+  return !!getStoredToken();
 };
 
 // Aliases para compatibilidade

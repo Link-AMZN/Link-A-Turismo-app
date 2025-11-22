@@ -208,11 +208,16 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     email: '',
     phone: '',
     address: '',
+    // ✅ CAMPOS CORRETOS - INCLUINDO city E state QUE A INTERFACE EXIGE
     city: '',
     state: '',
+    locality: '',
+    province: '',
     country: '',
     zipCode: '',
-    location: { lat: 0, lng: 0 },
+    lat: undefined,
+    lng: undefined,
+    location: undefined,
     amenities: [],
     rooms: [],
     images: [],
@@ -252,8 +257,14 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
     } else if (initialData) {
       const processedData = {
         ...initialData,
+        // ✅ INCLUINDO TODOS OS CAMPOS QUE A INTERFACE EXIGE
+        city: initialData.city || '',
         state: initialData.state || '',
-        location: initialData.location || { lat: 0, lng: 0 },
+        locality: initialData.locality || '',
+        province: initialData.province || '',
+        country: initialData.country || '',
+        lat: initialData.lat || initialData.location?.lat || undefined,
+        lng: initialData.lng || initialData.location?.lng || undefined,
         images: initialData.images || [],
         existingImages: initialData.existingImages || [],
         checkInTime: initialData.checkInTime || '',
@@ -263,7 +274,7 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
         amenities: initialData.amenities || [],
         rooms: initialData.rooms || []
       };
-      setFormData(processedData);
+      setFormData(processedData as HotelFormData);
     }
   }, [mode, hotelId, initialData]);
 
@@ -277,8 +288,14 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
       if (initialData) {
         const processedData = {
           ...initialData,
+          // ✅ INCLUINDO TODOS OS CAMPOS QUE A INTERFACE EXIGE
+          city: initialData.city || '',
           state: initialData.state || '',
-          location: initialData.location || { lat: 0, lng: 0 },
+          locality: initialData.locality || '',
+          province: initialData.province || '',
+          country: initialData.country || '',
+          lat: initialData.lat || initialData.location?.lat || undefined,
+          lng: initialData.lng || initialData.location?.lng || undefined,
           images: initialData.images || [],
           existingImages: initialData.existingImages || [],
           checkInTime: initialData.checkInTime || '',
@@ -288,7 +305,7 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           amenities: initialData.amenities || [],
           rooms: initialData.rooms || []
         };
-        setFormData(processedData);
+        setFormData(processedData as HotelFormData);
         console.log('✅ Dados iniciais carregados:', processedData);
       } else {
         try {
@@ -375,17 +392,26 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
         }
         return true;
       
-      case 1: // Localização
+      case 1: // Localização - ✅ VALIDAÇÃO CORRIGIDA (USANDO CAMPOS EXISTENTES)
         if (!formData.address.trim()) {
           setError('Endereço é obrigatório');
           return false;
         }
-        if (!formData.city.trim()) {
-          setError('Cidade é obrigatória');
+        if (!formData.locality.trim()) {
+          setError('Localidade é obrigatória');
+          return false;
+        }
+        if (!formData.province.trim()) {
+          setError('Província é obrigatória');
           return false;
         }
         if (!formData.country.trim()) {
           setError('País é obrigatório');
+          return false;
+        }
+        // ✅ city e state são opcionais na validação, mas mantidos na interface
+        if (formData.lat === undefined || formData.lng === undefined) {
+          setError('Selecione uma localização válida da lista de sugestões');
           return false;
         }
         return true;
@@ -466,7 +492,6 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
       if (!updated.existingImages) updated.existingImages = [];
       if (!updated.amenities) updated.amenities = [];
       if (!updated.rooms) updated.rooms = [];
-      if (!updated.location) updated.location = { lat: 0, lng: 0 };
       if (!updated.policies) updated.policies = [];
       
       return updated;
@@ -542,7 +567,12 @@ const HotelCreationWizard: React.FC<HotelCreationWizardProps> = ({
           hotelInfo: {
             name: createData.name,
             category: createData.category,
-            roomsCount: createData.rooms.length
+            roomsCount: createData.rooms.length,
+            hasCoordinates: !!(createData.lat && createData.lng),
+            // ✅ LOGS CORRETOS - CAMPOS EXISTENTES
+            locality: createData.locality,
+            province: createData.province,
+            country: createData.country
           },
           rooms: createData.rooms.map(room => ({
             type: room.type,

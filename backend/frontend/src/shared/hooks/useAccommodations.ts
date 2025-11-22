@@ -1,74 +1,8 @@
 import { useState, useEffect } from "react";
 import { accommodationService } from "src/shared/lib/accommodationService";
 import { useAuth } from "./useAuth";
-
-// Interface unificada para Accommodation
-export interface Accommodation {
-  id: string;
-  hostId: string;
-  name: string;
-  type: string;
-  address: string;
-  description: string;
-  maxGuests: number;
-  bedrooms: number;
-  bathrooms: number;
-  amenities: string[];
-  images: string[];
-  isAvailable: boolean;
-  rating?: number;
-  reviewCount?: number;
-  unavailableDates?: string[];
-  
-  // Propriedades adicionais para compatibilidade completa
-  lat?: number;
-  lng?: number;
-  distanceFromCenter?: number;
-  offerDriverDiscounts?: boolean;
-  driverDiscountRate?: number;
-  minimumDriverLevel?: string;
-  partnershipBadgeVisible?: boolean;
-  enablePartnerships?: boolean;
-  accommodationDiscount?: number;
-  transportDiscount?: number;
-  checkInTime?: string;
-  checkOutTime?: string;
-  policies?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  roomTypes?: any[];
-  
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Interface simplificada para criação - compatível com CreateAccommodationRequest
-export interface CreateAccommodationData {
-  name: string;
-  type: string;
-  address?: string;
-  description?: string;
-  maxGuests?: number;
-  bedrooms?: number;
-  bathrooms?: number;
-  amenities?: string[];
-  images?: string[];
-  isAvailable?: boolean;
-  // Campos opcionais para compatibilidade
-  lat?: number;
-  lng?: number;
-  pricePerNight?: number;
-  reviewCount?: number;
-  distanceFromCenter?: number;
-  offerDriverDiscounts?: boolean;
-  driverDiscountRate?: number;
-  minimumDriverLevel?: string;
-  partnershipBadgeVisible?: boolean;
-  enablePartnerships?: boolean;
-  accommodationDiscount?: number;
-  transportDiscount?: number;
-  hotelId?: string; // Adicionado para suportar quartos de hotel
-}
+// ✅ IMPORTAR DA FONTE ÚNICA
+import { Accommodation, CreateAccommodationData } from "@/shared/types/accommodation";
 
 export const useAccommodations = () => {
   const { user } = useAuth();
@@ -89,102 +23,8 @@ export const useAccommodations = () => {
       
       console.log("🔄 Carregando acomodações para hostId:", user.id);
       
-      let hostAccommodations: Accommodation[] = [];
-      
-      // Tentar método específico primeiro
-      if (accommodationService.getByHost) {
-        const accommodationsData = await accommodationService.getByHost(user.id);
-        hostAccommodations = accommodationsData.map((acc: any) => ({
-          id: acc.id,
-          hostId: user.id,
-          name: acc.name,
-          type: acc.type,
-          address: acc.address || acc.location,
-          description: acc.description || '',
-          maxGuests: acc.maxGuests || acc.availableRooms || 2,
-          bedrooms: acc.bedrooms || 1,
-          bathrooms: acc.bathrooms || 1,
-          amenities: acc.amenities || [],
-          images: acc.images || [],
-          isAvailable: acc.isAvailable !== false,
-          rating: acc.rating || 0,
-          reviewCount: acc.reviewCount || 0,
-          unavailableDates: acc.unavailableDates || [],
-          
-          // Propriedades adicionais para compatibilidade
-          lat: acc.lat,
-          lng: acc.lng,
-          distanceFromCenter: acc.distanceFromCenter,
-          offerDriverDiscounts: acc.offerDriverDiscounts,
-          driverDiscountRate: acc.driverDiscountRate,
-          minimumDriverLevel: acc.minimumDriverLevel,
-          partnershipBadgeVisible: acc.partnershipBadgeVisible,
-          enablePartnerships: acc.enablePartnerships,
-          accommodationDiscount: acc.accommodationDiscount,
-          transportDiscount: acc.transportDiscount,
-          checkInTime: acc.checkInTime,
-          checkOutTime: acc.checkOutTime,
-          policies: acc.policies,
-          contactEmail: acc.contactEmail,
-          contactPhone: acc.contactPhone,
-          roomTypes: acc.roomTypes || [],
-          
-          createdAt: acc.createdAt || new Date().toISOString(),
-          updatedAt: acc.updatedAt || new Date().toISOString()
-        }));
-      } 
-      // Fallback: buscar todas acomodações
-      else if (accommodationService.getAllAccommodations) {
-        console.warn('📝 getByHost não disponível, usando getAllAccommodations como fallback');
-        const allAccommodations = await accommodationService.getAllAccommodations();
-        
-        // Filtrar pelo hostId atual
-        hostAccommodations = allAccommodations
-          .filter((acc: any) => acc.hostId === user.id)
-          .map((acc: any) => ({
-            id: acc.id,
-            hostId: user.id,
-            name: acc.name,
-            type: acc.type,
-            address: acc.address || acc.location,
-            description: acc.description || '',
-            maxGuests: acc.maxGuests || acc.availableRooms || 2,
-            bedrooms: acc.bedrooms || 1,
-            bathrooms: acc.bathrooms || 1,
-            amenities: acc.amenities || [],
-            images: acc.images || [],
-            isAvailable: acc.isAvailable !== false,
-            rating: acc.rating || 0,
-            reviewCount: acc.reviewCount || 0,
-            unavailableDates: acc.unavailableDates || [],
-            
-            // Propriedades adicionais para compatibilidade
-            lat: acc.lat,
-            lng: acc.lng,
-            distanceFromCenter: acc.distanceFromCenter,
-            offerDriverDiscounts: acc.offerDriverDiscounts,
-            driverDiscountRate: acc.driverDiscountRate,
-            minimumDriverLevel: acc.minimumDriverLevel,
-            partnershipBadgeVisible: acc.partnershipBadgeVisible,
-            enablePartnerships: acc.enablePartnerships,
-            accommodationDiscount: acc.accommodationDiscount,
-            transportDiscount: acc.transportDiscount,
-            checkInTime: acc.checkInTime,
-            checkOutTime: acc.checkOutTime,
-            policies: acc.policies,
-            contactEmail: acc.contactEmail,
-            contactPhone: acc.contactPhone,
-            roomTypes: acc.roomTypes || [],
-            
-            createdAt: acc.createdAt || new Date().toISOString(),
-            updatedAt: acc.updatedAt || new Date().toISOString()
-          }));
-      }
-      // Fallback final: array vazio
-      else {
-        console.warn('⚠️ Nenhum método de busca disponível no accommodationService');
-        hostAccommodations = [];
-      }
+      // ✅ AGORA accommodationService.getByHost JÁ RETORNA Accommodation[] UNIFICADO
+      const hostAccommodations = await accommodationService.getByHost(user.id);
       
       console.log("✅ Acomodações carregadas:", hostAccommodations.length);
       setAccommodations(hostAccommodations);
@@ -215,7 +55,7 @@ export const useAccommodations = () => {
         return { success: false, error: "Endereço é obrigatório" };
       }
 
-      // Preparar dados no formato correto para CreateAccommodationRequest
+      // ✅ CORRIGIDO: Remover propriedades que não existem no CreateAccommodationData
       const dataToSend = {
         name: accommodationData.name.trim(),
         type: accommodationData.type || 'hotel_room',
@@ -228,84 +68,77 @@ export const useAccommodations = () => {
         images: accommodationData.images || [],
         isAvailable: accommodationData.isAvailable !== false,
         hostId: user.id,
-        // Campos de compatibilidade
-        availableRooms: accommodationData.maxGuests || 2,
-        location: accommodationData.address?.trim() || '',
-        // Campos opcionais
+        // ✅ APENAS CAMPOS QUE EXISTEM NO CreateAccommodationData
         lat: accommodationData.lat,
         lng: accommodationData.lng,
         pricePerNight: accommodationData.pricePerNight,
-        reviewCount: accommodationData.reviewCount,
-        distanceFromCenter: accommodationData.distanceFromCenter,
-        offerDriverDiscounts: accommodationData.offerDriverDiscounts,
-        driverDiscountRate: accommodationData.driverDiscountRate,
-        minimumDriverLevel: accommodationData.minimumDriverLevel,
-        partnershipBadgeVisible: accommodationData.partnershipBadgeVisible,
-        enablePartnerships: accommodationData.enablePartnerships,
-        accommodationDiscount: accommodationData.accommodationDiscount,
-        transportDiscount: accommodationData.transportDiscount,
-        hotelId: accommodationData.hotelId || undefined, // Incluído para suportar quartos de hotel
       };
 
       console.log("🔄 Criando acomodação:", dataToSend);
 
-      let newAccommodation: any;
-      
-      // Usar apenas métodos que existem no accommodationService
-      if (accommodationService.createAccommodation) {
-        console.log("📤 Usando createAccommodation...");
-        newAccommodation = await accommodationService.createAccommodation(dataToSend);
-      } else {
-        throw new Error('Nenhum método de criação disponível no accommodationService');
-      }
+      const newAccommodation = await accommodationService.createAccommodation(dataToSend);
       
       console.log("✅ Acomodação criada com sucesso:", newAccommodation);
-      await loadAccommodations(); // Recarregar lista
+      await loadAccommodations();
       
       // Extrair ID corretamente da resposta
       const accommodationId = newAccommodation.id || 
                             (newAccommodation.data && newAccommodation.data.id) ||
                             newAccommodation.accommodationId;
       
+      // ✅ CORRIGIDO: Usar apenas propriedades que existem
+      const createdAccommodation: Accommodation = {
+        id: accommodationId,
+        hostId: user.id,
+        name: newAccommodation.name || accommodationData.name,
+        type: newAccommodation.type || accommodationData.type,
+        address: newAccommodation.address || accommodationData.address || '',
+        description: newAccommodation.description || accommodationData.description || '',
+        maxGuests: newAccommodation.maxGuests || accommodationData.maxGuests || 2,
+        bedrooms: newAccommodation.bedrooms || accommodationData.bedrooms || 1,
+        bathrooms: newAccommodation.bathrooms || accommodationData.bathrooms || 1,
+        amenities: newAccommodation.amenities || accommodationData.amenities || [],
+        images: newAccommodation.images || accommodationData.images || [],
+        isAvailable: newAccommodation.isAvailable !== false,
+        rating: newAccommodation.rating || 0,
+        reviewCount: newAccommodation.reviewCount || 0,
+        unavailableDates: newAccommodation.unavailableDates || [],
+        
+        // Propriedades adicionais (valores padrão)
+        lat: newAccommodation.lat,
+        lng: newAccommodation.lng,
+        pricePerNight: newAccommodation.pricePerNight,
+        
+        // ✅ PROPRIEDADES OPCIONAIS COM VALORES PADRÃO
+        distanceFromCenter: newAccommodation.distanceFromCenter,
+        offerDriverDiscounts: newAccommodation.offerDriverDiscounts || false,
+        driverDiscountRate: newAccommodation.driverDiscountRate,
+        minimumDriverLevel: newAccommodation.minimumDriverLevel,
+        partnershipBadgeVisible: newAccommodation.partnershipBadgeVisible || false,
+        enablePartnerships: newAccommodation.enablePartnerships || false,
+        accommodationDiscount: newAccommodation.accommodationDiscount,
+        transportDiscount: newAccommodation.transportDiscount,
+        checkInTime: newAccommodation.checkInTime,
+        checkOutTime: newAccommodation.checkOutTime,
+        policies: newAccommodation.policies,
+        contactEmail: newAccommodation.contactEmail,
+        contactPhone: newAccommodation.contactPhone,
+        roomTypes: newAccommodation.roomTypes || [],
+        
+        // ✅ CAMPOS DE COMPATIBILIDADE
+        availableRooms: newAccommodation.availableRooms || newAccommodation.maxGuests || 2,
+        locality: newAccommodation.locality,
+        province: newAccommodation.province,
+        location: newAccommodation.location || newAccommodation.address,
+        price: newAccommodation.price || newAccommodation.pricePerNight || 0,
+        
+        createdAt: newAccommodation.createdAt || new Date().toISOString(),
+        updatedAt: newAccommodation.updatedAt || new Date().toISOString()
+      };
+      
       return { 
         success: true, 
-        accommodation: {
-          id: accommodationId,
-          hostId: user.id,
-          name: newAccommodation.name || accommodationData.name,
-          type: newAccommodation.type || accommodationData.type,
-          address: newAccommodation.address || accommodationData.address || '',
-          description: newAccommodation.description || accommodationData.description || '',
-          maxGuests: newAccommodation.maxGuests || accommodationData.maxGuests || 2,
-          bedrooms: newAccommodation.bedrooms || accommodationData.bedrooms || 1,
-          bathrooms: newAccommodation.bathrooms || accommodationData.bathrooms || 1,
-          amenities: newAccommodation.amenities || accommodationData.amenities || [],
-          images: newAccommodation.images || accommodationData.images || [],
-          isAvailable: newAccommodation.isAvailable !== false,
-          rating: newAccommodation.rating || 0,
-          reviewCount: newAccommodation.reviewCount || 0,
-          
-          // Propriedades adicionais para compatibilidade
-          lat: newAccommodation.lat,
-          lng: newAccommodation.lng,
-          distanceFromCenter: newAccommodation.distanceFromCenter,
-          offerDriverDiscounts: newAccommodation.offerDriverDiscounts,
-          driverDiscountRate: newAccommodation.driverDiscountRate,
-          minimumDriverLevel: newAccommodation.minimumDriverLevel,
-          partnershipBadgeVisible: newAccommodation.partnershipBadgeVisible,
-          enablePartnerships: newAccommodation.enablePartnerships,
-          accommodationDiscount: newAccommodation.accommodationDiscount,
-          transportDiscount: newAccommodation.transportDiscount,
-          checkInTime: newAccommodation.checkInTime,
-          checkOutTime: newAccommodation.checkOutTime,
-          policies: newAccommodation.policies,
-          contactEmail: newAccommodation.contactEmail,
-          contactPhone: newAccommodation.contactPhone,
-          roomTypes: newAccommodation.roomTypes || [],
-          
-          createdAt: newAccommodation.createdAt || new Date().toISOString(),
-          updatedAt: newAccommodation.updatedAt || new Date().toISOString()
-        }
+        accommodation: createdAccommodation
       };
       
     } catch (err: any) {
@@ -318,16 +151,10 @@ export const useAccommodations = () => {
   // Função auxiliar para atualizar uma acomodação
   const updateAccommodation = async (id: string, updates: Partial<Accommodation>) => {
     try {
-      // Solução defensiva - criar safeUpdates
       const safeUpdates = { ...updates };
-      // Remover pricePerNight caso exista (para compatibilidade com código antigo)
-      if ('pricePerNight' in safeUpdates) {
-        delete (safeUpdates as any).pricePerNight;
-      }
       
       let updatedAccommodation: any;
       
-      // Usar apenas métodos que existem no accommodationService
       if (accommodationService.updateAccommodation) {
         console.log("✏️ Usando updateAccommodation...");
         updatedAccommodation = await accommodationService.updateAccommodation(id, safeUpdates);
@@ -335,7 +162,6 @@ export const useAccommodations = () => {
         throw new Error('Nenhum método de atualização disponível');
       }
       
-      // Atualizar lista local
       setAccommodations(prev => 
         prev.map(acc => acc.id === id ? { ...acc, ...updatedAccommodation } : acc)
       );
@@ -350,7 +176,6 @@ export const useAccommodations = () => {
   // Função auxiliar para deletar uma acomodação
   const deleteAccommodation = async (id: string) => {
     try {
-      // Usar apenas métodos que existem no accommodationService
       if (accommodationService.deleteAccommodation) {
         console.log("🗑️ Usando deleteAccommodation...");
         await accommodationService.deleteAccommodation(id);
@@ -358,7 +183,6 @@ export const useAccommodations = () => {
         throw new Error('Nenhum método de deleção disponível');
       }
       
-      // Atualizar lista local
       setAccommodations(prev => prev.filter(acc => acc.id !== id));
       
       return { success: true };

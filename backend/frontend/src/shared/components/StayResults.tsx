@@ -17,8 +17,23 @@ interface StayResultsProps {
     location: string;
     checkIn: string;
     checkOut: string;
+    guests: number;
   };
 }
+
+// ✅ Interface para a resposta da API
+interface ApiResponse {
+  success: boolean;
+  data: {
+    hotels: Accommodation[];
+    searchLocation: any;
+    searchType: string;
+    message: string;
+  };
+}
+
+// ✅ URL da API
+const API_BASE_URL = 'http://localhost:8000';
 
 export default function StayResults({ searchParams }: StayResultsProps) {
   const [selectedAccommodation, setSelectedAccommodation] = useState<Accommodation | null>(null);
@@ -26,13 +41,45 @@ export default function StayResults({ searchParams }: StayResultsProps) {
   const [priceRange, setPriceRange] = useState([50]);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
 
-  const { data: accommodations = [], isLoading } = useQuery<Accommodation[]>({
-    queryKey: ["/api/accommodations/search", searchParams.location, searchParams.checkIn, searchParams.checkOut],
-    enabled: !!searchParams.location,
+  // ✅ CORREÇÃO CRÍTICA: Busca na rota correta /api/hotels
+  const { data: accommodationsResponse, isLoading, error } = useQuery<ApiResponse>({
+    queryKey: ["/api/hotels", searchParams.location, searchParams.checkIn, searchParams.checkOut, searchParams.guests],
+    queryFn: async () => {
+      if (!searchParams.location) {
+        return { success: false, data: { hotels: [], searchLocation: null, searchType: 'empty', message: 'No location provided' } };
+      }
+
+      const queryParams = new URLSearchParams();
+      queryParams.append('address', searchParams.location);
+      queryParams.append('isAvailable', 'true');
+      
+      if (searchParams.checkIn) queryParams.append('checkIn', searchParams.checkIn);
+      if (searchParams.checkOut) queryParams.append('checkOut', searchParams.checkOut);
+      if (searchParams.guests) queryParams.append('guests', searchParams.guests.toString());
+
+      const url = `${API_BASE_URL}/api/hotels?${queryParams.toString()}`;
+      console.log('📡 [StayResults] Buscando hotéis:', url);
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ [StayResults] Resposta da API:', data);
+      
+      return data;
+    },
+    enabled: !!searchParams.location?.trim(),
+    retry: 1,
   });
 
+  // ✅ EXTRAIR ACOMODAÇÕES DA RESPOSTA CORRETA
+  const accommodations = accommodationsResponse?.data?.hotels || [];
+
   const filteredAccommodations = accommodations.filter((acc) => {
-    const price = parseFloat(acc.pricePerNight);
+    const price = parseFloat(acc.pricePerNight || "0");
     const matchesPrice = price >= priceRange[0];
     const matchesType = propertyTypes.length === 0 || propertyTypes.includes(acc.type);
     return matchesPrice && matchesType;
@@ -67,8 +114,37 @@ export default function StayResults({ searchParams }: StayResultsProps) {
     );
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i className="fas fa-exclamation-triangle text-red-600 text-2xl"></i>
+        </div>
+        <h3 className="text-lg font-semibold text-dark mb-2">Erro ao carregar acomodações</h3>
+        <p className="text-gray-medium">Tente novamente em alguns instantes</p>
+        <Button 
+          onClick={() => window.location.reload()} 
+          className="mt-4"
+          variant="outline"
+        >
+          Recarregar
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
+      {/* ✅ DEBUG INFO */}
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+          <div><strong>🔍 Buscando:</strong> {searchParams.location}</div>
+          <div><strong>🏨 Encontrados:</strong> {accommodations.length} hotéis</div>
+          <div><strong>📊 Filtrados:</strong> {filteredAccommodations.length} resultados</div>
+          <div><strong>🎯 Status:</strong> {isLoading ? '🔄 Carregando...' : '✅ Pronto'}</div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Hotels Grid */}
         <div className="lg:col-span-2">
@@ -77,8 +153,15 @@ export default function StayResults({ searchParams }: StayResultsProps) {
               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
                 <i className="fas fa-bed text-gray-400 text-2xl"></i>
               </div>
-              <h3 className="text-lg font-semibold text-dark mb-2">No accommodations found</h3>
-              <p className="text-gray-medium">Try adjusting your filters or search location</p>
+              <h3 className="text-lg font-semibold text-dark mb-2">
+                {accommodations.length === 0 ? 'Nenhuma acomodação encontrada' : 'Nenhum resultado para os filtros'}
+              </h3>
+              <p className="text-gray-medium">
+                {accommodations.length === 0 
+                  ? 'Tente buscar por uma localização diferente' 
+                  : 'Tente ajustar seus filtros'
+                }
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -86,7 +169,7 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                 <div
                   key={accommodation.id}
                   data-testid={`accommodation-card-${accommodation.id}`}
-                  className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer border-2 border-green-200"
                   onClick={() => handleBookStay(accommodation)}
                 >
                   <img
@@ -97,9 +180,9 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                   <div className="p-4 space-y-3">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h4 className="font-semibold text-dark">{accommodation.name}</h4>
-                        <p className="text-sm text-gray-medium">{accommodation.address}</p>
-                        <div className="flex items-center mt-1">
+                        <h4 className="font-semibold text-dark text-lg">{accommodation.name}</h4>
+                        <p className="text-sm text-gray-medium mt-1">{accommodation.address}</p>
+                        <div className="flex items-center mt-2">
                           <div className="flex text-yellow-400">
                             {[1, 2, 3, 4, 5].map((star) => (
                               <i
@@ -113,7 +196,7 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                             ))}
                           </div>
                           <span className="text-xs text-gray-medium ml-1">
-                            ({accommodation.rating})
+                            ({accommodation.rating || 'Sem avaliações'})
                           </span>
                         </div>
                       </div>
@@ -177,7 +260,7 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                           e.stopPropagation(); 
                           handleBookStay(accommodation); 
                         }}
-                        className="ml-auto"
+                        className="ml-auto bg-blue-600 hover:bg-blue-700 text-white"
                         data-testid={`book-stay-${accommodation.id}`}
                       >
                         <i className="fas fa-calendar-check mr-2"></i>
@@ -204,10 +287,10 @@ export default function StayResults({ searchParams }: StayResultsProps) {
           />
 
           <div className="bg-white rounded-xl p-4 border border-gray-200">
-            <h4 className="font-semibold text-dark mb-3">Filters</h4>
+            <h4 className="font-semibold text-dark mb-3">Filtros</h4>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-medium mb-2">Price range</label>
+                <label className="block text-sm text-gray-medium mb-2">Faixa de preço</label>
                 <Slider
                   data-testid="price-range-slider"
                   value={priceRange}
@@ -223,7 +306,7 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-medium mb-2">Property type</label>
+                <label className="block text-sm text-gray-medium mb-2">Tipo de propriedade</label>
                 <div className="space-y-2">
                   {["Hotel", "Apartment", "House"].map((type) => (
                     <div key={type} className="flex items-center space-x-2">
@@ -239,7 +322,7 @@ export default function StayResults({ searchParams }: StayResultsProps) {
                         htmlFor={type}
                         className="text-sm cursor-pointer"
                       >
-                        {type}s
+                        {type === "Hotel" ? "Hotéis" : type === "Apartment" ? "Apartamentos" : "Casas"}
                       </label>
                     </div>
                   ))}

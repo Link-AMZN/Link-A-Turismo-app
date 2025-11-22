@@ -1,0 +1,2 @@
+INFO: Open of `mozambique_shapefiles/moz_admbnda_adm2_ine_20190607.shp'
+      using driver `ESRI Shapefile' successful.

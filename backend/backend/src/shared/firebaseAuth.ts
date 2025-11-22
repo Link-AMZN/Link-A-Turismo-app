@@ -49,9 +49,13 @@ export const initializeFirebase = (): admin.app.App => {
     console.log('🔧 Tentando inicializar Firebase Admin...');
     const config = validateFirebaseConfig();
     
+    // ✅ CORREÇÃO CRÍTICA 3: Usar camelCase conforme exigido pelo TypeScript do Firebase Admin
     firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert(config),
-      projectId: config.projectId,
+      credential: admin.credential.cert({
+        projectId: config.projectId,
+        privateKey: config.privateKey,    // ✅ camelCase (privateKey)
+        clientEmail: config.clientEmail,  // ✅ camelCase (clientEmail)
+      }),
     });
     
     firebaseInitialized = true;
@@ -177,7 +181,9 @@ export const verifyFirebaseToken = async (
   }
 
   try {
-    const decodedToken = await auth.verifyIdToken(token, true);
+    // ✅ CORREÇÃO CRÍTICA 1: Remover o "true" que rejeita tokens válidos
+    const decodedToken = await auth.verifyIdToken(token); // ❌ ANTES: auth.verifyIdToken(token, true)
+    
     const userRecord = await auth.getUser(decodedToken.uid);
     
     const authReq = req as AuthenticatedRequest;

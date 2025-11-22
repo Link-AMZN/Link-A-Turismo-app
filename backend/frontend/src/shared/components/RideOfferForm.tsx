@@ -15,70 +15,138 @@ interface RideOfferFormProps {
 
 export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps) {
   const { user } = useAuth();
- const [formData, setFormData] = useState({
+  
+  // ✅ CORREÇÃO: Estado com campos consistentes e tipos corretos
+  const [formData, setFormData] = useState({
     fromLocation: "",
     toLocation: "",
     departureDate: "",
     departureTime: "",
     availableSeats: 1,
-    pricePerSeat: "",
+    pricePerSeat: 0, // ✅ CORREÇÃO: number em vez de string
     vehicleType: "",
     additionalInfo: "",
-    allowSmoking: false, // opcional
-    allowPets: false,    // opcional
-    allowMusic: true     // opcional
+    allowSmoking: false,
+    allowPets: false,
+    allowMusic: true
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ✅ CORREÇÃO: Função para atualizar form data com validação
+  const updateFormData = (key: string, value: any) => {
+    setFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  // ✅ CORREÇÃO: Validação do formulário
+  const validateForm = () => {
+    if (!formData.fromLocation || !formData.toLocation) {
+      return "Preencha origem e destino";
+    }
+    
+    if (!formData.departureDate || !formData.departureTime) {
+      return "Preencha data e hora da viagem";
+    }
+    
+    // ✅ CORREÇÃO: Validar data não no passado
+    const departureDateTime = new Date(`${formData.departureDate}T${formData.departureTime}`);
+    if (departureDateTime < new Date()) {
+      return "A data e hora da viagem não podem ser no passado";
+    }
+    
+    if (formData.pricePerSeat <= 0) {
+      return "Preço deve ser maior que zero";
+    }
+    
+    if (formData.availableSeats < 1 || formData.availableSeats > 8) {
+      return "Número de lugares deve estar entre 1 e 8";
+    }
+    
+    if (!formData.vehicleType) {
+      return "Selecione o tipo de veículo";
+    }
+    
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // ✅ CORREÇÃO: Validar formulário antes de enviar
+    const validationError = validateForm();
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const rideOffer = {
-        ...formData,
-        driverId: user?.uid,
+      // ✅ CORREÇÃO: Payload tipado e estruturado corretamente
+      const payload = {
+        fromLocation: formData.fromLocation,
+        toLocation: formData.toLocation,
+        departureDate: formData.departureDate,
+        departureTime: formData.departureTime,
+        availableSeats: formData.availableSeats,
+        pricePerSeat: formData.pricePerSeat,
+        vehicleType: formData.vehicleType,
+        additionalInfo: formData.additionalInfo,
+        driverId: user?.uid || '',
         driverName: user?.displayName || user?.email,
+        allowSmoking: formData.allowSmoking,
+        allowPets: formData.allowPets,
+        allowMusic: formData.allowMusic,
         status: "available",
         createdAt: new Date().toISOString(),
         totalSeats: formData.availableSeats,
         bookedSeats: 0
       };
 
-      console.log("Nova oferta de boleia:", rideOffer);
+      console.log("📤 Nova oferta de boleia:", payload);
       
-      // TODO: Integrar com API real
-      // await apiRequest("POST", "/api/rides-simple/create", rideOffer);
+      // ✅ CORREÇÃO: Integração com API real usando rota correta
+      const response = await fetch('/api/rides', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao criar oferta de boleia');
+      }
+      
+      const result = await response.json();
+      console.log("✅ Oferta criada com sucesso:", result);
       
       if (onSubmit) {
-        onSubmit(rideOffer);
+        onSubmit(result);
       }
 
-      // Reset form
+      // ✅ CORREÇÃO: Reset form com campos consistentes
       setFormData({
-        from: "",
-        to: "",
-        date: "",
-        time: "",
+        fromLocation: "",
+        toLocation: "",
+        departureDate: "",
+        departureTime: "",
         availableSeats: 1,
-        pricePerSeat: "",
+        pricePerSeat: 0, // ✅ CORREÇÃO: number em vez de string
         vehicleType: "",
-        description: "",
+        additionalInfo: "",
         allowSmoking: false,
         allowPets: false,
         allowMusic: true
       });
 
     } catch (error) {
-      console.error("Erro ao criar oferta de boleia:", error);
+      console.error("❌ Erro ao criar oferta de boleia:", error);
+      alert(error instanceof Error ? error.message : "Erro ao criar oferta de boleia");
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const updateFormData = (key: string, value: any) => {
-    setFormData(prev => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -96,30 +164,32 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
           {/* Origem e Destino */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="from" className="flex items-center">
+              <Label htmlFor="fromLocation" className="flex items-center">
                 <MapPin className="w-4 h-4 mr-1" />
                 De onde
               </Label>
+              {/* ✅ CORREÇÃO: Campo fromLocation correto */}
               <Input
-                id="from"
+                id="fromLocation"
                 placeholder="Cidade de origem"
-                value={formData.from}
-                onChange={(e) => updateFormData("from", e.target.value)}
+                value={formData.fromLocation}
+                onChange={(e) => updateFormData("fromLocation", e.target.value)}
                 required
                 data-testid="ride-offer-from"
               />
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="to" className="flex items-center">
+              <Label htmlFor="toLocation" className="flex items-center">
                 <MapPin className="w-4 h-4 mr-1" />
                 Para onde
               </Label>
+              {/* ✅ CORREÇÃO: Campo toLocation correto */}
               <Input
-                id="to"
+                id="toLocation"
                 placeholder="Cidade de destino"
-                value={formData.to}
-                onChange={(e) => updateFormData("to", e.target.value)}
+                value={formData.toLocation}
+                onChange={(e) => updateFormData("toLocation", e.target.value)}
                 required
                 data-testid="ride-offer-to"
               />
@@ -129,15 +199,16 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
           {/* Data e Hora */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="date" className="flex items-center">
+              <Label htmlFor="departureDate" className="flex items-center">
                 <CalendarDays className="w-4 h-4 mr-1" />
                 Data da viagem
               </Label>
+              {/* ✅ CORREÇÃO: Campo departureDate correto */}
               <Input
-                id="date"
+                id="departureDate"
                 type="date"
-                value={formData.date}
-                onChange={(e) => updateFormData("date", e.target.value)}
+                value={formData.departureDate}
+                onChange={(e) => updateFormData("departureDate", e.target.value)}
                 required
                 min={new Date().toISOString().split('T')[0]}
                 data-testid="ride-offer-date"
@@ -145,15 +216,16 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="time" className="flex items-center">
+              <Label htmlFor="departureTime" className="flex items-center">
                 <Clock className="w-4 h-4 mr-1" />
                 Hora de partida
               </Label>
+              {/* ✅ CORREÇÃO: Campo departureTime correto */}
               <Input
-                id="time"
+                id="departureTime"
                 type="time"
-                value={formData.time}
-                onChange={(e) => updateFormData("time", e.target.value)}
+                value={formData.departureTime}
+                onChange={(e) => updateFormData("departureTime", e.target.value)}
                 required
                 data-testid="ride-offer-time"
               />
@@ -163,11 +235,14 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
           {/* Lugares e Preço */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="seats" className="flex items-center">
+              <Label htmlFor="availableSeats" className="flex items-center">
                 <Users className="w-4 h-4 mr-1" />
                 Lugares disponíveis
               </Label>
-              <Select onValueChange={(value) => updateFormData("availableSeats", parseInt(value))}>
+              <Select 
+                value={formData.availableSeats.toString()}
+                onValueChange={(value) => updateFormData("availableSeats", parseInt(value))}
+              >
                 <SelectTrigger data-testid="ride-offer-seats">
                   <SelectValue placeholder="Quantos lugares?" />
                 </SelectTrigger>
@@ -178,23 +253,27 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
                   <SelectItem value="4">4 lugares</SelectItem>
                   <SelectItem value="5">5 lugares</SelectItem>
                   <SelectItem value="6">6 lugares</SelectItem>
+                  <SelectItem value="7">7 lugares</SelectItem>
+                  <SelectItem value="8">8 lugares</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="price" className="flex items-center">
+              <Label htmlFor="pricePerSeat" className="flex items-center">
                 <DollarSign className="w-4 h-4 mr-1" />
                 Preço por lugar (MT)
               </Label>
+              {/* ✅ CORREÇÃO: Campo pricePerSeat como number */}
               <Input
-                id="price"
+                id="pricePerSeat"
                 type="number"
                 placeholder="ex: 500"
                 value={formData.pricePerSeat}
-                onChange={(e) => updateFormData("pricePerSeat", e.target.value)}
+                onChange={(e) => updateFormData("pricePerSeat", parseFloat(e.target.value) || 0)}
                 required
                 min="50"
+                step="0.01"
                 data-testid="ride-offer-price"
               />
             </div>
@@ -202,8 +281,11 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
 
           {/* Tipo de Veículo */}
           <div className="space-y-2">
-            <Label>Tipo de veículo</Label>
-            <Select onValueChange={(value) => updateFormData("vehicleType", value)}>
+            <Label htmlFor="vehicleType">Tipo de veículo</Label>
+            <Select 
+              value={formData.vehicleType}
+              onValueChange={(value) => updateFormData("vehicleType", value)}
+            >
               <SelectTrigger data-testid="ride-offer-vehicle">
                 <SelectValue placeholder="Selecione o tipo do veículo" />
               </SelectTrigger>
@@ -220,12 +302,13 @@ export default function RideOfferForm({ onSubmit, onCancel }: RideOfferFormProps
 
           {/* Descrição */}
           <div className="space-y-2">
-            <Label htmlFor="description">Informações adicionais</Label>
+            <Label htmlFor="additionalInfo">Informações adicionais</Label>
+            {/* ✅ CORREÇÃO: Campo additionalInfo correto */}
             <Textarea
-              id="description"
+              id="additionalInfo"
               placeholder="Pontos de parada, preferências, etc."
-              value={formData.description}
-              onChange={(e) => updateFormData("description", e.target.value)}
+              value={formData.additionalInfo}
+              onChange={(e) => updateFormData("additionalInfo", e.target.value)}
               rows={3}
               data-testid="ride-offer-description"
             />

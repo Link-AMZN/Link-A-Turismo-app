@@ -8,12 +8,12 @@ import {
   DateRange 
 } from '../types';
 // Import from shared types
-import { BookingStatus } from '../../src/shared/types';
+import { BookingStatus, PaymentStatus } from '../../src/shared/types';
 
 // Helper function to generate unique ID
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-// Simplified Booking interface matching actual schema
+// ✅ CORRIGIDO: Interface Booking atualizada com tipos corretos
 export interface Booking {
   id: string;
   rideId: string | null;
@@ -22,8 +22,8 @@ export interface Booking {
   passengerId: string | null;
   seatsBooked: number;
   totalPrice: string;
-  status: string | null;
-  type?: string; // 'ride', 'accommodation', 'event'
+  status: BookingStatus;
+  type?: 'ride' | 'accommodation' | 'event';
   createdAt: Date | null;
 }
 
@@ -34,7 +34,7 @@ export interface CreateBookingData {
   passengerId: string;
   seatsBooked: number;
   totalPrice: number;
-  type?: string;
+  type?: 'ride' | 'accommodation' | 'event';
   providerId?: string;
   guestEmail?: string;
   guestPhone?: string;
@@ -65,6 +65,26 @@ export interface IBookingStorage {
   updateBooking(bookingId: string, data: any): Promise<Booking>;
 }
 
+// ✅ Constantes para BookingStatus
+export const BOOKING_STATUS = {
+  pending: 'pending' as BookingStatus,
+  confirmed: 'confirmed' as BookingStatus,
+  cancelled: 'cancelled' as BookingStatus,
+  completed: 'completed' as BookingStatus,
+  in_progress: 'in_progress' as BookingStatus,
+  approved: 'approved' as BookingStatus,
+  rejected: 'rejected' as BookingStatus,
+  available: 'available' as BookingStatus,
+};
+
+// ✅ Constantes para PaymentStatus
+export const PAYMENT_STATUS = {
+  pending: 'pending' as PaymentStatus,
+  completed: 'completed' as PaymentStatus,
+  failed: 'failed' as PaymentStatus,
+  refunded: 'refunded' as PaymentStatus,
+};
+
 export class DatabaseBookingStorage implements IBookingStorage {
   
   // ===== BASIC BOOKING OPERATIONS =====
@@ -77,7 +97,7 @@ export class DatabaseBookingStorage implements IBookingStorage {
         passengerId: data.passengerId,
         seatsBooked: data.seatsBooked,
         totalPrice: data.totalPrice.toString(),
-        status: 'pending',
+        status: BOOKING_STATUS.pending,
         type: data.type || 'ride',
         guestEmail: data.guestEmail || '',
         guestPhone: data.guestPhone || '',
@@ -117,7 +137,7 @@ export class DatabaseBookingStorage implements IBookingStorage {
     try {
       const [booking] = await db
         .update(bookings)
-        .set({ status: 'cancelled' })
+        .set({ status: BOOKING_STATUS.cancelled })
         .where(eq(bookings.id, bookingId))
         .returning();
       
@@ -204,7 +224,7 @@ export class DatabaseBookingStorage implements IBookingStorage {
   
   async confirmBooking(bookingId: string): Promise<Booking> {
     try {
-      return this.updateBookingStatus(bookingId, 'confirmed');
+      return this.updateBookingStatus(bookingId, BOOKING_STATUS.confirmed);
     } catch (error) {
       console.error('Error confirming booking:', error);
       throw error;
@@ -213,7 +233,7 @@ export class DatabaseBookingStorage implements IBookingStorage {
 
   async completeBooking(bookingId: string): Promise<Booking> {
     try {
-      return this.updateBookingStatus(bookingId, 'completed');
+      return this.updateBookingStatus(bookingId, BOOKING_STATUS.completed);
     } catch (error) {
       console.error('Error completing booking:', error);
       throw error;
@@ -228,14 +248,14 @@ export class DatabaseBookingStorage implements IBookingStorage {
         bookingId,
         amount: paymentData.amount,
         currency: paymentData.currency || 'MZN',
-        status: 'completed',
+        status: PAYMENT_STATUS.completed,
         method: paymentData.method,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
       // Update booking status to confirmed after successful payment
-      await this.updateBookingStatus(bookingId, 'confirmed');
+      await this.updateBookingStatus(bookingId, BOOKING_STATUS.confirmed);
 
       return payment;
     } catch (error) {
@@ -255,17 +275,17 @@ export class DatabaseBookingStorage implements IBookingStorage {
       const [completedBookings] = await db
         .select({ count: sql`count(*)` })
         .from(bookings)
-        .where(eq(bookings.status, 'completed'));
+        .where(eq(bookings.status, BOOKING_STATUS.completed));
 
       const [cancelledBookings] = await db
         .select({ count: sql`count(*)` })
         .from(bookings)
-        .where(eq(bookings.status, 'cancelled'));
+        .where(eq(bookings.status, BOOKING_STATUS.cancelled));
 
       const [totalRevenue] = await db
         .select({ sum: sql`SUM(CAST(${bookings.totalPrice} AS DECIMAL))` })
         .from(bookings)
-        .where(eq(bookings.status, 'completed'));
+        .where(eq(bookings.status, BOOKING_STATUS.completed));
 
       const [averageBookingValue] = await db
         .select({ avg: sql`AVG(CAST(${bookings.totalPrice} AS DECIMAL))` })
@@ -337,14 +357,20 @@ export class DatabaseBookingStorage implements IBookingStorage {
             phone: users.phone,
             profileImageUrl: users.profileImageUrl,
           },
-          // Ride details
+          // ✅ CORREÇÃO: Ride details - usando os nomes corretos dos campos
           ride: {
             id: rides.id,
-            fromLocation: rides.fromLocation,
-            toLocation: rides.toLocation,
+            fromAddress: rides.fromAddress, // ✅ CORREÇÃO: de fromLocation para fromAddress
+            toAddress: rides.toAddress,     // ✅ CORREÇÃO: de toLocation para toAddress
+            fromLocality: rides.fromLocality, // ✅ Campo adicional para localidade
+            fromProvince: rides.fromProvince, // ✅ Campo adicional para província
+            toLocality: rides.toLocality,     // ✅ Campo adicional para localidade
+            toProvince: rides.toProvince,     // ✅ Campo adicional para província
             departureDate: rides.departureDate,
             departureTime: rides.departureTime,
             driverId: rides.driverId,
+            vehicleType: rides.vehicleType,   // ✅ Campo adicional útil
+            availableSeats: rides.availableSeats, // ✅ Campo adicional útil
           },
         })
         .from(bookings)

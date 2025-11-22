@@ -6,9 +6,9 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
-import LocationAutocomplete from "@/components/LocationAutocomplete";
-import DateInput from "@/components/DateInput";
-import { getTodayHTML, formatDateToHTML } from "@/shared/lib/dateUtils";
+import { Card } from "@/shared/components/ui/card";
+import { Badge } from "@/shared/components/ui/badge";
+import { MapPin, Star, Search } from "lucide-react";
 
 const staySearchSchema = z.object({
   location: z.string().min(1, "Local é obrigatório"),
@@ -26,25 +26,104 @@ const staySearchSchema = z.object({
 
 type StaySearchForm = z.infer<typeof staySearchSchema>;
 
-interface StaySearchProps {
-  onSearch: (params: StaySearchForm & { accommodationType?: string }) => void;
+// ✅ URL da API
+const API_BASE_URL = 'http://localhost:8000';
+
+// ✅ Interface para os dados do hotel
+interface Hotel {
+  id: string;
+  name: string;
+  type: string;
+  address: string;
+  locality?: string;
+  province?: string;
+  rating?: number;
+  description?: string;
+  pricePerNight?: number;
+  isAvailable: boolean;
 }
 
-export default function StaySearch({ onSearch }: StaySearchProps) {
+export default function StaySearch() {
   const [selectedAccommodationType, setSelectedAccommodationType] = useState("todos");
+  const [searchResults, setSearchResults] = useState<Hotel[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   
   const form = useForm<StaySearchForm>({
     resolver: zodResolver(staySearchSchema),
     defaultValues: {
       location: "",
-      checkIn: getTodayHTML(),
-      checkOut: formatDateToHTML(new Date(Date.now() + 24 * 60 * 60 * 1000)), // Tomorrow
+      checkIn: new Date().toISOString().split('T')[0],
+      checkOut: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       guests: 2,
     },
   });
 
-  const handleSubmit = (data: StaySearchForm) => {
-    onSearch({ ...data, accommodationType: selectedAccommodationType });
+  // ✅ FUNÇÃO DE BUSCA CORRIGIDA - busca real na API
+  const handleSubmit = async (data: StaySearchForm) => {
+    console.log('🎯 [HOMEPAGE] Iniciando busca por:', data.location);
+    
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+    setHasSearched(true);
+
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('address', data.location);
+      queryParams.append('isAvailable', 'true');
+      
+      if (data.checkIn) queryParams.append('checkIn', data.checkIn);
+      if (data.checkOut) queryParams.append('checkOut', data.checkOut);
+      if (data.guests) queryParams.append('guests', data.guests.toString());
+
+      const url = `${API_BASE_URL}/api/hotels?${queryParams.toString()}`;
+      console.log('📡 [HOMEPAGE] Chamando API:', url);
+
+      const response = await fetch(url);
+      console.log('📊 [HOMEPAGE] Status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ [HOMEPAGE] Resposta COMPLETA:', result);
+
+      // ✅ EXTRAÇÃO CORRETA baseada no teste manual
+      const hotels: Hotel[] = result.data?.hotels || [];
+      console.log(`🏨 [RESULTADO] ${hotels.length} hotéis extraídos`);
+
+      // ✅ DEBUG: Mostrar cada hotel no console
+      hotels.forEach((hotel: Hotel, index: number) => {
+        console.log(`🏨 ${index + 1}. ${hotel.name} | ${hotel.id}`);
+      });
+
+      setSearchResults(hotels);
+
+    } catch (err) {
+      console.error('❌ [HOMEPAGE] Erro:', err);
+      setSearchError(err instanceof Error ? err.message : 'Erro desconhecido');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('pt-MZ', {
+      style: 'currency',
+      currency: 'MZN'
+    }).format(price);
+  };
+
+  const renderStars = (rating: number = 4) => {
+    return Array.from({ length: 5 }, (_, i) => (
+      <Star
+        key={i}
+        className={`w-4 h-4 ${i < rating ? 'text-yellow-400 fill-current' : 'text-gray-300'}`}
+      />
+    ));
   };
 
   return (
@@ -57,11 +136,11 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
             <Label htmlFor="location" className="block text-sm font-medium text-gray-medium mb-2">
               Onde
             </Label>
-            <LocationAutocomplete
+            <Input
               id="location"
-              placeholder="Pesquisar destinos"
+              placeholder="Digite Tofo, Maputo, Costa do Sol..."
               value={form.watch("location")}
-              onChange={(value) => form.setValue("location", value)}
+              onChange={(e) => form.setValue("location", e.target.value)}
               className="w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               data-testid="input-search-location"
             />
@@ -74,11 +153,12 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
             <Label htmlFor="checkIn" className="block text-sm font-medium text-gray-medium mb-2">
               Entrada
             </Label>
-            <DateInput
+            <Input
               id="checkIn"
+              type="date"
               data-testid="input-checkin-date"
               value={form.watch("checkIn")}
-              onChange={(value) => form.setValue("checkIn", value)}
+              onChange={(e) => form.setValue("checkIn", e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
             />
             {form.formState.errors.checkIn && (
@@ -90,11 +170,12 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
             <Label htmlFor="checkOut" className="block text-sm font-medium text-gray-medium mb-2">
               Saída
             </Label>
-            <DateInput
+            <Input
               id="checkOut"
+              type="date"
               data-testid="input-checkout-date"
               value={form.watch("checkOut")}
-              onChange={(value) => form.setValue("checkOut", value)}
+              onChange={(e) => form.setValue("checkOut", e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
             />
             {form.formState.errors.checkOut && (
@@ -114,7 +195,7 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((num) => (
+                {[1, 2, 3, 4, 5, 6].map((num) => (
                   <SelectItem key={num} value={String(num)}>
                     {num} {num === 1 ? 'hóspede' : 'hóspedes'}
                   </SelectItem>
@@ -131,12 +212,117 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
               type="submit"
               data-testid="button-search-stays"
               className="w-full bg-primary text-primary-foreground py-3 px-6 rounded-lg font-semibold hover:bg-primary/90 transition-colors"
-              disabled={form.formState.isSubmitting}
+              disabled={isSearching}
             >
-              <i className="fas fa-search mr-2"></i>Pesquisar
+              <Search className="w-4 h-4 mr-2" />
+              {isSearching ? 'Buscando...' : 'Pesquisar'}
             </Button>
           </div>
         </form>
+
+        {/* ✅ FEEDBACK VISUAL DA BUSCA */}
+        {isSearching && (
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <p className="text-blue-700 font-medium">
+                Buscando acomodações para "{form.watch("location")}"...
+              </p>
+            </div>
+          </div>
+        )}
+
+        {searchError && (
+          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+            <p className="text-red-700 font-medium">
+              ❌ Erro na busca: {searchError}
+            </p>
+          </div>
+        )}
+
+        {/* ✅ RESULTADOS DA BUSCA */}
+        {hasSearched && !isSearching && (
+          <div className="mt-8">
+            {searchResults.length > 0 ? (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-2xl font-bold text-dark">
+                    {searchResults.length} Acomodações Encontradas
+                  </h3>
+                  <Badge variant="secondary" className="text-green-600 bg-green-100 text-lg">
+                    {searchResults.length} resultado{searchResults.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+
+                <div className="space-y-6">
+                  {searchResults.map((accommodation) => (
+                    <Card key={accommodation.id} className="p-6 hover:shadow-lg transition-shadow border-2 border-green-200">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="md:col-span-2">
+                          <h4 className="text-xl font-semibold text-green-700 mb-2">
+                            {accommodation.name}
+                          </h4>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Badge variant="outline">{accommodation.type}</Badge>
+                            <div className="flex items-center gap-1 text-gray-600">
+                              <MapPin className="w-4 h-4" />
+                              <span className="text-sm">
+                                {accommodation.address}
+                                {accommodation.locality && `, ${accommodation.locality}`}
+                                {accommodation.province && `, ${accommodation.province}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 mb-3">
+                            {renderStars(accommodation.rating)}
+                            <span className="text-sm text-gray-600 ml-1">
+                              ({accommodation.rating || 4.0})
+                            </span>
+                          </div>
+                          {accommodation.description && (
+                            <p className="text-gray-600 text-sm">
+                              {accommodation.description}
+                            </p>
+                          )}
+                        </div>
+                        
+                        <div className="text-center space-y-4">
+                          <div>
+                            <div className="text-sm text-gray-500 mb-1">Disponibilidade</div>
+                            {accommodation.isAvailable ? (
+                              <Badge className="bg-green-100 text-green-700 text-base py-1 px-3">Disponível</Badge>
+                            ) : (
+                              <Badge className="bg-red-100 text-red-700 text-base py-1 px-3">Indisponível</Badge>
+                            )}
+                          </div>
+                          <div className="text-2xl font-bold text-blue-600">
+                            {accommodation.pricePerNight ? formatPrice(accommodation.pricePerNight) : 'Sob consulta'}
+                          </div>
+                          <div className="text-sm text-gray-500">por noite</div>
+                          <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                            Ver Detalhes
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              !searchError && (
+                <div className="text-center py-8">
+                  <div className="text-6xl mb-4">🏨</div>
+                  <h3 className="text-xl font-semibold text-gray-700 mb-2">
+                    Nenhuma acomodação encontrada
+                  </h3>
+                  <p className="text-gray-500">
+                    Tente buscar por: <strong>Tofo</strong>, <strong>Maputo</strong>, <strong>Costa do Sol</strong>
+                  </p>
+                </div>
+              )
+            )}
+          </div>
+        )}
 
         {/* Accommodation Categories */}
         <div className="mt-6">
@@ -152,9 +338,9 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
               data-testid="accommodation-todos"
             >
               <div className="text-center">
-                <i className={`fas fa-list text-3xl mb-3 ${
+                <div className={`text-3xl mb-3 ${
                   selectedAccommodationType === "todos" ? "text-white" : "text-primary"
-                }`}></i>
+                }`}>📋</div>
                 <h4 className={`font-semibold text-lg ${
                   selectedAccommodationType === "todos" ? "text-white" : "text-dark"
                 }`}>Todos</h4>
@@ -174,9 +360,9 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
               data-testid="accommodation-hoteis"
             >
               <div className="text-center">
-                <i className={`fas fa-hotel text-3xl mb-3 ${
+                <div className={`text-3xl mb-3 ${
                   selectedAccommodationType === "hoteis" ? "text-white" : "text-primary"
-                }`}></i>
+                }`}>🏨</div>
                 <h4 className={`font-semibold text-lg ${
                   selectedAccommodationType === "hoteis" ? "text-white" : "text-dark"
                 }`}>Hotéis</h4>
@@ -196,9 +382,9 @@ export default function StaySearch({ onSearch }: StaySearchProps) {
               data-testid="accommodation-particulares"
             >
               <div className="text-center">
-                <i className={`fas fa-home text-3xl mb-3 ${
+                <div className={`text-3xl mb-3 ${
                   selectedAccommodationType === "particulares" ? "text-white" : "text-primary"
-                }`}></i>
+                }`}>🏠</div>
                 <h4 className={`font-semibold text-lg ${
                   selectedAccommodationType === "particulares" ? "text-white" : "text-dark"
                 }`}>Acomodações Particulares</h4>

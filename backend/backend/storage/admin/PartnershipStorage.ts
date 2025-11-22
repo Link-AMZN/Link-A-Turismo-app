@@ -244,8 +244,8 @@ export class DatabasePartnershipStorage implements IPartnershipStorage {
           driverDiscountRate: accommodations.driverDiscountRate,
           minimumDriverLevel: accommodations.minimumDriverLevel,
           partnershipBadgeVisible: accommodations.partnershipBadgeVisible,
-          createdAt: sql`NULL`,
-          updatedAt: sql`NULL`,
+          createdAt: accommodations.createdAt, // ✅ CORRIGIDO: usar campo real
+          updatedAt: accommodations.updatedAt, // ✅ CORRIGIDO: usar campo real
         })
         .from(accommodations)
         .where(and(
@@ -314,6 +314,15 @@ export class DatabasePartnershipStorage implements IPartnershipStorage {
           badgeEarnedDate: new Date(),
         })
         .where(eq(users.id, driverId));
+
+      // ✅ CORRIGIDO: Atualizar partnershipLevel no driverStats
+      await db
+        .update(driverStats)
+        .set({
+          partnershipLevel: newLevel,
+          updatedAt: new Date()
+        })
+        .where(eq(driverStats.driverId, driverId));
 
       return newLevel;
     } catch (error) {

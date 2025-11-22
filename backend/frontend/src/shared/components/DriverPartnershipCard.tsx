@@ -2,13 +2,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { formatMzn } from "@/shared/lib/currency";
+import { 
+  CheckCircle, 
+  Star, 
+  MapPin, 
+  Calendar, 
+  Car,
+  Percent,
+  Gem,
+  Medal,
+  Trophy,
+  Award
+} from "lucide-react";
+
 // Types for partnership system
 interface DriverHotelPartnership {
   id: string;
   driverId: string;
   accommodationId: string;
-  partnershipType: string;
-  discountPercentage: string;
+  partnershipType: PartnershipLevel;
+  discountPercentage: number;
   minimumRides: number;
   isActive: boolean;
   validFrom: Date;
@@ -22,29 +35,31 @@ interface Accommodation {
   name: string;
   type: string;
   address: string;
-  lat: string | null;
-  lng: string | null;
-  pricePerNight: string;
-  rating: string | null;
+  lat: number | null;
+  lng: number | null;
+  pricePerNight: number;
+  rating: number | null;
   reviewCount: number;
   images: string[] | null;
   amenities: string[] | null;
   description: string | null;
-  distanceFromCenter: string | null;
+  distanceFromCenter: number | null;
   isAvailable: boolean;
 }
 
 interface PartnershipBenefit {
   id: string;
-  level: string;
+  level: PartnershipLevel;
   benefitType: string;
-  benefitValue: string | null;
+  benefitValue: number | null;
   description: string;
   minimumRidesRequired: number;
-  minimumRatingRequired: string;
+  minimumRatingRequired: number;
   isActive: boolean;
   createdAt: Date;
 }
+
+type PartnershipLevel = "bronze" | "silver" | "gold" | "platinum";
 
 interface DriverPartnershipCardProps {
   partnership: DriverHotelPartnership;
@@ -59,7 +74,8 @@ export default function DriverPartnershipCard({
   benefits,
   onUseDiscount 
 }: DriverPartnershipCardProps) {
-  const getPartnershipColor = (type: string) => {
+  // ✅ CORREÇÃO: Tipagem forte para partnership type
+  const getPartnershipColor = (type: PartnershipLevel) => {
     switch (type) {
       case "bronze": return "bg-amber-100 text-amber-800 border-amber-200";
       case "silver": return "bg-gray-100 text-gray-800 border-gray-200";
@@ -69,17 +85,22 @@ export default function DriverPartnershipCard({
     }
   };
 
-  const getPartnershipIcon = (type: string) => {
+  // ✅ CORREÇÃO: Tipagem forte e uso de ícones React
+  const getPartnershipIcon = (type: PartnershipLevel) => {
+    const iconClass = "w-6 h-6";
     switch (type) {
-      case "bronze": return "🥉";
-      case "silver": return "🥈";
-      case "gold": return "🥇";
-      case "platinum": return "💎";
-      default: return "⭐";
+      case "bronze": return <Medal className={`${iconClass} text-amber-600`} />;
+      case "silver": return <Award className={`${iconClass} text-gray-600`} />;
+      case "gold": return <Trophy className={`${iconClass} text-yellow-600`} />;
+      case "platinum": return <Gem className={`${iconClass} text-purple-600`} />;
+      default: return <Award className={`${iconClass} text-gray-600`} />;
     }
   };
 
-  const isExpired = partnership.validUntil && new Date(partnership.validUntil) < new Date();
+  // ✅ CORREÇÃO: Otimizar cálculo de data
+  const validUntilDate = partnership.validUntil ? new Date(partnership.validUntil) : null;
+  const isExpired = validUntilDate && validUntilDate < new Date();
+  
   const accommodationBenefits = benefits.filter(b => b.level === partnership.partnershipType);
 
   return (
@@ -87,7 +108,7 @@ export default function DriverPartnershipCard({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <span className="text-2xl">{getPartnershipIcon(partnership.partnershipType)}</span>
+            {getPartnershipIcon(partnership.partnershipType)}
             <div>
               <CardTitle className="text-lg">{accommodation.name}</CardTitle>
               <p className="text-sm text-gray-600">{accommodation.address}</p>
@@ -103,8 +124,8 @@ export default function DriverPartnershipCard({
         {/* Discount Information */}
         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
           <div className="flex items-center justify-between">
-            <span className="text-green-800 font-medium">
-              <i className="fas fa-percentage mr-2"></i>
+            <span className="text-green-800 font-medium flex items-center">
+              <Percent className="w-4 h-4 mr-2" />
               Desconto Especial
             </span>
             <span className="text-2xl font-bold text-green-600">
@@ -119,15 +140,16 @@ export default function DriverPartnershipCard({
         {/* Benefits List */}
         <div className="space-y-2">
           <h4 className="font-medium text-gray-800">Benefícios Incluídos:</h4>
-          {accommodationBenefits.map((benefit, index) => (
-            <div key={index} className="flex items-center space-x-2 text-sm">
-              <i className="fas fa-check-circle text-green-500"></i>
+          {accommodationBenefits.map((benefit) => (
+            <div key={benefit.id} className="flex items-center space-x-2 text-sm">
+              {/* ✅ CORREÇÃO: Ícone React e key por id */}
+              <CheckCircle className="w-4 h-4 text-green-500" />
               <span>{benefit.description}</span>
-              {benefit.benefitValue && parseFloat(benefit.benefitValue) > 0 && (
+              {benefit.benefitValue != null && benefit.benefitValue > 0 && (
                 <Badge variant="outline" className="text-xs">
                   {benefit.benefitType === 'accommodation_discount' 
                     ? `${benefit.benefitValue}%` 
-                    : formatMzn(parseFloat(benefit.benefitValue))}
+                    : formatMzn(benefit.benefitValue)}
                 </Badge>
               )}
             </div>
@@ -138,33 +160,37 @@ export default function DriverPartnershipCard({
         <div className="border-t pt-3">
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center space-x-4">
-              <span className="text-gray-600">
-                <i className="fas fa-star text-yellow-400 mr-1"></i>
-                {accommodation.rating}/5 ({accommodation.reviewCount} avaliações)
-              </span>
-              <span className="text-gray-600">
-                <i className="fas fa-map-marker-alt text-gray-400 mr-1"></i>
-                {accommodation.distanceFromCenter}km do centro
-              </span>
+              {accommodation.rating != null && (
+                <span className="text-gray-600 flex items-center">
+                  <Star className="w-4 h-4 text-yellow-400 mr-1 fill-current" />
+                  {accommodation.rating}/5 ({accommodation.reviewCount} avaliações)
+                </span>
+              )}
+              {accommodation.distanceFromCenter != null && (
+                <span className="text-gray-600 flex items-center">
+                  <MapPin className="w-4 h-4 text-gray-400 mr-1" />
+                  {accommodation.distanceFromCenter}km do centro
+                </span>
+              )}
             </div>
             <span className="font-medium text-lg">
-              {formatMzn(parseFloat(accommodation.pricePerNight))}/noite
+              {formatMzn(accommodation.pricePerNight)}/noite
             </span>
           </div>
         </div>
 
         {/* Validity and Requirements */}
         <div className="text-xs text-gray-500 space-y-1">
-          {partnership.minimumRides && partnership.minimumRides > 0 && (
-            <p>
-              <i className="fas fa-road mr-1"></i>
+          {partnership.minimumRides > 0 && (
+            <p className="flex items-center">
+              <Car className="w-3 h-3 mr-1" />
               Mínimo de {partnership.minimumRides} viagens realizadas
             </p>
           )}
-          {partnership.validUntil && (
-            <p className={isExpired ? "text-red-500" : ""}>
-              <i className="fas fa-calendar mr-1"></i>
-              Válido até {new Date(partnership.validUntil).toLocaleDateString('pt-PT')}
+          {validUntilDate && (
+            <p className={`flex items-center ${isExpired ? "text-red-500" : ""}`}>
+              <Calendar className="w-3 h-3 mr-1" />
+              Válido até {validUntilDate.toLocaleDateString('pt-PT')}
               {isExpired && " (Expirado)"}
             </p>
           )}

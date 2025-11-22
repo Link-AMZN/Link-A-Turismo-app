@@ -1,1 +1,0 @@
-ALTER TABLE "rides" ADD COLUMN "type" varchar(20) DEFAULT 'regular';

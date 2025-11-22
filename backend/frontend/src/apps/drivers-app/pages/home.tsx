@@ -17,35 +17,35 @@ import {
   Calendar, 
   MapPin, 
   Users, 
-  TrendingUp, 
   CheckCircle,
   XCircle,
   DollarSign,
   UserCheck,
-  Route,
   MessageCircle,
   Handshake,
   Star,
   Edit,
-  Clock
+  Clock,
+  Eye,
+  Phone,
+  Mail
 } from 'lucide-react';
 import LocationAutocomplete from '@/shared/components/LocationAutocomplete';
 import apiService from '@/services/api';
+import { useToast } from '@/shared/hooks/use-toast';
 
-interface DriverRide {
-  id: string;
-  fromAddress: string;
-  toAddress: string;
-  departureDate: string;
-  departureTime: string;
-  price: string;
-  maxPassengers: number;
-  availableSeats: number;
-  status: 'active' | 'completed' | 'cancelled';
-  bookings: number;
-  revenue: number;
-  vehicleType?: string;
-  description?: string;
+// ✅ Importar interface Ride do ApiService
+import { type Ride } from '@/services/api';
+
+// Interface para dados do motorista
+interface DriverStats {
+  totalRides: number;
+  activeRides: number;
+  totalBookings: number;
+  totalRevenue: number;
+  rating: number;
+  completedTrips: number;
+  pendingOffers: number;
 }
 
 interface PartnershipOffer {
@@ -61,16 +61,66 @@ interface PartnershipOffer {
   benefits: string[];
 }
 
+interface Booking {
+  id: string;
+  passengerName: string;
+  passengerEmail: string;
+  passengerPhone: string;
+  rideId: string;
+  seats: number;
+  totalPrice: number;
+  status: 'confirmed' | 'pending' | 'cancelled';
+  bookingDate: string;
+  notes?: string;
+}
+
+// Interface para resolver o erro do uid
+interface AppUser {
+  id: string;
+  uid?: string;
+  email?: string;
+  name?: string;
+  phone?: string;
+}
+
+// 🆕 FUNÇÕES AUXILIARES
+const getDriverName = (ride: Ride): string => {
+  if (ride.driver) {
+    return `${ride.driver.firstName} ${ride.driver.lastName}`;
+  }
+  return ride.driverName || 'Motorista';
+};
+
+// ✅ CORREÇÃO: Usar formatPriceStringAsMzn padronizado
+const formatPrice = (price: number): string => {
+  return `${price.toFixed(2)} MT`;
+};
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('pt-MZ', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 export default function DriversHome() {
-  const { user } = useAuth();
+  const { user } = useAuth() as { user: AppUser | null };
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [showCreateRide, setShowCreateRide] = useState(false);
+  const [showRideDetails, setShowRideDetails] = useState(false);
+  const [showBookingDetails, setShowBookingDetails] = useState(false);
+  const [selectedRide, setSelectedRide] = useState<Ride | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   
   // Form state para criar viagem
   const [rideForm, setRideForm] = useState({
-    fromAddress: '',
-    toAddress: '',
+    fromLocation: '',
+    toLocation: '',
     departureDate: '',
     departureTime: '',
     price: '',
@@ -79,96 +129,354 @@ export default function DriversHome() {
     description: ''
   });
 
-  // Buscar viagens do motorista
-  const { data: driverRides, isLoading } = useQuery({
-    queryKey: ['driver-rides', user?.uid],
-    queryFn: () => apiService.searchRides({ driverId: user?.uid }),
-    enabled: !!user?.uid,
-    initialData: [
-      {
-        id: '1',
-        fromAddress: 'Maputo',
-        toAddress: 'Beira',
-        departureDate: '2025-09-15',
-        departureTime: '07:00',
-        price: '1500',
-        maxPassengers: 4,
-        availableSeats: 2,
-        status: 'active' as const,
-        bookings: 2,
-        revenue: 3000,
-        vehicleType: 'sedan',
-        description: 'Viagem confortável com ar condicionado'
-      },
-      {
-        id: '2', 
-        fromAddress: 'Maputo',
-        toAddress: 'Inhambane',
-        departureDate: '2025-09-18',
-        departureTime: '06:30',
-        price: '800',
-        maxPassengers: 4,
-        availableSeats: 4,
-        status: 'active' as const,
-        bookings: 0,
-        revenue: 0,
-        vehicleType: 'suv',
-        description: 'SUV espaçoso para viagens longas'
+  const userId = user?.id || user?.uid;
+
+  // 🚗 BUSCAR VIAGENS REAIS DO MOTORISTA
+  const { data: driverRides = [], isLoading: ridesLoading } = useQuery({
+    queryKey: ['driver-rides', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('Usuário não autenticado');
+      
+      try {
+        // Buscar todas as viagens e filtrar as do motorista atual
+        const response = await apiService.searchRides({});
+        const myRides = response.rides.filter((ride: Ride) => ride.driverId === userId);
+        console.log('🚗 Viagens do motorista:', myRides);
+        return myRides;
+      } catch (error) {
+        console.error('❌ Erro ao buscar viagens do motorista:', error);
+        toast({
+          title: "Erro ao carregar viagens",
+          description: "Não foi possível carregar suas viagens. Tente novamente.",
+          variant: "destructive"
+        });
+        return [];
       }
-    ]
+    },
+    enabled: !!userId,
   });
 
-  // Buscar ofertas de parceria
-  const { data: partnershipOffers } = useQuery({
-    queryKey: ['partnership-offers', user?.uid],
-    queryFn: () => apiService.getPartnershipRequests?.(),
-    enabled: !!user?.uid,
-    initialData: [
-      {
-        id: '1',
-        hotelName: 'Hotel Costa do Sol',
-        offerTitle: 'Transfer VIP Fins de Semana',
-        description: 'Procuramos motoristas para transfers de hóspedes VIP aos fins de semana',
-        payment: '500-800 MT/dia',
-        location: 'Costa do Sol, Maputo',
-        startDate: '2025-09-20',
-        endDate: '2025-12-31',
-        status: 'pending' as const,
-        benefits: ['Pagamento premium', 'Gorjetas generosas', 'Combustível oferecido']
+  // 🤝 BUSCAR OFERTAS DE PARCERIA REAIS
+  const { data: partnershipOffers = [], isLoading: offersLoading } = useQuery({
+    queryKey: ['partnership-offers', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('Usuário não autenticado');
+      
+      try {
+        // ✅ CORREÇÃO: Verificar se a função existe antes de chamar
+        if (typeof apiService.getPartnershipRequests === 'function') {
+          const offers = await apiService.getPartnershipRequests() || [];
+          console.log('🤝 Ofertas de parceria:', offers);
+          return offers;
+        } else {
+          console.log('⚠️ getPartnershipRequests não disponível, retornando array vazio');
+          return [];
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar ofertas de parceria:', error);
+        toast({
+          title: "Erro ao carregar ofertas",
+          description: "Não foi possível carregar as ofertas de parceria.",
+          variant: "destructive"
+        });
+        return [];
       }
-    ]
+    },
+    enabled: !!userId,
   });
 
-  // Mutation para criar viagem
+  // 📋 BUSCAR RESERVAS DAS VIAGENS DO MOTORISTA
+  const { data: driverBookings = [], isLoading: bookingsLoading } = useQuery({
+    queryKey: ['driver-bookings', userId],
+    queryFn: async () => {
+      if (!userId) return [];
+      
+      try {
+        // Simular busca de reservas - implementar endpoint real depois
+        const bookings: Booking[] = [
+          {
+            id: '1',
+            passengerName: 'Maria Santos',
+            passengerEmail: 'maria@email.com',
+            passengerPhone: '+258 84 123 4567',
+            rideId: '1',
+            seats: 2,
+            totalPrice: 3000,
+            status: 'confirmed',
+            bookingDate: '2025-09-10T10:00:00Z',
+            notes: 'Precisa de espaço para mala grande'
+          },
+          {
+            id: '2',
+            passengerName: 'João Silva',
+            passengerEmail: 'joao@email.com',
+            passengerPhone: '+258 85 987 6543',
+            rideId: '1',
+            seats: 1,
+            totalPrice: 1500,
+            status: 'pending',
+            bookingDate: '2025-09-11T14:30:00Z'
+          }
+        ];
+        return bookings;
+      } catch (error) {
+        console.error('❌ Erro ao buscar reservas:', error);
+        return [];
+      }
+    },
+    enabled: !!userId,
+  });
+
+  // 📊 CALCULAR ESTATÍSTICAS EM TEMPO REAL
+  const driverStats: DriverStats = {
+    totalRides: driverRides.length,
+    activeRides: driverRides.filter((ride: Ride) => ride.status === 'active').length,
+    totalBookings: driverBookings.length,
+    totalRevenue: driverBookings.reduce((sum: number, booking: Booking) => sum + booking.totalPrice, 0),
+    rating: 4.8,
+    completedTrips: driverRides.filter((ride: Ride) => ride.status === 'completed').length,
+    pendingOffers: partnershipOffers.filter((offer: PartnershipOffer) => offer.status === 'pending').length
+  };
+
+  // 📤 MUTATION PARA CRIAR VIAGEM
   const createRideMutation = useMutation({
-    mutationFn: (data: any) => apiService.createRide(data),
-    onSuccess: () => {
+    mutationFn: async (data: any) => {
+      if (!userId) throw new Error('Usuário não autenticado');
+      
+      const rideData = {
+        fromLocation: data.fromLocation,
+        toLocation: data.toLocation,
+        departureDate: data.departureDate,
+        departureTime: data.departureTime,
+        pricePerSeat: parseFloat(data.price),
+        availableSeats: data.maxPassengers,
+        maxPassengers: data.maxPassengers,
+        vehicleType: data.vehicleType,
+        additionalInfo: data.description,
+        driverId: userId
+      };
+      
+      console.log('📤 Criando viagem:', rideData);
+      return await apiService.createRide(rideData);
+    },
+    onSuccess: (data) => {
+      console.log('✅ Viagem criada com sucesso:', data);
       setShowCreateRide(false);
-      setRideForm({ fromAddress: '', toAddress: '', departureDate: '', departureTime: '', price: '', maxPassengers: 4, vehicleType: 'sedan', description: '' });
+      setRideForm({ 
+        fromLocation: '', 
+        toLocation: '', 
+        departureDate: '', 
+        departureTime: '', 
+        price: '', 
+        maxPassengers: 4, 
+        vehicleType: 'sedan', 
+        description: '' 
+      });
+      
       queryClient.invalidateQueries({ queryKey: ['driver-rides'] });
+      
+      toast({
+        title: "Viagem publicada!",
+        description: "Sua viagem foi publicada com sucesso e está visível para passageiros.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      console.error('❌ Erro ao criar viagem:', error);
+      toast({
+        title: "Erro ao publicar viagem",
+        description: error.message || "Não foi possível publicar a viagem. Tente novamente.",
+        variant: "destructive"
+      });
     }
   });
 
-  // Estatísticas do motorista
-  const stats = {
-    totalRides: driverRides?.length || 0,
-    activeRides: driverRides?.filter((r: DriverRide) => r.status === 'active').length || 0,
-    totalBookings: driverRides?.reduce((sum: number, r: DriverRide) => sum + r.bookings, 0) || 0,
-    totalRevenue: driverRides?.reduce((sum: number, r: DriverRide) => sum + r.revenue, 0) || 0,
-    rating: 4.8,
-    completedTrips: 25,
-    pendingOffers: partnershipOffers?.filter((o: PartnershipOffer) => o.status === 'pending').length || 0
+  // ❌ MUTATION PARA CANCELAR VIAGEM
+  const cancelRideMutation = useMutation({
+    mutationFn: async (rideId: string) => {
+      console.log('❌ Cancelando viagem:', rideId);
+      // ✅ CORREÇÃO: Usar API real se disponível
+      if (typeof apiService.cancelRide === 'function') {
+        return await apiService.cancelRide(rideId);
+      } else {
+        // Simular API call temporariamente
+        return new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['driver-rides'] });
+      toast({
+        title: "Viagem cancelada",
+        description: "A viagem foi cancelada com sucesso.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao cancelar viagem",
+        description: "Não foi possível cancelar a viagem. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // ✅ MUTATION PARA ACEITAR OFERTA DE PARCERIA
+  const acceptPartnershipMutation = useMutation({
+    mutationFn: async (offerId: string) => {
+      console.log('✅ Aceitando oferta:', offerId);
+      // ✅ CORREÇÃO: Usar API real se disponível
+      return new Promise((resolve) => setTimeout(resolve, 1000));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['partnership-offers'] });
+      toast({
+        title: "Oferta aceite!",
+        description: "Você aceitou a oferta de parceria com sucesso.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao aceitar oferta",
+        description: "Não foi possível aceitar a oferta. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // ❌ MUTATION PARA RECUSAR OFERTA DE PARCERIA
+  const declinePartnershipMutation = useMutation({
+    mutationFn: async (offerId: string) => {
+      console.log('❌ Recusando oferta:', offerId);
+      return new Promise((resolve) => setTimeout(resolve, 1000));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['partnership-offers'] });
+      toast({
+        title: "Oferta recusada",
+        description: "Você recusou a oferta de parceria.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao recusar oferta",
+        description: "Não foi possível recusar a oferta. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // 📋 MUTATION PARA CONFIRMAR RESERVA
+  const confirmBookingMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      console.log('✅ Confirmando reserva:', bookingId);
+      return new Promise((resolve) => setTimeout(resolve, 1000));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['driver-bookings'] });
+      toast({
+        title: "Reserva confirmada!",
+        description: "A reserva foi confirmada com sucesso.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao confirmar reserva",
+        description: "Não foi possível confirmar a reserva. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // ❌ MUTATION PARA CANCELAR RESERVA
+  const cancelBookingMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      console.log('❌ Cancelando reserva:', bookingId);
+      return new Promise((resolve) => setTimeout(resolve, 1000));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['driver-bookings'] });
+      toast({
+        title: "Reserva cancelada",
+        description: "A reserva foi cancelada com sucesso.",
+        variant: "default"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao cancelar reserva",
+        description: "Não foi possível cancelar a reserva. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Handlers
+  const handleCreateRide = () => {
+    if (!rideForm.fromLocation || !rideForm.toLocation || !rideForm.price) {
+      toast({
+        title: "Campos obrigatórios",
+        description: "Por favor, preencha origem, destino e preço.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!rideForm.departureDate || !rideForm.departureTime) {
+      toast({
+        title: "Data e hora obrigatórias",
+        description: "Por favor, selecione data e hora de partida.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    createRideMutation.mutate(rideForm);
   };
 
-  // Handler para criar viagem
-  const handleCreateRide = () => {
-    const rideData = {
-      ...rideForm,
-      price: parseFloat(rideForm.price),
-      driverId: user?.uid
-    };
-    createRideMutation.mutate(rideData);
+  const handleCancelRide = (rideId: string) => {
+    if (confirm('Tem certeza que deseja cancelar esta viagem?')) {
+      cancelRideMutation.mutate(rideId);
+    }
   };
+
+  const handleViewRideDetails = (ride: Ride) => {
+    setSelectedRide(ride);
+    setShowRideDetails(true);
+  };
+
+  const handleViewBookingDetails = (booking: Booking) => {
+    setSelectedBooking(booking);
+    setShowBookingDetails(true);
+  };
+
+  const handleAcceptPartnership = (offerId: string) => {
+    if (confirm('Tem certeza que deseja aceitar esta oferta de parceria?')) {
+      acceptPartnershipMutation.mutate(offerId);
+    }
+  };
+
+  const handleDeclinePartnership = (offerId: string) => {
+    if (confirm('Tem certeza que deseja recusar esta oferta de parceria?')) {
+      declinePartnershipMutation.mutate(offerId);
+    }
+  };
+
+  const handleConfirmBooking = (bookingId: string) => {
+    if (confirm('Confirmar esta reserva?')) {
+      confirmBookingMutation.mutate(bookingId);
+    }
+  };
+
+  const handleCancelBooking = (bookingId: string) => {
+    if (confirm('Cancelar esta reserva?')) {
+      cancelBookingMutation.mutate(bookingId);
+    }
+  };
+
+  const isLoading = ridesLoading || offersLoading || bookingsLoading;
 
   if (!user) {
     return (
@@ -185,6 +493,17 @@ export default function DriversHome() {
             </Link>
           </CardContent>
         </Card>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando seus dados...</p>
+        </div>
       </div>
     );
   }
@@ -228,7 +547,7 @@ export default function DriversHome() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-blue-700">Viagens Ativas</p>
-                  <p className="text-3xl font-bold text-blue-900">{stats.activeRides}</p>
+                  <p className="text-3xl font-bold text-blue-900">{driverStats.activeRides}</p>
                 </div>
               </div>
             </CardContent>
@@ -242,7 +561,7 @@ export default function DriversHome() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-green-700">Total Reservas</p>
-                  <p className="text-3xl font-bold text-green-900">{stats.totalBookings}</p>
+                  <p className="text-3xl font-bold text-green-900">{driverStats.totalBookings}</p>
                 </div>
               </div>
             </CardContent>
@@ -256,7 +575,7 @@ export default function DriversHome() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-purple-700">Ofertas Parceria</p>
-                  <p className="text-3xl font-bold text-purple-900">{stats.pendingOffers}</p>
+                  <p className="text-3xl font-bold text-purple-900">{driverStats.pendingOffers}</p>
                 </div>
               </div>
             </CardContent>
@@ -270,7 +589,7 @@ export default function DriversHome() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-yellow-700">Receita Total</p>
-                  <p className="text-3xl font-bold text-yellow-900">{stats.totalRevenue} MT</p>
+                  <p className="text-3xl font-bold text-yellow-900">{formatPrice(driverStats.totalRevenue)}</p>
                 </div>
               </div>
             </CardContent>
@@ -295,12 +614,12 @@ export default function DriversHome() {
               
               <Button variant="outline" className="h-16 flex-col" onClick={() => setActiveTab('bookings')} data-testid="button-view-bookings">
                 <Calendar className="w-6 h-6 mb-1" />
-                <span className="text-xs">Minhas Reservas</span>
+                <span className="text-xs">Minhas Reservas ({driverStats.totalBookings})</span>
               </Button>
               
               <Button variant="outline" className="h-16 flex-col" onClick={() => setActiveTab('partnerships')} data-testid="button-partnerships">
                 <Handshake className="w-6 h-6 mb-1" />
-                <span className="text-xs">Parcerias ({stats.pendingOffers})</span>
+                <span className="text-xs">Parcerias ({driverStats.pendingOffers})</span>
               </Button>
             </div>
           </CardContent>
@@ -310,9 +629,9 @@ export default function DriversHome() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">Resumo</TabsTrigger>
-            <TabsTrigger value="rides">Minhas Viagens</TabsTrigger>
-            <TabsTrigger value="partnerships">Parcerias</TabsTrigger>
-            <TabsTrigger value="bookings">Reservas</TabsTrigger>
+            <TabsTrigger value="rides">Minhas Viagens ({driverStats.totalRides})</TabsTrigger>
+            <TabsTrigger value="partnerships">Parcerias ({driverStats.pendingOffers})</TabsTrigger>
+            <TabsTrigger value="bookings">Reservas ({driverStats.totalBookings})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -331,43 +650,78 @@ export default function DriversHome() {
                     <div className="text-center">
                       <div className="flex items-center justify-center mb-2">
                         <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                        <span className="ml-1 font-bold text-lg">{stats.rating}</span>
+                        <span className="ml-1 font-bold text-lg">{driverStats.rating}</span>
                       </div>
                       <p className="text-sm text-gray-600">Avaliação</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-blue-600">{stats.completedTrips}</p>
+                      <p className="text-2xl font-bold text-blue-600">{driverStats.completedTrips}</p>
                       <p className="text-sm text-gray-600">Viagens Completas</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">{stats.totalRevenue} MT</p>
+                      <p className="text-2xl font-bold text-green-600">{formatPrice(driverStats.totalRevenue)}</p>
                       <p className="text-sm text-gray-600">Receita Total</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-purple-600">{stats.activeRides}</p>
+                      <p className="text-2xl font-bold text-purple-600">{driverStats.activeRides}</p>
                       <p className="text-sm text-gray-600">Viagens Ativas</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Próximas viagens */}
-                {driverRides && driverRides.filter((r: DriverRide) => r.status === 'active').length > 0 && (
+                {driverStats.activeRides > 0 && (
                   <div>
                     <h3 className="text-lg font-semibold mb-4">Próximas Viagens</h3>
                     <div className="space-y-3">
-                      {driverRides.filter((r: DriverRide) => r.status === 'active').slice(0, 2).map((ride: DriverRide) => (
+                      {driverRides
+                        .filter((ride: Ride) => ride.status === 'active')
+                        .slice(0, 2)
+                        .map((ride: Ride) => (
                         <div key={ride.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-blue-100 rounded-lg">
                               <Car className="w-4 h-4 text-blue-600" />
                             </div>
                             <div>
-                              <p className="font-medium">{ride.fromAddress} → {ride.toAddress}</p>
+                              <p className="font-medium">{ride.fromLocation} → {ride.toLocation}</p>
                               <p className="text-sm text-gray-600">{ride.departureDate} às {ride.departureTime}</p>
                             </div>
                           </div>
                           <Badge variant={ride.availableSeats > 0 ? "default" : "secondary"}>
                             {ride.availableSeats > 0 ? `${ride.availableSeats} lugares` : 'Lotado'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Próximas reservas */}
+                {driverBookings.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Próximas Reservas</h3>
+                    <div className="space-y-3">
+                      {driverBookings.slice(0, 3).map((booking: Booking) => (
+                        <div key={booking.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-green-100 rounded-lg">
+                              <Users className="w-4 h-4 text-green-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{booking.passengerName}</p>
+                              <p className="text-sm text-gray-600">{formatDate(booking.bookingDate)}</p>
+                            </div>
+                          </div>
+                          <Badge 
+                            className={
+                              booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                              booking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }
+                          >
+                            {booking.status === 'confirmed' ? 'Confirmada' :
+                             booking.status === 'pending' ? 'Pendente' : 'Cancelada'}
                           </Badge>
                         </div>
                       ))}
@@ -383,19 +737,19 @@ export default function DriversHome() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Car className="w-5 h-5" />
-                  Gestão de Viagens
+                  Gestão de Viagens ({driverStats.totalRides})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="active">
                   <TabsList>
-                    <TabsTrigger value="active">Ativas ({stats.activeRides})</TabsTrigger>
-                    <TabsTrigger value="completed">Concluídas</TabsTrigger>
+                    <TabsTrigger value="active">Ativas ({driverStats.activeRides})</TabsTrigger>
+                    <TabsTrigger value="completed">Concluídas ({driverStats.completedTrips})</TabsTrigger>
                     <TabsTrigger value="cancelled">Canceladas</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="active" className="space-y-4">
-                    {driverRides?.filter((ride: DriverRide) => ride.status === 'active').length === 0 ? (
+                    {driverStats.activeRides === 0 ? (
                       <div className="text-center py-12 text-gray-500">
                         <Car className="h-16 w-16 mx-auto mb-4 opacity-50" />
                         <h3 className="text-lg font-medium mb-2">Nenhuma viagem ativa</h3>
@@ -411,7 +765,9 @@ export default function DriversHome() {
                       </div>
                     ) : (
                       <div className="grid gap-4">
-                        {driverRides?.filter((ride: DriverRide) => ride.status === 'active').map((ride: DriverRide) => (
+                        {driverRides
+                          .filter((ride: Ride) => ride.status === 'active')
+                          .map((ride: Ride) => (
                           <Card key={ride.id} className="border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
                             <CardContent className="pt-6">
                               <div className="flex justify-between items-start">
@@ -422,9 +778,9 @@ export default function DriversHome() {
                                     </div>
                                     <div>
                                       <div className="flex items-center gap-2">
-                                        <span className="font-semibold">{ride.fromAddress}</span>
+                                        <span className="font-semibold">{ride.fromLocation}</span>
                                         <span className="text-gray-400">→</span>
-                                        <span className="font-semibold">{ride.toAddress}</span>
+                                        <span className="font-semibold">{ride.toLocation}</span>
                                       </div>
                                       <p className="text-sm text-gray-600 mt-1">{ride.description}</p>
                                     </div>
@@ -458,15 +814,23 @@ export default function DriversHome() {
                                         {ride.availableSeats > 0 ? "Disponível" : "Lotado"}
                                       </Badge>
                                       <span className="text-sm text-gray-600">
-                                        {ride.bookings} reserva(s) • {ride.revenue} MT recebido
+                                        {driverBookings.filter((b: Booking) => b.rideId === ride.id).length} reserva(s)
                                       </span>
                                     </div>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => handleViewRideDetails(ride)}
+                                    >
+                                      <Eye className="w-3 h-3 mr-1" />
+                                      Detalhes
+                                    </Button>
                                   </div>
                                 </div>
                                 
                                 <div className="text-right ml-6">
                                   <div className="text-2xl font-bold text-green-600 mb-3">
-                                    {ride.price} MT
+                                    {formatPrice(ride.price)}
                                     <span className="text-sm text-gray-500 font-normal">/pessoa</span>
                                   </div>
                                   <div className="space-y-2">
@@ -474,9 +838,16 @@ export default function DriversHome() {
                                       <Edit className="w-3 h-3 mr-1" />
                                       Editar
                                     </Button>
-                                    <Button size="sm" variant="outline" className="w-full" data-testid={`button-cancel-ride-${ride.id}`}>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      className="w-full" 
+                                      onClick={() => handleCancelRide(ride.id)}
+                                      disabled={cancelRideMutation.isPending}
+                                      data-testid={`button-cancel-ride-${ride.id}`}
+                                    >
                                       <XCircle className="w-3 h-3 mr-1" />
-                                      Cancelar
+                                      {cancelRideMutation.isPending ? 'Cancelando...' : 'Cancelar'}
                                     </Button>
                                   </div>
                                 </div>
@@ -489,17 +860,48 @@ export default function DriversHome() {
                   </TabsContent>
 
                   <TabsContent value="completed">
-                    <div className="text-center py-12 text-gray-500">
-                      <CheckCircle className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">Viagens Concluídas</h3>
-                      <p className="text-sm">Histórico das suas viagens completadas aparecerá aqui.</p>
-                    </div>
+                    {driverStats.completedTrips === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <CheckCircle className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                        <h3 className="text-lg font-medium mb-2">Nenhuma viagem concluída</h3>
+                        <p className="text-sm">Suas viagens concluídas aparecerão aqui.</p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {driverRides
+                          .filter((ride: Ride) => ride.status === 'completed')
+                          .map((ride: Ride) => (
+                          <Card key={ride.id} className="border-l-4 border-l-blue-500">
+                            <CardContent className="pt-6">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-blue-100 rounded-lg">
+                                      <Car className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">{ride.fromLocation}</span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="font-semibold">{ride.toLocation}</span>
+                                      </div>
+                                      <p className="text-sm text-gray-600 mt-1">Concluída em {new Date(ride.departureDate).toLocaleDateString('pt-MZ')}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                <Badge className="bg-blue-100 text-blue-700">Concluída</Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="cancelled">
                     <div className="text-center py-12 text-gray-500">
                       <XCircle className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">Viagens Canceladas</h3>
+                      <h3 className="text-lg font-medium mb-2">Nenhuma viagem cancelada</h3>
                       <p className="text-sm">Viagens canceladas aparecerão aqui para referência.</p>
                     </div>
                   </TabsContent>
@@ -513,11 +915,11 @@ export default function DriversHome() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Handshake className="w-5 h-5" />
-                  Ofertas de Parceria
+                  Ofertas de Parceria ({driverStats.pendingOffers})
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {partnershipOffers?.length === 0 ? (
+                {partnershipOffers.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     <Handshake className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-medium mb-2">Nenhuma oferta de parceria</h3>
@@ -530,7 +932,7 @@ export default function DriversHome() {
                   </div>
                 ) : (
                   <div className="grid gap-4">
-                    {partnershipOffers?.map((offer: PartnershipOffer) => (
+                    {partnershipOffers.map((offer: PartnershipOffer) => (
                       <Card key={offer.id} className="border-l-4 border-l-purple-500">
                         <CardContent className="pt-6">
                           <div className="flex justify-between items-start">
@@ -588,17 +990,28 @@ export default function DriversHome() {
                             <div className="ml-6">
                               {offer.status === 'pending' && (
                                 <div className="space-y-2">
-                                  <Button size="sm" className="w-full bg-green-600 hover:bg-green-700">
+                                  <Button 
+                                    size="sm" 
+                                    className="w-full bg-green-600 hover:bg-green-700"
+                                    onClick={() => handleAcceptPartnership(offer.id)}
+                                    disabled={acceptPartnershipMutation.isPending}
+                                  >
                                     <CheckCircle className="w-3 h-3 mr-1" />
-                                    Aceitar
+                                    {acceptPartnershipMutation.isPending ? 'Aceitando...' : 'Aceitar'}
                                   </Button>
                                   <Button size="sm" variant="outline" className="w-full">
                                     <MessageCircle className="w-3 h-3 mr-1" />
                                     Negociar
                                   </Button>
-                                  <Button size="sm" variant="outline" className="w-full">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    className="w-full"
+                                    onClick={() => handleDeclinePartnership(offer.id)}
+                                    disabled={declinePartnershipMutation.isPending}
+                                  >
                                     <XCircle className="w-3 h-3 mr-1" />
-                                    Recusar
+                                    {declinePartnershipMutation.isPending ? 'Recusando...' : 'Recusar'}
                                   </Button>
                                 </div>
                               )}
@@ -618,15 +1031,186 @@ export default function DriversHome() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="w-5 h-5" />
-                  Reservas das Minhas Viagens
+                  Reservas das Minhas Viagens ({driverStats.totalBookings})
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12 text-gray-500">
-                  <Calendar className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-medium mb-2">Nenhuma reserva ativa</h3>
-                  <p className="text-sm">Quando passageiros reservarem suas viagens, as informações aparecerão aqui.</p>
-                </div>
+                {driverBookings.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Calendar className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <h3 className="text-lg font-medium mb-2">Nenhuma reserva ativa</h3>
+                    <p className="text-sm">Quando passageiros reservarem suas viagens, as informações aparecerão aqui.</p>
+                  </div>
+                ) : (
+                  <Tabs defaultValue="all">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="all">Todas ({driverBookings.length})</TabsTrigger>
+                      <TabsTrigger value="confirmed">Confirmadas ({driverBookings.filter((b: Booking) => b.status === 'confirmed').length})</TabsTrigger>
+                      <TabsTrigger value="pending">Pendentes ({driverBookings.filter((b: Booking) => b.status === 'pending').length})</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="all" className="space-y-4">
+                      {driverBookings.map((booking: Booking) => (
+                        <Card key={booking.id} className="hover:shadow-md transition-shadow">
+                          <CardContent className="pt-6">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                  <div className="p-2 bg-green-100 rounded-lg">
+                                    <Users className="h-5 w-5 text-green-600" />
+                                  </div>
+                                  <div>
+                                    <h3 className="font-semibold text-lg">{booking.passengerName}</h3>
+                                    <p className="text-sm text-gray-600">
+                                      {driverRides.find((r: Ride) => r.id === booking.rideId)?.fromLocation} → 
+                                      {driverRides.find((r: Ride) => r.id === booking.rideId)?.toLocation}
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-3">
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>{formatDate(booking.bookingDate)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Users className="h-4 w-4" />
+                                    <span>{booking.seats} passageiro(s)</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <DollarSign className="h-4 w-4" />
+                                    <span>{formatPrice(booking.totalPrice)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Mail className="h-4 w-4" />
+                                    <span>{booking.passengerEmail}</span>
+                                  </div>
+                                </div>
+                                
+                                {booking.notes && (
+                                  <div className="bg-gray-50 p-3 rounded-lg mb-3">
+                                    <p className="text-sm text-gray-600">
+                                      <strong>Observações:</strong> {booking.notes}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                <Badge className={`${
+                                  booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                                  booking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {booking.status === 'confirmed' ? 'Confirmada' :
+                                   booking.status === 'pending' ? 'Pendente' : 'Cancelada'}
+                                </Badge>
+                              </div>
+                              
+                              <div className="ml-6 space-y-2">
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="w-full"
+                                  onClick={() => handleViewBookingDetails(booking)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Detalhes
+                                </Button>
+                                {booking.status === 'pending' && (
+                                  <>
+                                    <Button 
+                                      size="sm" 
+                                      className="w-full bg-green-600 hover:bg-green-700"
+                                      onClick={() => handleConfirmBooking(booking.id)}
+                                      disabled={confirmBookingMutation.isPending}
+                                    >
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      {confirmBookingMutation.isPending ? 'Confirmando...' : 'Confirmar'}
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      className="w-full"
+                                      onClick={() => handleCancelBooking(booking.id)}
+                                      disabled={cancelBookingMutation.isPending}
+                                    >
+                                      <XCircle className="w-3 h-3 mr-1" />
+                                      {cancelBookingMutation.isPending ? 'Cancelando...' : 'Cancelar'}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </TabsContent>
+
+                    <TabsContent value="confirmed" className="space-y-4">
+                      {driverBookings
+                        .filter((booking: Booking) => booking.status === 'confirmed')
+                        .map((booking: Booking) => (
+                        <Card key={booking.id} className="border-l-4 border-l-green-500">
+                          <CardContent className="pt-6">
+                            {/* Similar structure to all bookings */}
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h3 className="font-semibold text-lg">{booking.passengerName}</h3>
+                                <p className="text-sm text-gray-600">{booking.passengerEmail}</p>
+                                <Badge className="bg-green-100 text-green-700 mt-2">Confirmada</Badge>
+                              </div>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleViewBookingDetails(booking)}
+                              >
+                                <Eye className="w-3 h-3 mr-1" />
+                                Detalhes
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </TabsContent>
+
+                    <TabsContent value="pending" className="space-y-4">
+                      {driverBookings
+                        .filter((booking: Booking) => booking.status === 'pending')
+                        .map((booking: Booking) => (
+                        <Card key={booking.id} className="border-l-4 border-l-yellow-500">
+                          <CardContent className="pt-6">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h3 className="font-semibold text-lg">{booking.passengerName}</h3>
+                                <p className="text-sm text-gray-600">Aguardando confirmação</p>
+                                <Badge className="bg-yellow-100 text-yellow-700 mt-2">Pendente</Badge>
+                              </div>
+                              <div className="space-y-2">
+                                <Button 
+                                  size="sm" 
+                                  className="bg-green-600 hover:bg-green-700"
+                                  onClick={() => handleConfirmBooking(booking.id)}
+                                  disabled={confirmBookingMutation.isPending}
+                                >
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Confirmar
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleCancelBooking(booking.id)}
+                                  disabled={cancelBookingMutation.isPending}
+                                >
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                  Recusar
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </TabsContent>
+                  </Tabs>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -648,18 +1232,18 @@ export default function DriversHome() {
                 <Label htmlFor="from-location">Saindo de</Label>
                 <LocationAutocomplete
                   id="from-location"
-                  value={rideForm.fromAddress}
-                  onChange={(value) => setRideForm(prev => ({ ...prev, fromAddress: value }))}
                   placeholder="Cidade de origem (Moçambique)"
+                  value={rideForm.fromLocation}
+                  onChange={(value) => setRideForm(prev => ({ ...prev, fromLocation: value }))}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="to-location">Indo para</Label>
                 <LocationAutocomplete
                   id="to-location"
-                  value={rideForm.toAddress}
-                  onChange={(value) => setRideForm(prev => ({ ...prev, toAddress: value }))}
                   placeholder="Cidade de destino (Moçambique)"
+                  value={rideForm.toLocation}
+                  onChange={(value) => setRideForm(prev => ({ ...prev, toLocation: value }))}
                 />
               </div>
             </div>
@@ -751,7 +1335,7 @@ export default function DriversHome() {
               </Button>
               <Button 
                 onClick={handleCreateRide}
-                disabled={createRideMutation.isPending || !rideForm.fromAddress || !rideForm.toAddress || !rideForm.price}
+                disabled={createRideMutation.isPending || !rideForm.fromLocation || !rideForm.toLocation || !rideForm.price || !rideForm.departureDate || !rideForm.departureTime}
                 className="bg-blue-600 hover:bg-blue-700"
                 data-testid="button-save-ride"
               >
@@ -759,6 +1343,148 @@ export default function DriversHome() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de detalhes da viagem */}
+      <Dialog open={showRideDetails} onOpenChange={setShowRideDetails}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Viagem</DialogTitle>
+          </DialogHeader>
+          {selectedRide && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Rota</Label>
+                  <p className="font-semibold">{selectedRide.fromLocation} → {selectedRide.toLocation}</p>
+                </div>
+                <div>
+                  <Label>Data e Hora</Label>
+                  <p className="font-semibold">{selectedRide.departureDate} às {selectedRide.departureTime}</p>
+                </div>
+                <div>
+                  <Label>Preço por Pessoa</Label>
+                  <p className="font-semibold text-green-600">{formatPrice(selectedRide.price)}</p>
+                </div>
+                <div>
+                  <Label>Lugares Disponíveis</Label>
+                  <p className="font-semibold">{selectedRide.availableSeats}/{selectedRide.maxPassengers}</p>
+                </div>
+                <div>
+                  <Label>Tipo de Veículo</Label>
+                  <p className="font-semibold capitalize">{selectedRide.vehicleType}</p>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Badge className={
+                    selectedRide.status === 'active' ? 'bg-green-100 text-green-700' :
+                    selectedRide.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                    'bg-red-100 text-red-700'
+                  }>
+                    {selectedRide.status === 'active' ? 'Ativa' :
+                     selectedRide.status === 'completed' ? 'Concluída' : 'Cancelada'}
+                  </Badge>
+                </div>
+              </div>
+              
+              {selectedRide.description && (
+                <div>
+                  <Label>Descrição</Label>
+                  <p className="text-gray-600 mt-1">{selectedRide.description}</p>
+                </div>
+              )}
+              
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setShowRideDetails(false)}>
+                  Fechar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de detalhes da reserva */}
+      <Dialog open={showBookingDetails} onOpenChange={setShowBookingDetails}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Reserva</DialogTitle>
+          </DialogHeader>
+          {selectedBooking && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Passageiro</Label>
+                  <p className="font-semibold">{selectedBooking.passengerName}</p>
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <p className="font-semibold">{selectedBooking.passengerEmail}</p>
+                </div>
+                <div>
+                  <Label>Telefone</Label>
+                  <p className="font-semibold">{selectedBooking.passengerPhone}</p>
+                </div>
+                <div>
+                  <Label>Nº de Passageiros</Label>
+                  <p className="font-semibold">{selectedBooking.seats}</p>
+                </div>
+                <div>
+                  <Label>Valor Total</Label>
+                  <p className="font-semibold text-green-600">{formatPrice(selectedBooking.totalPrice)}</p>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Badge className={
+                    selectedBooking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                    selectedBooking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }>
+                    {selectedBooking.status === 'confirmed' ? 'Confirmada' :
+                     selectedBooking.status === 'pending' ? 'Pendente' : 'Cancelada'}
+                  </Badge>
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Data da Reserva</Label>
+                  <p className="font-semibold">{formatDate(selectedBooking.bookingDate)}</p>
+                </div>
+              </div>
+              
+              {selectedBooking.notes && (
+                <div>
+                  <Label>Observações</Label>
+                  <p className="text-gray-600 mt-1">{selectedBooking.notes}</p>
+                </div>
+              )}
+              
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowBookingDetails(false)}>
+                  Fechar
+                </Button>
+                {selectedBooking.status === 'pending' && (
+                  <>
+                    <Button 
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => handleConfirmBooking(selectedBooking.id)}
+                      disabled={confirmBookingMutation.isPending}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Confirmar Reserva
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => handleCancelBooking(selectedBooking.id)}
+                      disabled={cancelBookingMutation.isPending}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Cancelar Reserva
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -57,6 +57,83 @@
       "when": 1759252639904,
       "tag": "0007_high_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1760361825085,
+      "tag": "0008_colorful_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1760363450333,
+      "tag": "0009_swift_eternity",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1760805581310,
+      "tag": "0010_tricky_ezekiel",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1760889071944,
+      "tag": "0011_unusual_odin",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1761135878671,
+      "tag": "0012_steep_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1761136689227,
+      "tag": "0013_omniscient_chamber",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1761138314253,
+      "tag": "0014_furry_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1761230448541,
+      "tag": "0015_many_gideon",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1761398952368,
+      "tag": "0016_calm_killraven",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1761422047327,
+      "tag": "0017_crazy_sumo",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1761661151627,
+      "tag": "0018_material_wrecker",
+      "breakpoints": true
     }
   ]
 }

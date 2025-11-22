@@ -3,16 +3,20 @@ import { partnershipProposals, partnershipApplications } from '../../../shared/s
 import { sql, eq, and, gt, desc } from 'drizzle-orm'; // ✅ Importação correta
 
 export class PartnershipRepository {
-  async findAvailableProposals() {
+  async findAvailableProposals(province?: string) {
+    const conditions = [
+      eq(partnershipProposals.status, 'active'),
+      gt(partnershipProposals.endDate, new Date())
+    ];
+
+    if (province) {
+      conditions.push(eq(partnershipProposals.province, province));
+    }
+
     return db
       .select()
       .from(partnershipProposals)
-      .where(
-        and(
-          eq(partnershipProposals.status, 'active'),
-          gt(partnershipProposals.endDate, new Date())
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(partnershipProposals.createdAt));
   }
 

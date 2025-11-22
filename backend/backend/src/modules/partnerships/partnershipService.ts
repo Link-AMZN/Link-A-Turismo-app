@@ -8,8 +8,8 @@ export class PartnershipService {
     this.partnershipRepository = new PartnershipRepository();
   }
 
-  public async getAvailableProposals() {
-    return this.partnershipRepository.findAvailableProposals();
+  public async getAvailableProposals(province?: string) {
+    return this.partnershipRepository.findAvailableProposals(province);
   }
 
   public async getDriverProposals(driverId: string) {
@@ -26,7 +26,15 @@ export class PartnershipService {
       hotelId,
       status: 'active',
       createdAt: new Date(),
-      currentApplicants: 0
+      currentApplicants: 0,
+      province: data.province, // ✅ novo campo
+      city: data.city,         // opcional
+      offerFuel: data.offerFuel || false,
+      offerMeals: data.offerMeals || false,
+      offerFreeAccommodation: data.offerFreeAccommodation || false,
+      premiumRate: data.premiumRate || 0,
+      minimumDriverLevel: data.minimumDriverLevel || 'bronze',
+      requiredVehicleType: data.requiredVehicleType || 'any',
     };
 
     return this.partnershipRepository.createProposal(proposalData);

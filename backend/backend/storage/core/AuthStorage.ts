@@ -13,55 +13,136 @@ import type {
   DriverStats 
 } from '../types';
 
+// ✅ CORREÇÃO: Definir tipos compatíveis com o schema
+export type SchemaUserType = 'client' | 'host' | 'driver' | 'admin';
+
+// ✅ CORREÇÃO: Extender CreateUserData para incluir campos obrigatórios
+export interface ExtendedCreateUserData {
+  id: string; // Campo obrigatório
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  phone?: string;
+  userType?: SchemaUserType;
+  roles?: string[];
+  canOfferServices?: boolean;
+  profileImageUrl?: string;
+  firebaseUid?: string;
+}
+
+export interface ExtendedUpdateUserData extends Partial<Omit<ExtendedCreateUserData, 'id'>> {
+  // Campos específicos para update
+  verificationStatus?: VerificationStatus;
+  isVerified?: boolean;
+  rating?: number;
+  totalReviews?: number;
+}
+
+export interface UpsertUserData extends ExtendedCreateUserData {
+  // Para upsert, id é obrigatório
+}
+
+export interface FirebaseLinkData {
+  userId: string;
+  firebaseUid: string;
+}
+
 // Helper functions for proper type mapping
 function mapToUser(user: any): User {
+  // Converter datas explicitamente
+  const createdAt = user.createdAt 
+    ? (user.createdAt instanceof Date ? user.createdAt : new Date(user.createdAt))
+    : new Date();
+  
+  const updatedAt = user.updatedAt 
+    ? (user.updatedAt instanceof Date ? user.updatedAt : new Date(user.updatedAt))
+    : new Date();
+  
+  const verificationDate = user.verificationDate 
+    ? (user.verificationDate instanceof Date ? user.verificationDate : new Date(user.verificationDate))
+    : null;
+  
+  const badgeEarnedDate = user.badgeEarnedDate 
+    ? (user.badgeEarnedDate instanceof Date ? user.badgeEarnedDate : new Date(user.badgeEarnedDate))
+    : null;
+  
+  const dateOfBirth = user.dateOfBirth 
+    ? (user.dateOfBirth instanceof Date ? user.dateOfBirth : new Date(user.dateOfBirth))
+    : null;
+
   return {
     ...user,
+    // Garantir conversão numérica
     rating: user.rating ? Number(user.rating) : 0,
-    totalReviews: user.totalReviews || 0,
-    isVerified: user.isVerified ?? false,
-    createdAt: user.createdAt || new Date(),
-    updatedAt: user.updatedAt || new Date(),
+    totalReviews: user.totalReviews ? Number(user.totalReviews) : 0,
+    
+    // Garantir booleanos
+    isVerified: Boolean(user.isVerified),
+    canOfferServices: Boolean(user.canOfferServices),
+    registrationCompleted: Boolean(user.registrationCompleted),
+    
+    // Garantir arrays
+    roles: Array.isArray(user.roles) ? user.roles : ['client'],
+    
+    // Datas convertidas explicitamente
+    createdAt,
+    updatedAt,
+    verificationDate,
+    badgeEarnedDate,
+    dateOfBirth,
+    
+    // Valores padrão para campos opcionais
     email: user.email || '',
     phone: user.phone || '',
     userType: user.userType || 'client',
-    roles: user.roles || ['client'],
-    canOfferServices: user.canOfferServices ?? false,
     firstName: user.firstName || '',
     lastName: user.lastName || '',
     profileImageUrl: user.profileImageUrl || '',
     verificationStatus: user.verificationStatus || 'pending',
-    verificationDate: user.verificationDate || null,
     verificationNotes: user.verificationNotes || '',
     identityDocumentUrl: user.identityDocumentUrl || '',
     identityDocumentType: user.identityDocumentType || '',
     profilePhotoUrl: user.profilePhotoUrl || '',
     fullName: user.fullName || '',
     documentNumber: user.documentNumber || '',
-    dateOfBirth: user.dateOfBirth || null,
-    registrationCompleted: user.registrationCompleted ?? false,
     verificationBadge: user.verificationBadge || '',
-    badgeEarnedDate: user.badgeEarnedDate || null,
     avatar: user.avatar || ''
   } as User;
 }
 
 function mapToDriverDocuments(docs: any): DriverDocuments {
+  const updatedAt = docs.updatedAt 
+    ? (docs.updatedAt instanceof Date ? docs.updatedAt : new Date(docs.updatedAt))
+    : new Date();
+  
+  const verificationDate = docs.verificationDate 
+    ? (docs.verificationDate instanceof Date ? docs.verificationDate : new Date(docs.verificationDate))
+    : null;
+
+  // ✅ CORREÇÃO: Não incluir createdAt no retorno se não existir no tipo DriverDocuments
+  const { createdAt, ...cleanDocs } = docs;
+
   return {
-    ...docs,
-    createdAt: docs.createdAt || new Date(),
-    updatedAt: docs.updatedAt || new Date(),
-    isVerified: docs.isVerified ?? false,
-    vehicleYear: docs.vehicleYear || null
+    ...cleanDocs,
+    updatedAt,
+    verificationDate,
+    isVerified: Boolean(docs.isVerified),
+    vehicleYear: docs.vehicleYear ? Number(docs.vehicleYear) : null
   } as DriverDocuments;
+}
+
+// Helper para busca com ILIKE sem @ts-ignore
+function ilike(column: any, pattern: string) {
+  return sql`${column} ILIKE ${pattern}`;
 }
 
 export interface IAuthStorage {
   // Basic user operations
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(userData: CreateUserData): Promise<User>;
-  updateUser(id: string, data: UpdateUserData): Promise<User>;
+  createUser(userData: ExtendedCreateUserData): Promise<User>;
+  updateUser(id: string, data: ExtendedUpdateUserData): Promise<User>;
   deleteUser(id: string): Promise<void>;
   
   // Firebase integration
@@ -80,7 +161,7 @@ export interface IAuthStorage {
   getPendingVerifications(): Promise<User[]>;
   
   // Driver-specific operations
-  updateDriverDocuments(driverId: string, documents: DriverDocuments): Promise<void>;
+  updateDriverDocuments(driverId: string, documents: Partial<Omit<DriverDocuments, 'createdAt'>>): Promise<void>;
   getDriverDocuments(driverId: string): Promise<DriverDocuments | undefined>;
   getDriverStatistics(driverId: string): Promise<DriverStats>;
   
@@ -89,8 +170,8 @@ export interface IAuthStorage {
   getUsersWithPagination(page: number, limit: number): Promise<{ users: User[], total: number }>;
   
   // Additional methods needed by controllers
-  upsertUser(userData: any): Promise<User>;
-  getUsersByType(userType: string): Promise<User[]>;
+  upsertUser(userData: UpsertUserData): Promise<User>;
+  getUsersByType(userType: SchemaUserType): Promise<User[]>;
 }
 
 export class DatabaseAuthStorage implements IAuthStorage {
@@ -117,15 +198,37 @@ export class DatabaseAuthStorage implements IAuthStorage {
     }
   }
 
-  async createUser(userData: CreateUserData): Promise<User> {
+  async createUser(userData: ExtendedCreateUserData): Promise<User> {
     try {
+      // ✅ CORREÇÃO: Converter userType para tipo compatível com schema
+      const userTypeMap: Record<string, SchemaUserType> = {
+        'client': 'client',
+        'driver': 'driver',
+        'admin': 'admin',
+        'hotel_manager': 'host'
+      };
+      
+      const schemaUserType = userData.userType ? userTypeMap[userData.userType] || 'client' : 'client';
+
+      // ✅ CORREÇÃO: Preparar dados conforme schema do Drizzle
+      const userValues = {
+        id: userData.id, // Campo obrigatório
+        email: userData.email,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        fullName: userData.fullName,
+        phone: userData.phone,
+        userType: schemaUserType,
+        roles: userData.roles || ['client'],
+        canOfferServices: userData.canOfferServices ?? false,
+        profileImageUrl: userData.profileImageUrl,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
       const [user] = await db
         .insert(users)
-        .values({
-          ...userData,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+        .values(userValues)
         .returning();
       return mapToUser(user);
     } catch (error) {
@@ -134,14 +237,27 @@ export class DatabaseAuthStorage implements IAuthStorage {
     }
   }
 
-  async updateUser(id: string, data: UpdateUserData): Promise<User> {
+  async updateUser(id: string, data: ExtendedUpdateUserData): Promise<User> {
     try {
+      // ✅ CORREÇÃO: Converter userType para tipo compatível com schema se fornecido
+      const updateData: any = {
+        ...data,
+        updatedAt: new Date(),
+      };
+
+      if (data.userType) {
+        const userTypeMap: Record<string, SchemaUserType> = {
+          'client': 'client',
+          'driver': 'driver',
+          'admin': 'admin',
+          'hotel_manager': 'host'
+        };
+        updateData.userType = userTypeMap[data.userType] || 'client';
+      }
+
       const [user] = await db
         .update(users)
-        .set({
-          ...data,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(users.id, id))
         .returning();
       return mapToUser(user);
@@ -163,24 +279,53 @@ export class DatabaseAuthStorage implements IAuthStorage {
   // ===== FIREBASE INTEGRATION =====
   
   async getUserByFirebaseUid(firebaseUid: string): Promise<User | undefined> {
-    // Note: Using id field as Firebase UID for now
-    return this.getUser(firebaseUid);
+    try {
+      // ✅ CORREÇÃO: Buscando pelo campo id (conforme schema atual)
+      const [user] = await db.select().from(users).where(eq(users.id, firebaseUid));
+      return user ? mapToUser(user) : undefined;
+    } catch (error) {
+      console.error('Error fetching user by Firebase UID:', error);
+      return undefined;
+    }
   }
 
   async linkFirebaseAccount(userId: string, firebaseUid: string): Promise<void> {
-    // Implementation depends on schema design
-    // For now, assuming Firebase UID is stored in the id field
-    console.log(`Linking user ${userId} with Firebase UID ${firebaseUid}`);
+    try {
+      // ✅ CORREÇÃO: Implementação real que persiste no banco
+      // Atualizando o ID do usuário para o Firebase UID
+      await db
+        .update(users)
+        .set({
+          id: firebaseUid,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+      
+      console.log(`Successfully linked user ${userId} with Firebase UID ${firebaseUid}`);
+    } catch (error) {
+      console.error('Error linking Firebase account:', error);
+      throw new Error('Failed to link Firebase account');
+    }
   }
 
   // ===== ROLE MANAGEMENT =====
   
   async getUsersByRole(role: UserRole): Promise<User[]> {
     try {
+      // ✅ CORREÇÃO: Converter UserRole para tipo compatível com schema
+      const roleMap: Record<UserRole, SchemaUserType> = {
+        'client': 'client',
+        'driver': 'driver', 
+        'admin': 'admin',
+        'hotel_manager': 'host'
+      };
+      
+      const schemaRole = roleMap[role] || 'client';
+      
       const userList = await db
         .select()
         .from(users)
-        .where(eq(users.userType, role));
+        .where(eq(users.userType, schemaRole));
       return userList.map(mapToUser);
     } catch (error) {
       console.error('Error fetching users by role:', error);
@@ -207,15 +352,29 @@ export class DatabaseAuthStorage implements IAuthStorage {
 
   async addUserRole(userId: string, role: UserRole): Promise<User> {
     try {
-      const user = await this.getUser(userId);
-      if (!user) throw new Error('User not found');
-      
-      const currentRoles = user.roles || [];
-      if (!currentRoles.includes(role)) {
-        currentRoles.push(role);
-        return this.updateUserRoles(userId, currentRoles as UserRole[]);
-      }
-      return user;
+      return await db.transaction(async (tx) => {
+        const [user] = await tx
+          .select()
+          .from(users)
+          .where(eq(users.id, userId));
+        
+        if (!user) throw new Error('User not found');
+        
+        const currentRoles = user.roles || [];
+        if (!currentRoles.includes(role)) {
+          const updatedRoles = [...currentRoles, role];
+          const [updatedUser] = await tx
+            .update(users)
+            .set({
+              roles: updatedRoles,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId))
+            .returning();
+          return mapToUser(updatedUser);
+        }
+        return mapToUser(user);
+      });
     } catch (error) {
       console.error('Error adding user role:', error);
       throw new Error('Failed to add user role');
@@ -224,12 +383,27 @@ export class DatabaseAuthStorage implements IAuthStorage {
 
   async removeUserRole(userId: string, role: UserRole): Promise<User> {
     try {
-      const user = await this.getUser(userId);
-      if (!user) throw new Error('User not found');
-      
-      const currentRoles = user.roles || [];
-      const updatedRoles = currentRoles.filter(r => r !== role);
-      return this.updateUserRoles(userId, updatedRoles as UserRole[]);
+      return await db.transaction(async (tx) => {
+        const [user] = await tx
+          .select()
+          .from(users)
+          .where(eq(users.id, userId));
+        
+        if (!user) throw new Error('User not found');
+        
+        const currentRoles = user.roles || [];
+        const updatedRoles = currentRoles.filter(r => r !== role);
+        
+        const [updatedUser] = await tx
+          .update(users)
+          .set({
+            roles: updatedRoles,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId))
+          .returning();
+        return mapToUser(updatedUser);
+      });
     } catch (error) {
       console.error('Error removing user role:', error);
       throw new Error('Failed to remove user role');
@@ -289,21 +463,24 @@ export class DatabaseAuthStorage implements IAuthStorage {
 
   // ===== DRIVER-SPECIFIC OPERATIONS =====
   
-  async updateDriverDocuments(driverId: string, documents: DriverDocuments): Promise<void> {
+  async updateDriverDocuments(driverId: string, documents: Partial<Omit<DriverDocuments, 'createdAt'>>): Promise<void> {
     try {
+      // ✅ CORREÇÃO: Merge com documentos existentes para preservar campos não fornecidos
+      const existingDocs = await this.getDriverDocuments(driverId);
+      
+      const mergedDocuments = {
+        ...existingDocs,
+        ...documents,
+        driverId,
+        updatedAt: new Date(),
+      };
+
       await db
         .insert(driverDocuments)
-        .values({
-          driverId,
-          ...documents,
-          createdAt: new Date(),
-        })
+        .values(mergedDocuments)
         .onConflictDoUpdate({
           target: driverDocuments.driverId,
-          set: {
-            ...documents,
-            updatedAt: new Date(),
-          },
+          set: mergedDocuments,
         });
     } catch (error) {
       console.error('Error updating driver documents:', error);
@@ -344,18 +521,18 @@ export class DatabaseAuthStorage implements IAuthStorage {
   
   async searchUsers(query: string): Promise<User[]> {
     try {
-      // Basic search implementation - can be enhanced with full-text search
+      const queryPattern = `%${query}%`;
+      
       const userList = await db
         .select()
         .from(users)
         .where(or(
-          // @ts-ignore - PostgreSQL ilike operator
-          sql`${users.firstName} ILIKE ${`%${query}%`}`,
-          // @ts-ignore
-          sql`${users.lastName} ILIKE ${`%${query}%`}`,
-          // @ts-ignore
-          sql`${users.email} ILIKE ${`%${query}%`}`
+          ilike(users.firstName, queryPattern),
+          ilike(users.lastName, queryPattern),
+          ilike(users.email, queryPattern),
+          ilike(users.phone, queryPattern)
         ));
+      
       return userList.map(mapToUser);
     } catch (error) {
       console.error('Error searching users:', error);
@@ -367,20 +544,23 @@ export class DatabaseAuthStorage implements IAuthStorage {
     try {
       const offset = (page - 1) * limit;
       
-      const userList = await db
-        .select()
+      // ✅ CORREÇÃO: Query otimizada com window function para contar total
+      const result = await db
+        .select({
+          user: users,
+          totalCount: sql<number>`count(*) over()`,
+        })
         .from(users)
         .limit(limit)
         .offset(offset)
         .orderBy(desc(users.createdAt));
       
-      const [{ count }] = await db
-        .select({ count: sql`count(*)` })
-        .from(users);
+      const userList = result.map(row => mapToUser(row.user));
+      const total = result.length > 0 ? Number(result[0].totalCount) : 0;
       
       return {
-        users: userList.map(mapToUser),
-        total: Number(count),
+        users: userList,
+        total,
       };
     } catch (error) {
       console.error('Error fetching users with pagination:', error);
@@ -390,31 +570,54 @@ export class DatabaseAuthStorage implements IAuthStorage {
 
   // ===== ADDITIONAL METHODS FOR CONTROLLERS =====
   
-  async upsertUser(userData: any): Promise<User> {
+  async upsertUser(userData: UpsertUserData): Promise<User> {
     try {
-      if (userData.id) {
-        // Update existing user
-        const [user] = await db
-          .update(users)
-          .set({
-            ...userData,
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, userData.id))
-          .returning();
-        return mapToUser(user);
-      } else {
-        // Create new user
-        return this.createUser(userData);
-      }
+      // ✅ CORREÇÃO: Converter userType para tipo compatível com schema
+      const userTypeMap: Record<string, SchemaUserType> = {
+        'client': 'client',
+        'driver': 'driver',
+        'admin': 'admin',
+        'hotel_manager': 'host'
+      };
+      
+      const schemaUserType = userData.userType ? userTypeMap[userData.userType] || 'client' : 'client';
+
+      // ✅ CORREÇÃO: Preparar dados para upsert
+      const upsertData = {
+        id: userData.id,
+        email: userData.email,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        fullName: userData.fullName,
+        phone: userData.phone,
+        userType: schemaUserType,
+        roles: userData.roles || ['client'],
+        canOfferServices: userData.canOfferServices ?? false,
+        profileImageUrl: userData.profileImageUrl,
+        updatedAt: new Date(),
+      };
+
+      // ✅ CORREÇÃO: Usando onConflictDoUpdate para upsert real
+      const [user] = await db
+        .insert(users)
+        .values({
+          ...upsertData,
+          createdAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: users.id,
+          set: upsertData,
+        })
+        .returning();
+      return mapToUser(user);
     } catch (error) {
       console.error('Error upserting user:', error);
       throw new Error('Failed to upsert user');
     }
   }
 
-  async getUsersByType(userType: string): Promise<User[]> {
-    try {
+  async getUsersByType(userType: SchemaUserType): Promise<User[]> {
+    try {      
       const userList = await db
         .select()
         .from(users)

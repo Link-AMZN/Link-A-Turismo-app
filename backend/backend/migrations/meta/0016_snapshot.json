@@ -1,0 +1,3840 @@
+{
+  "id": "6424e994-8c04-449f-9c77-ec9430624606",
+  "prevId": "e386f95a-5647-4d94-9d5d-629c1d66858d",
+  "version": "5",
+  "dialect": "pg",
+  "tables": {
+    "accommodations": {
+      "name": "accommodations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hostId": {
+          "name": "hostId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "locality": {
+          "name": "locality",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "province": {
+          "name": "province",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "country": {
+          "name": "country",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Moçambique'"
+        },
+        "searchRadius": {
+          "name": "searchRadius",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 50
+        },
+        "lat": {
+          "name": "lat",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lng": {
+          "name": "lng",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rating": {
+          "name": "rating",
+          "type": "numeric(3, 1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewCount": {
+          "name": "reviewCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "images": {
+          "name": "images",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "amenities": {
+          "name": "amenities",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "distanceFromCenter": {
+          "name": "distanceFromCenter",
+          "type": "numeric(4, 1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isAvailable": {
+          "name": "isAvailable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "offerDriverDiscounts": {
+          "name": "offerDriverDiscounts",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "driverDiscountRate": {
+          "name": "driverDiscountRate",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'10.00'"
+        },
+        "minimumDriverLevel": {
+          "name": "minimumDriverLevel",
+          "type": "partnership_level",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'bronze'"
+        },
+        "partnershipBadgeVisible": {
+          "name": "partnershipBadgeVisible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "enablePartnerships": {
+          "name": "enablePartnerships",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "accommodationDiscount": {
+          "name": "accommodationDiscount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 10
+        },
+        "transportDiscount": {
+          "name": "transportDiscount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 15
+        },
+        "maxGuests": {
+          "name": "maxGuests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 2
+        },
+        "checkInTime": {
+          "name": "checkInTime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkOutTime": {
+          "name": "checkOutTime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policies": {
+          "name": "policies",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contactEmail": {
+          "name": "contactEmail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contactPhone": {
+          "name": "contactPhone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "accommodations_location_idx": {
+          "name": "accommodations_location_idx",
+          "columns": [
+            "locality",
+            "province"
+          ],
+          "isUnique": false
+        },
+        "accommodations_geo_idx": {
+          "name": "accommodations_geo_idx",
+          "columns": [
+            "lat",
+            "lng"
+          ],
+          "isUnique": false
+        },
+        "accommodations_province_idx": {
+          "name": "accommodations_province_idx",
+          "columns": [
+            "province"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "accommodations_hostId_users_id_fk": {
+          "name": "accommodations_hostId_users_id_fk",
+          "tableFrom": "accommodations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "hostId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "adminActions": {
+      "name": "adminActions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "adminId": {
+          "name": "adminId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "targetUserId": {
+          "name": "targetUserId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration": {
+          "name": "duration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "adminActions_adminId_users_id_fk": {
+          "name": "adminActions_adminId_users_id_fk",
+          "tableFrom": "adminActions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "adminId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "adminActions_targetUserId_users_id_fk": {
+          "name": "adminActions_targetUserId_users_id_fk",
+          "tableFrom": "adminActions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "targetUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "bookings": {
+      "name": "bookings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rideId": {
+          "name": "rideId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "passengerId": {
+          "name": "passengerId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accommodationId": {
+          "name": "accommodationId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hotelRoomId": {
+          "name": "hotelRoomId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "service_type",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'ride'"
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "totalPrice": {
+          "name": "totalPrice",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seatsBooked": {
+          "name": "seatsBooked",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "passengers": {
+          "name": "passengers",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        "guestName": {
+          "name": "guestName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "guestEmail": {
+          "name": "guestEmail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "guestPhone": {
+          "name": "guestPhone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkInDate": {
+          "name": "checkInDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkOutDate": {
+          "name": "checkOutDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nightsCount": {
+          "name": "nightsCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "bookings_status_idx": {
+          "name": "bookings_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "bookings_type_idx": {
+          "name": "bookings_type_idx",
+          "columns": [
+            "type"
+          ],
+          "isUnique": false
+        },
+        "bookings_passenger_idx": {
+          "name": "bookings_passenger_idx",
+          "columns": [
+            "passengerId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "bookings_rideId_rides_id_fk": {
+          "name": "bookings_rideId_rides_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "rides",
+          "columnsFrom": [
+            "rideId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "bookings_passengerId_users_id_fk": {
+          "name": "bookings_passengerId_users_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "passengerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "bookings_accommodationId_accommodations_id_fk": {
+          "name": "bookings_accommodationId_accommodations_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "accommodations",
+          "columnsFrom": [
+            "accommodationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "bookings_hotelRoomId_hotelRooms_id_fk": {
+          "name": "bookings_hotelRoomId_hotelRooms_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "hotelRooms",
+          "columnsFrom": [
+            "hotelRoomId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "chatMessages": {
+      "name": "chatMessages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "chatRoomId": {
+          "name": "chatRoomId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fromUserId": {
+          "name": "fromUserId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "toUserId": {
+          "name": "toUserId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "messageType": {
+          "name": "messageType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'text'"
+        },
+        "bookingId": {
+          "name": "bookingId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isRead": {
+          "name": "isRead",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_messages_room_idx": {
+          "name": "chat_messages_room_idx",
+          "columns": [
+            "chatRoomId"
+          ],
+          "isUnique": false
+        },
+        "chat_messages_from_user_idx": {
+          "name": "chat_messages_from_user_idx",
+          "columns": [
+            "fromUserId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "chatMessages_chatRoomId_chatRooms_id_fk": {
+          "name": "chatMessages_chatRoomId_chatRooms_id_fk",
+          "tableFrom": "chatMessages",
+          "tableTo": "chatRooms",
+          "columnsFrom": [
+            "chatRoomId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chatMessages_fromUserId_users_id_fk": {
+          "name": "chatMessages_fromUserId_users_id_fk",
+          "tableFrom": "chatMessages",
+          "tableTo": "users",
+          "columnsFrom": [
+            "fromUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chatMessages_toUserId_users_id_fk": {
+          "name": "chatMessages_toUserId_users_id_fk",
+          "tableFrom": "chatMessages",
+          "tableTo": "users",
+          "columnsFrom": [
+            "toUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "chatRooms": {
+      "name": "chatRooms",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "participantOneId": {
+          "name": "participantOneId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "participantTwoId": {
+          "name": "participantTwoId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bookingId": {
+          "name": "bookingId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serviceType": {
+          "name": "serviceType",
+          "type": "service_type",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lastMessage": {
+          "name": "lastMessage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lastMessageAt": {
+          "name": "lastMessageAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_rooms_participants_idx": {
+          "name": "chat_rooms_participants_idx",
+          "columns": [
+            "participantOneId",
+            "participantTwoId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "chatRooms_participantOneId_users_id_fk": {
+          "name": "chatRooms_participantOneId_users_id_fk",
+          "tableFrom": "chatRooms",
+          "tableTo": "users",
+          "columnsFrom": [
+            "participantOneId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chatRooms_participantTwoId_users_id_fk": {
+          "name": "chatRooms_participantTwoId_users_id_fk",
+          "tableFrom": "chatRooms",
+          "tableTo": "users",
+          "columnsFrom": [
+            "participantTwoId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "driverDocuments": {
+      "name": "driverDocuments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicleRegistrationUrl": {
+          "name": "vehicleRegistrationUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "drivingLicenseUrl": {
+          "name": "drivingLicenseUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleInsuranceUrl": {
+          "name": "vehicleInsuranceUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleInspectionUrl": {
+          "name": "vehicleInspectionUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleMake": {
+          "name": "vehicleMake",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleModel": {
+          "name": "vehicleModel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleYear": {
+          "name": "vehicleYear",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehiclePlate": {
+          "name": "vehiclePlate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicleColor": {
+          "name": "vehicleColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isVerified": {
+          "name": "isVerified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "verificationDate": {
+          "name": "verificationDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verificationNotes": {
+          "name": "verificationNotes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "driverDocuments_driverId_users_id_fk": {
+          "name": "driverDocuments_driverId_users_id_fk",
+          "tableFrom": "driverDocuments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "driverStats": {
+      "name": "driverStats",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totalRides": {
+          "name": "totalRides",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "totalDistance": {
+          "name": "totalDistance",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "totalEarnings": {
+          "name": "totalEarnings",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "averageRating": {
+          "name": "averageRating",
+          "type": "numeric(3, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "completedRidesThisMonth": {
+          "name": "completedRidesThisMonth",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "completedRidesThisYear": {
+          "name": "completedRidesThisYear",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "partnershipLevel": {
+          "name": "partnershipLevel",
+          "type": "partnership_level",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'bronze'"
+        },
+        "lastRideDate": {
+          "name": "lastRideDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "joinedAt": {
+          "name": "joinedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "driverStats_driverId_users_id_fk": {
+          "name": "driverStats_driverId_users_id_fk",
+          "tableFrom": "driverStats",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "driverStats_driverId_unique": {
+          "name": "driverStats_driverId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "driverId"
+          ]
+        }
+      }
+    },
+    "eventManagers": {
+      "name": "eventManagers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "companyName": {
+          "name": "companyName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "companyType": {
+          "name": "companyType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contactEmail": {
+          "name": "contactEmail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contactPhone": {
+          "name": "contactPhone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "website": {
+          "name": "website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo": {
+          "name": "logo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isVerified": {
+          "name": "isVerified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "eventManagers_userId_users_id_fk": {
+          "name": "eventManagers_userId_users_id_fk",
+          "tableFrom": "eventManagers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "events": {
+      "name": "events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organizerId": {
+          "name": "organizerId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "managerId": {
+          "name": "managerId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "eventType": {
+          "name": "eventType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "venue": {
+          "name": "venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "locality": {
+          "name": "locality",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "province": {
+          "name": "province",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lat": {
+          "name": "lat",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lng": {
+          "name": "lng",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "startDate": {
+          "name": "startDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "endDate": {
+          "name": "endDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "startTime": {
+          "name": "startTime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "endTime": {
+          "name": "endTime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isPaid": {
+          "name": "isPaid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "ticketPrice": {
+          "name": "ticketPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "maxTickets": {
+          "name": "maxTickets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 100
+        },
+        "ticketsSold": {
+          "name": "ticketsSold",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "enablePartnerships": {
+          "name": "enablePartnerships",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "accommodationDiscount": {
+          "name": "accommodationDiscount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 10
+        },
+        "transportDiscount": {
+          "name": "transportDiscount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 15
+        },
+        "organizerName": {
+          "name": "organizerName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organizerContact": {
+          "name": "organizerContact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organizerEmail": {
+          "name": "organizerEmail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "images": {
+          "name": "images",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "maxAttendees": {
+          "name": "maxAttendees",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currentAttendees": {
+          "name": "currentAttendees",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "requiresApproval": {
+          "name": "requiresApproval",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "isPublic": {
+          "name": "isPublic",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "isFeatured": {
+          "name": "isFeatured",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "hasPartnerships": {
+          "name": "hasPartnerships",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "websiteUrl": {
+          "name": "websiteUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "socialMediaLinks": {
+          "name": "socialMediaLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "events_location_idx": {
+          "name": "events_location_idx",
+          "columns": [
+            "locality",
+            "province"
+          ],
+          "isUnique": false
+        },
+        "events_status_idx": {
+          "name": "events_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "events_organizerId_users_id_fk": {
+          "name": "events_organizerId_users_id_fk",
+          "tableFrom": "events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "organizerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "events_managerId_eventManagers_id_fk": {
+          "name": "events_managerId_eventManagers_id_fk",
+          "tableFrom": "events",
+          "tableTo": "eventManagers",
+          "columnsFrom": [
+            "managerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "hotelFinancialReports": {
+      "name": "hotelFinancialReports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "accommodationId": {
+          "name": "accommodationId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reportDate": {
+          "name": "reportDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reportType": {
+          "name": "reportType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "totalRevenue": {
+          "name": "totalRevenue",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roomRevenue": {
+          "name": "roomRevenue",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "serviceRevenue": {
+          "name": "serviceRevenue",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "totalBookings": {
+          "name": "totalBookings",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "confirmedBookings": {
+          "name": "confirmedBookings",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "cancelledBookings": {
+          "name": "cancelledBookings",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "noShowBookings": {
+          "name": "noShowBookings",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "totalRooms": {
+          "name": "totalRooms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occupiedRooms": {
+          "name": "occupiedRooms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "occupancyRate": {
+          "name": "occupancyRate",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "averageDailyRate": {
+          "name": "averageDailyRate",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "revenuePerAvailableRoom": {
+          "name": "revenuePerAvailableRoom",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "platformFees": {
+          "name": "platformFees",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "netRevenue": {
+          "name": "netRevenue",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hotelFinancialReports_accommodationId_accommodations_id_fk": {
+          "name": "hotelFinancialReports_accommodationId_accommodations_id_fk",
+          "tableFrom": "hotelFinancialReports",
+          "tableTo": "accommodations",
+          "columnsFrom": [
+            "accommodationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "hotelRooms": {
+      "name": "hotelRooms",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "accommodationId": {
+          "name": "accommodationId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roomNumber": {
+          "name": "roomNumber",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roomType": {
+          "name": "roomType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "images": {
+          "name": "images",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "pricePerNight": {
+          "name": "pricePerNight",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekendPrice": {
+          "name": "weekendPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "holidayPrice": {
+          "name": "holidayPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "maxOccupancy": {
+          "name": "maxOccupancy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 2
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'available'"
+        },
+        "bedType": {
+          "name": "bedType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bedCount": {
+          "name": "bedCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        "hasPrivateBathroom": {
+          "name": "hasPrivateBathroom",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "hasAirConditioning": {
+          "name": "hasAirConditioning",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "hasWifi": {
+          "name": "hasWifi",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "hasTV": {
+          "name": "hasTV",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "hasBalcony": {
+          "name": "hasBalcony",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "hasKitchen": {
+          "name": "hasKitchen",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "roomAmenities": {
+          "name": "roomAmenities",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "isAvailable": {
+          "name": "isAvailable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "maintenanceUntil": {
+          "name": "maintenanceUntil",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hotelRooms_accommodationId_accommodations_id_fk": {
+          "name": "hotelRooms_accommodationId_accommodations_id_fk",
+          "tableFrom": "hotelRooms",
+          "tableTo": "accommodations",
+          "columnsFrom": [
+            "accommodationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "loyaltyProgram": {
+      "name": "loyaltyProgram",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totalPoints": {
+          "name": "totalPoints",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "currentPoints": {
+          "name": "currentPoints",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "membershipLevel": {
+          "name": "membershipLevel",
+          "type": "partnership_level",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'bronze'"
+        },
+        "joinedAt": {
+          "name": "joinedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "lastActivityAt": {
+          "name": "lastActivityAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "loyaltyProgram_userId_users_id_fk": {
+          "name": "loyaltyProgram_userId_users_id_fk",
+          "tableFrom": "loyaltyProgram",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "loyaltyRewards": {
+      "name": "loyaltyRewards",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rewardType": {
+          "name": "rewardType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pointsCost": {
+          "name": "pointsCost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discountValue": {
+          "name": "discountValue",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "minimumLevel": {
+          "name": "minimumLevel",
+          "type": "partnership_level",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'bronze'"
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "maxRedemptions": {
+          "name": "maxRedemptions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "validUntil": {
+          "name": "validUntil",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "mozambique_locations": {
+      "name": "mozambique_locations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "province": {
+          "name": "province",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "district": {
+          "name": "district",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lat": {
+          "name": "lat",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lng": {
+          "name": "lng",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "locations_name_idx": {
+          "name": "locations_name_idx",
+          "columns": [
+            "name"
+          ],
+          "isUnique": false
+        },
+        "locations_province_idx": {
+          "name": "locations_province_idx",
+          "columns": [
+            "province"
+          ],
+          "isUnique": false
+        },
+        "locations_type_idx": {
+          "name": "locations_type_idx",
+          "columns": [
+            "type"
+          ],
+          "isUnique": false
+        },
+        "locations_geo_idx": {
+          "name": "locations_geo_idx",
+          "columns": [
+            "lat",
+            "lng"
+          ],
+          "isUnique": false
+        },
+        "locations_search_idx": {
+          "name": "locations_search_idx",
+          "columns": [
+            "name",
+            "province",
+            "type"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "notifications": {
+      "name": "notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'normal'"
+        },
+        "isRead": {
+          "name": "isRead",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "actionUrl": {
+          "name": "actionUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relatedId": {
+          "name": "relatedId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "readAt": {
+          "name": "readAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "notifications_user_idx": {
+          "name": "notifications_user_idx",
+          "columns": [
+            "userId"
+          ],
+          "isUnique": false
+        },
+        "notifications_is_read_idx": {
+          "name": "notifications_is_read_idx",
+          "columns": [
+            "isRead"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "notifications_userId_users_id_fk": {
+          "name": "notifications_userId_users_id_fk",
+          "tableFrom": "notifications",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "partnershipApplications": {
+      "name": "partnershipApplications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "proposalId": {
+          "name": "proposalId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "applicationDate": {
+          "name": "applicationDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "acceptedAt": {
+          "name": "acceptedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completedAt": {
+          "name": "completedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimatedCompletion": {
+          "name": "estimatedCompletion",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "partnership_applications_status_idx": {
+          "name": "partnership_applications_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "partnership_applications_driver_idx": {
+          "name": "partnership_applications_driver_idx",
+          "columns": [
+            "driverId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "partnershipApplications_proposalId_partnershipProposals_id_fk": {
+          "name": "partnershipApplications_proposalId_partnershipProposals_id_fk",
+          "tableFrom": "partnershipApplications",
+          "tableTo": "partnershipProposals",
+          "columnsFrom": [
+            "proposalId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "partnershipApplications_driverId_users_id_fk": {
+          "name": "partnershipApplications_driverId_users_id_fk",
+          "tableFrom": "partnershipApplications",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "partnershipProposals": {
+      "name": "partnershipProposals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "hotelId": {
+          "name": "hotelId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "startDate": {
+          "name": "startDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "endDate": {
+          "name": "endDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "province": {
+          "name": "province",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "city": {
+          "name": "city",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "offerFuel": {
+          "name": "offerFuel",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "offerMeals": {
+          "name": "offerMeals",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "offerFreeAccommodation": {
+          "name": "offerFreeAccommodation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "premiumRate": {
+          "name": "premiumRate",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "minimumDriverLevel": {
+          "name": "minimumDriverLevel",
+          "type": "partnership_level",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'bronze'"
+        },
+        "requiredVehicleType": {
+          "name": "requiredVehicleType",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'any'"
+        },
+        "currentApplicants": {
+          "name": "currentApplicants",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "partnership_proposals_status_idx": {
+          "name": "partnership_proposals_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "partnership_proposals_hotel_idx": {
+          "name": "partnership_proposals_hotel_idx",
+          "columns": [
+            "hotelId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "partnershipProposals_hotelId_accommodations_id_fk": {
+          "name": "partnershipProposals_hotelId_accommodations_id_fk",
+          "tableFrom": "partnershipProposals",
+          "tableTo": "accommodations",
+          "columnsFrom": [
+            "hotelId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "payments": {
+      "name": "payments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "bookingId": {
+          "name": "bookingId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serviceType": {
+          "name": "serviceType",
+          "type": "service_type",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subtotal": {
+          "name": "subtotal",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platformFee": {
+          "name": "platformFee",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discountAmount": {
+          "name": "discountAmount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "total": {
+          "name": "total",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paymentMethod": {
+          "name": "paymentMethod",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cardLast4": {
+          "name": "cardLast4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cardBrand": {
+          "name": "cardBrand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mpesaNumber": {
+          "name": "mpesaNumber",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paymentStatus": {
+          "name": "paymentStatus",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "paymentReference": {
+          "name": "paymentReference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paidAt": {
+          "name": "paidAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payments_bookingId_bookings_id_fk": {
+          "name": "payments_bookingId_bookings_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "bookings",
+          "columnsFrom": [
+            "bookingId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "payments_userId_users_id_fk": {
+          "name": "payments_userId_users_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "pickupRequests": {
+      "name": "pickupRequests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rideId": {
+          "name": "rideId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "passengerId": {
+          "name": "passengerId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupLocation": {
+          "name": "pickupLocation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pickupLat": {
+          "name": "pickupLat",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupLng": {
+          "name": "pickupLng",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destinationLocation": {
+          "name": "destinationLocation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destinationLat": {
+          "name": "destinationLat",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destinationLng": {
+          "name": "destinationLng",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requestedSeats": {
+          "name": "requestedSeats",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        "proposedPrice": {
+          "name": "proposedPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimatedDetour": {
+          "name": "estimatedDetour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "pickupRequests_rideId_rides_id_fk": {
+          "name": "pickupRequests_rideId_rides_id_fk",
+          "tableFrom": "pickupRequests",
+          "tableTo": "rides",
+          "columnsFrom": [
+            "rideId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pickupRequests_passengerId_users_id_fk": {
+          "name": "pickupRequests_passengerId_users_id_fk",
+          "tableFrom": "pickupRequests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "passengerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pickupRequests_driverId_users_id_fk": {
+          "name": "pickupRequests_driverId_users_id_fk",
+          "tableFrom": "pickupRequests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "pointsHistory": {
+      "name": "pointsHistory",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "loyaltyId": {
+          "name": "loyaltyId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actionType": {
+          "name": "actionType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pointsAmount": {
+          "name": "pointsAmount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relatedId": {
+          "name": "relatedId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "pointsHistory_userId_users_id_fk": {
+          "name": "pointsHistory_userId_users_id_fk",
+          "tableFrom": "pointsHistory",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pointsHistory_loyaltyId_loyaltyProgram_id_fk": {
+          "name": "pointsHistory_loyaltyId_loyaltyProgram_id_fk",
+          "tableFrom": "pointsHistory",
+          "tableTo": "loyaltyProgram",
+          "columnsFrom": [
+            "loyaltyId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "priceNegotiations": {
+      "name": "priceNegotiations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rideId": {
+          "name": "rideId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "passengerId": {
+          "name": "passengerId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "originalPrice": {
+          "name": "originalPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposedPrice": {
+          "name": "proposedPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "counterPrice": {
+          "name": "counterPrice",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "priceNegotiations_rideId_rides_id_fk": {
+          "name": "priceNegotiations_rideId_rides_id_fk",
+          "tableFrom": "priceNegotiations",
+          "tableTo": "rides",
+          "columnsFrom": [
+            "rideId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "priceNegotiations_passengerId_users_id_fk": {
+          "name": "priceNegotiations_passengerId_users_id_fk",
+          "tableFrom": "priceNegotiations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "passengerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "priceNegotiations_driverId_users_id_fk": {
+          "name": "priceNegotiations_driverId_users_id_fk",
+          "tableFrom": "priceNegotiations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "priceRegulations": {
+      "name": "priceRegulations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rideType": {
+          "name": "rideType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "minPricePerKm": {
+          "name": "minPricePerKm",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maxPricePerKm": {
+          "name": "maxPricePerKm",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "baseFare": {
+          "name": "baseFare",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "ratings": {
+      "name": "ratings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fromUserId": {
+          "name": "fromUserId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "toUserId": {
+          "name": "toUserId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rating": {
+          "name": "rating",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "comment": {
+          "name": "comment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serviceType": {
+          "name": "serviceType",
+          "type": "service_type",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bookingId": {
+          "name": "bookingId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ratings_to_user_idx": {
+          "name": "ratings_to_user_idx",
+          "columns": [
+            "toUserId"
+          ],
+          "isUnique": false
+        },
+        "ratings_service_type_idx": {
+          "name": "ratings_service_type_idx",
+          "columns": [
+            "serviceType"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ratings_fromUserId_users_id_fk": {
+          "name": "ratings_fromUserId_users_id_fk",
+          "tableFrom": "ratings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "fromUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ratings_toUserId_users_id_fk": {
+          "name": "ratings_toUserId_users_id_fk",
+          "tableFrom": "ratings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "toUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "rewardRedemptions": {
+      "name": "rewardRedemptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rewardId": {
+          "name": "rewardId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pointsUsed": {
+          "name": "pointsUsed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usedAt": {
+          "name": "usedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rewardRedemptions_userId_users_id_fk": {
+          "name": "rewardRedemptions_userId_users_id_fk",
+          "tableFrom": "rewardRedemptions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "rewardRedemptions_rewardId_loyaltyRewards_id_fk": {
+          "name": "rewardRedemptions_rewardId_loyaltyRewards_id_fk",
+          "tableFrom": "rewardRedemptions",
+          "tableTo": "loyaltyRewards",
+          "columnsFrom": [
+            "rewardId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "rides": {
+      "name": "rides",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "driverId": {
+          "name": "driverId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "driverName": {
+          "name": "driverName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fromAddress": {
+          "name": "fromAddress",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "toAddress": {
+          "name": "toAddress",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fromLocality": {
+          "name": "fromLocality",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fromProvince": {
+          "name": "fromProvince",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "toLocality": {
+          "name": "toLocality",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "toProvince": {
+          "name": "toProvince",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "departureDate": {
+          "name": "departureDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "departureTime": {
+          "name": "departureTime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "availableSeats": {
+          "name": "availableSeats",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maxPassengers": {
+          "name": "maxPassengers",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 4
+        },
+        "pricePerSeat": {
+          "name": "pricePerSeat",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicleType": {
+          "name": "vehicleType",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "additionalInfo": {
+          "name": "additionalInfo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'active'"
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'regular'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "rides_from_location_idx": {
+          "name": "rides_from_location_idx",
+          "columns": [
+            "fromLocality",
+            "fromProvince"
+          ],
+          "isUnique": false
+        },
+        "rides_to_location_idx": {
+          "name": "rides_to_location_idx",
+          "columns": [
+            "toLocality",
+            "toProvince"
+          ],
+          "isUnique": false
+        },
+        "rides_status_idx": {
+          "name": "rides_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "rides_driverId_users_id_fk": {
+          "name": "rides_driverId_users_id_fk",
+          "tableFrom": "rides",
+          "tableTo": "users",
+          "columnsFrom": [
+            "driverId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "roomTypes": {
+      "name": "roomTypes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "accommodationId": {
+          "name": "accommodationId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pricePerNight": {
+          "name": "pricePerNight",
+          "type": "numeric(8, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "maxOccupancy": {
+          "name": "maxOccupancy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 2
+        },
+        "bedType": {
+          "name": "bedType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bedCount": {
+          "name": "bedCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        "amenities": {
+          "name": "amenities",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "images": {
+          "name": "images",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "roomTypes_accommodationId_accommodations_id_fk": {
+          "name": "roomTypes_accommodationId_accommodations_id_fk",
+          "tableFrom": "roomTypes",
+          "tableTo": "accommodations",
+          "columnsFrom": [
+            "accommodationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "sessions": {
+      "name": "sessions",
+      "schema": "",
+      "columns": {
+        "sid": {
+          "name": "sid",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "sess": {
+          "name": "sess",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expire": {
+          "name": "expire",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "sessions_expire_idx": {
+          "name": "sessions_expire_idx",
+          "columns": [
+            "expire"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
+    "systemSettings": {
+      "name": "systemSettings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "key": {
+          "name": "key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updatedBy": {
+          "name": "updatedBy",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "systemSettings_key_unique": {
+          "name": "systemSettings_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key"
+          ]
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "firstName": {
+          "name": "firstName",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lastName": {
+          "name": "lastName",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profileImageUrl": {
+          "name": "profileImageUrl",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userType": {
+          "name": "userType",
+          "type": "user_type",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'client'"
+        },
+        "roles": {
+          "name": "roles",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "canOfferServices": {
+          "name": "canOfferServices",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "avatar": {
+          "name": "avatar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rating": {
+          "name": "rating",
+          "type": "numeric(3, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "totalReviews": {
+          "name": "totalReviews",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "isVerified": {
+          "name": "isVerified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "verificationStatus": {
+          "name": "verificationStatus",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "verificationDate": {
+          "name": "verificationDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verificationNotes": {
+          "name": "verificationNotes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identityDocumentUrl": {
+          "name": "identityDocumentUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identityDocumentType": {
+          "name": "identityDocumentType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profilePhotoUrl": {
+          "name": "profilePhotoUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fullName": {
+          "name": "fullName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentNumber": {
+          "name": "documentNumber",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dateOfBirth": {
+          "name": "dateOfBirth",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "registrationCompleted": {
+          "name": "registrationCompleted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "verificationBadge": {
+          "name": "verificationBadge",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "badgeEarnedDate": {
+          "name": "badgeEarnedDate",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        },
+        "users_phone_unique": {
+          "name": "users_phone_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "phone"
+          ]
+        }
+      }
+    }
+  },
+  "enums": {
+    "partnership_level": {
+      "name": "partnership_level",
+      "values": {
+        "bronze": "bronze",
+        "silver": "silver",
+        "gold": "gold",
+        "platinum": "platinum"
+      }
+    },
+    "service_type": {
+      "name": "service_type",
+      "values": {
+        "ride": "ride",
+        "accommodation": "accommodation",
+        "event": "event"
+      }
+    },
+    "status": {
+      "name": "status",
+      "values": {
+        "pending": "pending",
+        "active": "active",
+        "confirmed": "confirmed",
+        "cancelled": "cancelled",
+        "completed": "completed",
+        "expired": "expired"
+      }
+    },
+    "user_type": {
+      "name": "user_type",
+      "values": {
+        "client": "client",
+        "driver": "driver",
+        "host": "host",
+        "admin": "admin"
+      }
+    }
+  },
+  "schemas": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

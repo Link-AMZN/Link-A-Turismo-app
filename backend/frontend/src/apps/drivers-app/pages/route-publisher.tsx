@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/components/ui/select";
-import LocationAutocomplete from "@/shared/components/LocationAutocomplete";
+import LocationAutocomplete, { LocationOption } from "@/shared/components/LocationAutocomplete";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   MapPin,
@@ -29,31 +29,66 @@ import {
   Plus,
 } from "lucide-react";
 
+// ✅ CORREÇÃO: Importar auth para obter token REAL
+import { auth } from "../../../shared/lib/firebaseConfig";
+
+// ✅ CORREÇÃO: Definir tipo completo do estado do formulário
+type FormState = {
+  fromLocation: string | LocationOption;
+  toLocation: string | LocationOption;
+  date: string;
+  time: string;
+  departureDate: string;
+  pricePerSeat: number;
+  availableSeats: number;
+  vehicleType: string;
+  description: string;
+  pickupPoint: string;
+  dropoffPoint: string;
+  vehiclePhoto: File | null;
+};
+
+// ✅ CORREÇÃO 4: Helper para limpar payload de campos undefined
+const cleanPayload = (payload: any): any => {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && v !== "")
+  );
+};
+
+// ✅ CORREÇÃO 2: Helper para garantir URL da API correta
+const getApiBaseUrl = (): string => {
+  const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || 'http://localhost:8000';
+  return baseUrl;
+};
+
 export default function RoutePublisher() {
+  // ✅ CORREÇÃO: Obter tanto user quanto token do useAuth
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const [formData, setFormData] = useState({
-    fromAddress: "",
-    toAddress: "",
+  // ✅ CORREÇÃO: Estado tipado com FormState - usando strings vazias em vez de null
+  const [formData, setFormData] = useState<FormState>({
+    fromLocation: "",
+    toLocation: "",
     date: "",
     time: "",
     departureDate: "",
     pricePerSeat: 0,
     availableSeats: 4,
-    vehicleType: "",
+    vehicleType: "sedan",
     description: "",
     pickupPoint: "",
     dropoffPoint: "",
-    vehiclePhoto: null as File | null,
+    vehiclePhoto: null,
   });
   
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
-  const handleInputChange = (field: string, value: string | number) => {
+  // ✅ CORREÇÃO: Handle input change completamente tipado
+  const handleInputChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -76,14 +111,78 @@ export default function RoutePublisher() {
     }
   };
 
+  // ✅ CORREÇÃO: Função auxiliar para obter o label de uma localização
+  const getLocationLabel = (location: string | LocationOption): string => {
+    return typeof location === "string" ? location : location.label;
+  };
+
+  // ✅ CORREÇÃO: Função auxiliar para verificar se é um LocationOption
+  const isLocationOption = (location: string | LocationOption): location is LocationOption => {
+    return typeof location !== "string" && location !== null && location.label !== undefined;
+  };
+
+  // ✅✅✅ CORREÇÃO CRÍTICA: Função para obter token REAL do Firebase
+  const getRealToken = async (): Promise<string> => {
+    try {
+      console.log("🔄 Obtendo token REAL do Firebase...");
+      
+      // ✅ CORREÇÃO: Obter usuário atual do auth
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error("Nenhum usuário autenticado no Firebase");
+      }
+
+      console.log("👤 Usuário Firebase encontrado:", {
+        uid: currentUser.uid,
+        email: currentUser.email
+      });
+
+      // ✅ CORREÇÃO: Obter token fresco (forceRefresh: true para garantir token válido)
+      const token = await currentUser.getIdToken(/* forceRefresh */ true);
+      
+      console.log("✅ Token REAL obtido:", {
+        length: token.length,
+        preview: token.substring(0, 20) + '...',
+        isJWT: token.length > 100, // JWT válido tem > 100 caracteres
+        hasThreeParts: token.split('.').length === 3 // JWT tem 3 partes
+      });
+
+      // ✅ CORREÇÃO: Validar se é um JWT real
+      if (token.length < 100) {
+        throw new Error("Token muito curto - não parece ser um JWT válido");
+      }
+
+      if (token.includes('SEU_TOKEN') || token.includes('YOUR_TOKEN') || token.includes(' ')) {
+        throw new Error("Token contém placeholder ou espaços - token inválido");
+      }
+
+      return token;
+
+    } catch (tokenError) {
+      console.error("❌ Erro ao obter token REAL:", tokenError);
+      throw new Error(`Falha ao obter token de autenticação: ${tokenError instanceof Error ? tokenError.message : 'Erro desconhecido'}`);
+    }
+  };
+
   const handlePublish = async () => {
     if (!user) {
       setError("Deve estar autenticado para publicar uma rota.");
       return;
     }
 
-    if (!formData.fromAddress || !formData.toAddress) {
+    // ✅ CORREÇÃO: Validação atualizada para strings/objetos
+    if (!formData.fromLocation || !formData.toLocation) {
       setError("Por favor preencha origem e destino.");
+      return;
+    }
+
+    // ✅ CORREÇÃO: Validar presença de coordenadas se for LocationOption
+    if (isLocationOption(formData.fromLocation) && (!formData.fromLocation.lat || !formData.fromLocation.lng)) {
+      setError("Origem inválida: coordenadas não definidas");
+      return;
+    }
+    if (isLocationOption(formData.toLocation) && (!formData.toLocation.lat || !formData.toLocation.lng)) {
+      setError("Destino inválido: coordenadas não definidas");
       return;
     }
 
@@ -102,47 +201,166 @@ export default function RoutePublisher() {
     setSuccess(false);
 
     try {
-      const rideData = {
+      // ✅ CORREÇÃO: Extrair cidade, província e coordenadas corretamente
+      const fromLabel = getLocationLabel(formData.fromLocation);
+      const toLabel = getLocationLabel(formData.toLocation);
+
+      // ✅ CORREÇÃO: Construir payload correto para o backend
+      const rideData: any = {
         driverId: user.id,
-        driverName: user.name || "Motorista",
-        fromAddress: formData.fromAddress,
-        toAddress: formData.toAddress,
         departureDate: formData.date,
         departureTime: formData.time,
-        pricePerSeat: Number(formData.pricePerSeat),
         availableSeats: Number(formData.availableSeats),
-        type: formData.vehicleType || "sedan",
-        description: formData.description || "Viagem confortável"
+        pricePerSeat: Number(formData.pricePerSeat),
+        vehicleType: formData.vehicleType || "sedan",
+        description: formData.description || "",
+        status: "active",
       };
+
+      // ✅ CORREÇÃO: Processar origem com todos os campos necessários
+      if (isLocationOption(formData.fromLocation)) {
+        rideData.fromCity = formData.fromLocation.city || fromLabel;
+        rideData.fromProvince = formData.fromLocation.province || "";
+        rideData.fromDistrict = formData.fromLocation.district || "";
+        rideData.fromLocality = formData.fromLocation.locality || "";
+        
+        // ✅ CORREÇÃO: Enviar geometria como GeoJSON, não WKT
+        if (formData.fromLocation.lat && formData.fromLocation.lng) {
+          rideData.from_geom = {
+            type: "Point",
+            coordinates: [formData.fromLocation.lng, formData.fromLocation.lat] // ✅ CORREÇÃO: [lng, lat]
+          };
+          rideData.fromLat = formData.fromLocation.lat;
+          rideData.fromLng = formData.fromLocation.lng;
+        }
+      } else {
+        // Se for string, usar valores padrão
+        rideData.fromCity = fromLabel;
+        rideData.fromProvince = "";
+        rideData.fromDistrict = "";
+        rideData.fromLocality = fromLabel;
+      }
+
+      // ✅ CORREÇÃO: Processar destino com todos os campos necessários
+      if (isLocationOption(formData.toLocation)) {
+        rideData.toCity = formData.toLocation.city || toLabel;
+        rideData.toProvince = formData.toLocation.province || "";
+        rideData.toDistrict = formData.toLocation.district || "";
+        rideData.toLocality = formData.toLocation.locality || "";
+        
+        // ✅ CORREÇÃO: Enviar geometria como GeoJSON, não WKT
+        if (formData.toLocation.lat && formData.toLocation.lng) {
+          rideData.to_geom = {
+            type: "Point",
+            coordinates: [formData.toLocation.lng, formData.toLocation.lat] // ✅ CORREÇÃO: [lng, lat]
+          };
+          rideData.toLat = formData.toLocation.lat;
+          rideData.toLng = formData.toLocation.lng;
+        }
+      } else {
+        // Se for string, usar valores padrão
+        rideData.toCity = toLabel;
+        rideData.toProvince = "";
+        rideData.toDistrict = "";
+        rideData.toLocality = toLabel;
+      }
+
+      // ✅ CORREÇÃO: Adicionar pontos de encontro se preenchidos
+      if (formData.pickupPoint) {
+        rideData.pickupPoint = formData.pickupPoint;
+      }
+      if (formData.dropoffPoint) {
+        rideData.dropoffPoint = formData.dropoffPoint;
+      }
 
       console.log("📝 Publicando viagem:", rideData);
       console.log("* Tentando criar viagem...");
-      console.log("@ URL da API:", import.meta.env.VITE_API_URL);
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/rides-simple/create`, {
+      // ✅ CORREÇÃO 4: Limpar payload antes de enviar
+      const cleanRideData = cleanPayload(rideData);
+      console.log("🧹 Payload limpo:", cleanRideData);
+
+      // ✅ CORREÇÃO 2: Garantir URL da API correta
+      const API_BASE_URL = getApiBaseUrl();
+      const apiUrl = `${API_BASE_URL}/api/rides`;
+      console.log("@ URL da API:", apiUrl);
+
+      // ✅✅✅ CORREÇÃO CRÍTICA: Obter token REAL do Firebase
+      const freshToken = await getRealToken();
+
+      // ✅ CORREÇÃO: Usar Headers moderno com token atual
+      const headers = new Headers({
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${freshToken}`
+      });
+
+      console.log("🔧 Headers finais:", Object.fromEntries(headers.entries()));
+
+      // ✅ CORREÇÃO: Testar autenticação primeiro (opcional - para debug)
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          const testResponse = await fetch(`${API_BASE_URL}/api/debug/firebase-auth`, {
+            method: 'GET',
+            headers: {
+              "Authorization": `Bearer ${freshToken}`,
+              "Content-Type": "application/json"
+            }
+          });
+          
+          const testResult = await testResponse.json();
+          console.log("🧪 Teste de autenticação:", testResult);
+          
+          if (!testResult.success) {
+            throw new Error(`Teste de autenticação falhou: ${testResult.error}`);
+          }
+        } catch (testError) {
+          console.warn("⚠️ Teste de autenticação falhou, continuando...", testError);
+        }
+      }
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rideData)
+        headers,
+        body: JSON.stringify(cleanRideData)
       });
       
+      console.log("📡 Resposta da API:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+
       if (!response.ok) {
-        throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        let errorText = `Erro ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          console.error("❌ Dados do erro:", errorData);
+          if (errorData.error) {
+            errorText = errorData.error;
+          } else if (errorData.message) {
+            errorText = errorData.message;
+          }
+        } catch (parseError) {
+          console.error("❌ Não foi possível parsear resposta de erro:", parseError);
+        }
+        console.error("❌ Erro da API:", errorText);
+        throw new Error(errorText);
       }
       
       const result = await response.json();
-
       console.log("✅ Viagem publicada com sucesso!", result);
+
       setSuccess(true);
       
       toast({
         title: "🎉 Viagem Publicada!",
-        description: `Rota ${formData.fromAddress} → ${formData.toAddress} está disponível!`,
+        description: `Rota ${fromLabel} → ${toLabel} está disponível!`,
       });
 
-      // Reset form
+      // ✅ CORREÇÃO: Reset form com strings vazias em vez de null
       setFormData({
-        fromAddress: "",
-        toAddress: "",
+        fromLocation: "",
+        toLocation: "",
         date: "",
         time: "",
         departureDate: "",
@@ -163,6 +381,12 @@ export default function RoutePublisher() {
           : "Erro ao publicar a rota. Tente novamente.";
       console.error("❌ Erro ao publicar rota:", error);
       setError(errorMessage);
+      
+      toast({
+        title: "❌ Erro",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -208,9 +432,9 @@ export default function RoutePublisher() {
                 </Label>
                 <LocationAutocomplete
                   id="from-location"
-                  value={formData.fromAddress}
-                  onChange={(value) => handleInputChange("fromAddress", value)}
                   placeholder="Saindo de... (qualquer local em Moçambique)"
+                  value={formData.fromLocation}
+                  onChange={(location) => handleInputChange("fromLocation", location)}
                   className="w-full"
                 />
               </div>
@@ -222,9 +446,9 @@ export default function RoutePublisher() {
                 </Label>
                 <LocationAutocomplete
                   id="to-location"
-                  value={formData.toAddress}
-                  onChange={(value) => handleInputChange("toAddress", value)}
                   placeholder="Indo para... (qualquer local em Moçambique)"
+                  value={formData.toLocation}
+                  onChange={(location) => handleInputChange("toLocation", location)}
                   className="w-full"
                 />
               </div>
@@ -270,6 +494,7 @@ export default function RoutePublisher() {
                   Lugares Disponíveis
                 </Label>
                 <Select
+                  value={formData.availableSeats.toString()}
                   onValueChange={(value) =>
                     handleInputChange("availableSeats", parseInt(value))
                   }
@@ -309,6 +534,7 @@ export default function RoutePublisher() {
                   Tipo de Veículo
                 </Label>
                 <Select
+                  value={formData.vehicleType}
                   onValueChange={(value) =>
                     handleInputChange("vehicleType", value)
                   }
@@ -443,8 +669,8 @@ export default function RoutePublisher() {
                 className="flex-1"
                 size="lg"
                 disabled={
-                  !formData.fromAddress ||
-                  !formData.toAddress ||
+                  !formData.fromLocation || 
+                  !formData.toLocation ||   
                   !formData.date ||
                   !formData.time ||
                   !formData.pricePerSeat ||
@@ -467,12 +693,12 @@ export default function RoutePublisher() {
             </div>
 
             {/* Resumo da Viagem */}
-            {formData.fromAddress && formData.toAddress && formData.date && formData.time && formData.pricePerSeat > 0 && (
+            {formData.fromLocation && formData.toLocation && formData.date && formData.time && formData.pricePerSeat > 0 && (
               <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg border border-green-200">
                 <h3 className="font-semibold text-green-800 mb-3">📋 Resumo da sua Viagem</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p><strong className="text-green-700">Rota:</strong> {formData.fromAddress} → {formData.toAddress}</p>
+                    <p><strong className="text-green-700">Rota:</strong> {getLocationLabel(formData.fromLocation)} → {getLocationLabel(formData.toLocation)}</p>
                     <p><strong className="text-green-700">Data:</strong> {new Date(`${formData.date}T${formData.time}`).toLocaleDateString('pt-PT', { 
                       weekday: 'long', 
                       day: '2-digit', 
@@ -490,13 +716,14 @@ export default function RoutePublisher() {
               </div>
             )}
             
+            {/* ✅ CORREÇÃO: Dicas com lista HTML correta */}
             <div className="bg-blue-50 p-4 rounded-lg">
               <h3 className="font-medium text-blue-900 mb-2">
                 💡 Dicas para uma boa oferta:
               </h3>
               <ul className="text-sm text-blue-800 space-y-1">
                 <li>
-                  • Use locais específicos (ex: "Shopping Maputo Sul" em vez de "Maputo")
+                  • Use locais específicos (ex: &quot;Shopping Maputo Sul&quot; em vez de &quot;Maputo&quot;)
                 </li>
                 <li>• Defina pontos de encontro conhecidos e de fácil acesso</li>
                 <li>• Seja claro sobre regras (bagagem, fumar, etc.)</li>

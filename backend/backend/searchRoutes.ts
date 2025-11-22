@@ -1,10 +1,48 @@
 import { Router } from "express";
 import { storage } from "./storage";
 import { verifyFirebaseToken, type AuthenticatedRequest } from "./src/shared/firebaseAuth";
+// ✅ ADICIONE ESTAS IMPORTAÇÕES
+import { 
+  getAccommodations, 
+  getAccommodationById, 
+  getRoomsByHotelId 
+} from "./src/modules/hotels/hotelService";
+// ✅ IMPORTE O SERVIÇO OFICIAL DE MATCHING E SUA FUNÇÃO DE CONVERSÃO
+import { SmartRideMatchingService, type RideWithMatching } from "./services/SmartRideMatchingService";
 
 const router = Router();
 
-// Enhanced Ride Search with filters
+// 🎯 INTERFACE COMPATÍVEL PARA RIDES
+interface RideWithDetails {
+  id: string;
+  driverId: string;
+  driverName?: string;
+  fromLocation: string;
+  toLocation: string;
+  fromAddress?: string;
+  toAddress?: string;
+  fromProvince?: string;
+  toProvince?: string;
+  price: number;
+  pricePerSeat?: number;
+  availableSeats: number;
+  maxPassengers: number;
+  departureDate: Date;
+  estimatedDuration?: number;
+  estimatedDistance?: number;
+  vehicleType?: string;
+  vehicleInfo?: string;
+  vehicleFeatures?: string[];
+  driverRating?: number;
+  allowNegotiation?: boolean;
+  isVerifiedDriver?: boolean;
+  status: string;
+  matchScore?: number;
+  matchType?: string;
+  matchDescription?: string;
+}
+
+// 🚀 ENHANCED RIDE SEARCH WITH SMART MATCHING - APENAS DADOS REAIS
 router.get("/rides", async (req, res) => {
   try {
     const { 
@@ -16,7 +54,8 @@ router.get("/rides", async (req, res) => {
       vehicleType,
       seats,
       allowNegotiation,
-      driverId
+      driverId,
+      smartSearch = 'true'
     } = req.query;
 
     if (!from || !to) {
@@ -26,79 +65,80 @@ router.get("/rides", async (req, res) => {
       });
     }
 
-    // Mock enhanced ride search results for demonstration
-    const mockRides = [
-      {
-        id: "ride_1",
-        driverId: "driver_001",
-        driverName: "João Silva",
-        driverRating: 4.8,
-        driverPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-        fromAddress: from,
-        toAddress: to,
-        price: 250.00,
-        vehicleInfo: "Toyota Corolla Branco 2020",
-        maxPassengers: 4,
-        availableSeats: 3,
-        departureDate: new Date("2024-12-30T08:00:00Z"),
-        estimatedDuration: 120, // minutes
-        estimatedDistance: 85.5, // km
-        allowNegotiation: true,
-        minPrice: 200.00,
-        maxPrice: 300.00,
-        route: ["Maputo", "Matola", "Beira"],
-        isRoundTrip: false,
-        vehicleFeatures: ["AC", "WiFi", "Phone Charger"],
-        isVerifiedDriver: true
-      },
-      {
-        id: "ride_2", 
-        driverId: "driver_002",
-        driverName: "Maria Santos",
-        driverRating: 4.9,
-        driverPhoto: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150",
-        fromAddress: from,
-        toAddress: to,
-        price: 300.00,
-        vehicleInfo: "Honda Civic Azul 2021",
-        maxPassengers: 4,
-        availableSeats: 2,
-        departureDate: new Date("2024-12-30T09:30:00Z"),
-        estimatedDuration: 105,
-        estimatedDistance: 85.5,
-        allowNegotiation: false,
-        route: ["Maputo", "Beira"],
-        isRoundTrip: false,
-        vehicleFeatures: ["AC", "WiFi", "Music System", "Premium Seats"],
-        isVerifiedDriver: true
-      },
-      {
-        id: "ride_3",
-        driverId: "driver_003", 
-        driverName: "Pedro Machado",
-        driverRating: 4.6,
-        driverPhoto: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150",
-        fromAddress: from,
-        toAddress: to,
-        price: 180.00,
-        vehicleInfo: "Nissan Almera Vermelho 2019",
-        maxPassengers: 4,
-        availableSeats: 4,
-        departureDate: new Date("2024-12-30T14:00:00Z"),
-        estimatedDuration: 135,
-        estimatedDistance: 85.5,
-        allowNegotiation: true,
-        minPrice: 150.00,
-        maxPrice: 250.00,
-        route: ["Maputo", "Xai-Xai", "Beira"],
-        isRoundTrip: false,
-        vehicleFeatures: ["AC"],
-        isVerifiedDriver: true
-      }
-    ];
+    let rides: RideWithDetails[] = [];
+    
+    // 🚀 BUSCA INTELIGENTE ATIVADA
+    if (smartSearch === 'true') {
+      try {
+        console.log(`🔍 BUSCA INTELIGENTE: ${from} → ${to}`);
+        
+        // ✅ Buscar rides reais do banco de dados
+        const searchCriteria = {
+          fromLocation: from as string,
+          toLocation: to as string,
+          departureDate: departureDate ? new Date(departureDate as string) : undefined,
+          minSeats: seats ? parseInt(seats as string) : undefined,
+          maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined
+        };
+        
+        // ✅ Buscar rides reais do storage
+        const dbRides = await storage.ride.searchRides(searchCriteria);
+        
+        // 🎯 CONVERTER PARA RIDE WITH DETAILS
+        const ridesWithDetails: RideWithDetails[] = dbRides.map((ride: any) => ({
+          id: ride.id,
+          driverId: ride.driverId,
+          driverName: ride.driver?.firstName + ' ' + ride.driver?.lastName,
+          fromLocation: ride.fromLocation,
+          toLocation: ride.toLocation,
+          fromAddress: ride.fromLocation, // Usar fromLocation como fallback
+          toAddress: ride.toLocation, // Usar toLocation como fallback
+          fromProvince: ride.fromProvince,
+          toProvince: ride.toProvince,
+          price: ride.pricePerSeat || ride.price || 0,
+          pricePerSeat: ride.pricePerSeat,
+          availableSeats: ride.availableSeats || 0,
+          maxPassengers: ride.maxPassengers || 4,
+          departureDate: ride.departureDate ? new Date(ride.departureDate) : new Date(),
+          estimatedDuration: ride.estimatedDuration,
+          estimatedDistance: ride.estimatedDistance,
+          vehicleType: ride.vehicleType,
+          vehicleInfo: ride.vehicleInfo,
+          vehicleFeatures: ride.vehicleFeatures || [],
+          driverRating: ride.driver?.rating,
+          allowNegotiation: ride.allowNegotiation || false,
+          isVerifiedDriver: ride.driver?.isVerified || false,
+          status: ride.status || 'active'
+        }));
+        
+        // 🎯 APLICAR MATCHING INTELIGENTE USANDO O SERVIÇO OFICIAL
+        // ✅ Apenas se houver rides reais para processar
+        if (ridesWithDetails.length > 0) {
+          const matchingResult: RideWithMatching[] = await SmartRideMatchingService.sortRidesByCompatibility(
+            ridesWithDetails,
+            from as string,
+            to as string
+          );
+          
+          // ✅ Converter para o formato final
+          rides = SmartRideMatchingService.convertToRideWithDetails(matchingResult);
+        }
 
-    // Apply filters
-    let filteredRides = mockRides;
+        console.log(`✅ Encontrados ${rides.length} rides compatíveis`);
+
+      } catch (error) {
+        console.error("❌ Erro na busca inteligente:", error);
+        // ❌ NÃO USAR MOCKS - retornar array vazio em caso de erro
+        rides = [];
+      }
+    } else {
+      // ❌ BUSCA TRADICIONAL DESATIVADA - apenas busca inteligente
+      console.log(`🔍 BUSCA TRADICIONAL DESATIVADA - usando apenas busca inteligente`);
+      rides = [];
+    }
+
+    // Aplicar filtros adicionais
+    let filteredRides = rides;
 
     if (minPrice) {
       filteredRides = filteredRides.filter(ride => ride.price >= Number(minPrice));
@@ -116,22 +156,42 @@ router.get("/rides", async (req, res) => {
       filteredRides = filteredRides.filter(ride => ride.allowNegotiation);
     }
 
+    if (vehicleType) {
+      filteredRides = filteredRides.filter(ride => 
+        ride.vehicleType?.toLowerCase().includes((vehicleType as string).toLowerCase())
+      );
+    }
+
     if (driverId) {
       filteredRides = filteredRides.filter(ride => ride.driverId === driverId);
     }
 
+    // 📊 ESTATÍSTICAS DE MATCHING
+    const matchStats = {
+      exact: filteredRides.filter((r: RideWithDetails) => r.matchType === 'exact_match').length,
+      same_segment: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_segment').length,
+      same_direction: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_direction').length,
+      same_origin: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_origin').length,
+      same_destination: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_destination').length,
+      total: filteredRides.length
+    };
+
     res.json({
       success: true,
       rides: filteredRides,
+      matchStats,
       searchParams: {
         from,
         to,
         departureDate,
+        smartSearch: smartSearch === 'true',
         appliedFilters: {
           minPrice: minPrice ? Number(minPrice) : null,
           maxPrice: maxPrice ? Number(maxPrice) : null,
           seats: seats ? Number(seats) : null,
-          allowNegotiation: allowNegotiation === 'true'
+          allowNegotiation: allowNegotiation === 'true',
+          vehicleType: vehicleType || null,
+          driverId: driverId || null
         }
       },
       total: filteredRides.length
@@ -145,7 +205,7 @@ router.get("/rides", async (req, res) => {
   }
 });
 
-// Enhanced Accommodation Search
+// ✅ ATUALIZADO: Enhanced Accommodation Search - AGORA COM DADOS REAIS
 router.get("/accommodations", async (req, res) => {
   try {
     const { 
@@ -159,121 +219,106 @@ router.get("/accommodations", async (req, res) => {
       accommodationType
     } = req.query;
 
-    if (!location) {
-      return res.status(400).json({ 
-        error: "Localização é obrigatória",
-        details: "O parâmetro 'location' deve ser fornecido"
-      });
+    console.log("🎯 SEARCH: Buscando acomodações reais com filtros:", req.query);
+
+    // Filtros básicos - apenas hotéis disponíveis
+    const filters: any = {
+      isAvailable: true
+    };
+
+    if (location) {
+      filters.address = location;
     }
-
-    // Mock enhanced accommodation search results
-    const mockAccommodations = [
-      {
-        id: "acc_1",
-        hostId: "host_001",
-        name: "Hotel Maputo Luxury",
-        type: "Hotel",
-        hostName: "Ana Costa",
-        hostRating: 4.7,
-        address: `${location} Centro`,
-        pricePerNight: 3500.00,
-        rating: 4.8,
-        reviewCount: 156,
-        images: [
-          "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400",
-          "https://images.unsplash.com/photo-1560347876-aeef00ee58a1?w=400"
-        ],
-        amenities: ["WiFi", "AC", "Pool", "Restaurant", "Parking"],
-        description: "Hotel de luxo no centro da cidade com vista panorâmica",
-        distanceFromCenter: 0.5,
-        maxGuests: 4,
-        offerDriverDiscounts: true,
-        driverDiscountRate: 15.00,
-        partnershipBadgeVisible: true,
-        isVerified: true
-      },
-      {
-        id: "acc_2",
-        hostId: "host_002", 
-        name: "Casa Aconchegante",
-        type: "House",
-        hostName: "Miguel Torres",
-        hostRating: 4.9,
-        address: `${location} Zona Residencial`,
-        pricePerNight: 2800.00,
-        rating: 4.9,
-        reviewCount: 89,
-        images: [
-          "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400",
-          "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400"
-        ],
-        amenities: ["WiFi", "Kitchen", "Garden", "Parking", "AC"],
-        description: "Casa completa para famílias com jardim privado",
-        distanceFromCenter: 2.1,
-        maxGuests: 6,
-        offerDriverDiscounts: false,
-        isVerified: true
-      },
-      {
-        id: "acc_3",
-        hostId: "host_003",
-        name: "Apartamento Moderno",
-        type: "Apartment", 
-        hostName: "Sofia Vilanculos",
-        hostRating: 4.5,
-        address: `${location} Baixa`,
-        pricePerNight: 1950.00,
-        rating: 4.6,
-        reviewCount: 203,
-        images: [
-          "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400",
-          "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400"
-        ],
-        amenities: ["WiFi", "Kitchen", "AC", "Balcony"],
-        description: "Apartamento moderno e bem localizado",
-        distanceFromCenter: 0.8,
-        maxGuests: 2,
-        offerDriverDiscounts: true,
-        driverDiscountRate: 10.00,
-        isVerified: true
-      }
-    ];
-
-    // Apply filters
-    let filteredAccommodations = mockAccommodations;
-
-    if (guests) {
-      filteredAccommodations = filteredAccommodations.filter(acc => acc.maxGuests >= Number(guests));
-    }
-
-    if (minPrice) {
-      filteredAccommodations = filteredAccommodations.filter(acc => acc.pricePerNight >= Number(minPrice));
-    }
-
-    if (maxPrice) {
-      filteredAccommodations = filteredAccommodations.filter(acc => acc.pricePerNight <= Number(maxPrice));
-    }
-
     if (accommodationType) {
-      filteredAccommodations = filteredAccommodations.filter(acc => 
-        acc.type.toLowerCase() === (accommodationType as string).toLowerCase()
+      filters.type = accommodationType;
+    }
+
+    // Buscar hotéis reais do banco
+    let hotels = await getAccommodations(filters);
+    
+    // Buscar informações de quartos para cada hotel
+    const hotelsWithRooms = await Promise.all(
+      hotels.map(async (hotel) => {
+        try {
+          const rooms = await getRoomsByHotelId(hotel.id);
+          const availableRooms = rooms.filter(room => 
+            room.isAvailable && room.status === 'available'
+          );
+          
+          // Calcular preço mínimo entre quartos disponíveis
+          const minPriceValue = availableRooms.length > 0 
+            ? Math.min(...availableRooms.map(room => Number(room.pricePerNight || 0)))
+            : null;
+
+          // Verificar se tem as amenidades solicitadas
+          const hotelAmenities = hotel.amenities || [];
+          const meetsAmenityFilter = !amenities || 
+            (amenities as string).split(',').every(amenity => 
+              hotelAmenities.some(hotelAmenity => 
+                hotelAmenity.toLowerCase().includes(amenity.toLowerCase())
+              )
+            );
+
+          // Verificar capacidade de hóspedes
+          const meetsGuestFilter = !guests || 
+            availableRooms.some(room => room.maxOccupancy >= Number(guests));
+
+          if (!meetsAmenityFilter || !meetsGuestFilter) {
+            return null;
+          }
+
+          return {
+            id: hotel.id,
+            name: hotel.name,
+            type: hotel.type,
+            address: hotel.address,
+            rating: hotel.rating,
+            reviewCount: hotel.reviewCount,
+            images: hotel.images || [],
+            amenities: hotelAmenities,
+            description: hotel.description,
+            pricePerNight: minPriceValue,
+            distanceFromCenter: hotel.distanceFromCenter,
+            contactEmail: hotel.contactEmail,
+            contactPhone: hotel.contactPhone,
+            checkInTime: hotel.checkInTime,
+            checkOutTime: hotel.checkOutTime,
+            policies: hotel.policies,
+            availableRooms: availableRooms.length,
+            totalRooms: rooms.length,
+            offerDriverDiscounts: hotel.offerDriverDiscounts,
+            driverDiscountRate: hotel.driverDiscountRate,
+            transportDiscount: hotel.transportDiscount,
+            isVerified: true,
+            partnershipBadgeVisible: hotel.partnershipBadgeVisible
+          };
+        } catch (error) {
+          console.error(`❌ Erro ao buscar quartos do hotel ${hotel.id}:`, error);
+          return null;
+        }
+      })
+    );
+
+    // Remover hotéis nulos e filtrar por preço
+    let filteredHotels = hotelsWithRooms.filter((hotel): hotel is NonNullable<typeof hotel> => hotel !== null);
+
+    // Aplicar filtro de preço
+    if (minPrice) {
+      filteredHotels = filteredHotels.filter(hotel => 
+        hotel.pricePerNight && hotel.pricePerNight >= Number(minPrice)
+      );
+    }
+    if (maxPrice) {
+      filteredHotels = filteredHotels.filter(hotel => 
+        hotel.pricePerNight && hotel.pricePerNight <= Number(maxPrice)
       );
     }
 
-    if (amenities) {
-      const requestedAmenities = (amenities as string).split(',');
-      filteredAccommodations = filteredAccommodations.filter(acc =>
-        requestedAmenities.every(amenity => 
-          acc.amenities.some(accAmenity => 
-            accAmenity.toLowerCase().includes(amenity.toLowerCase())
-          )
-        )
-      );
-    }
+    console.log(`✅ SEARCH: Encontrados ${filteredHotels.length} hotéis reais`);
 
     res.json({
       success: true,
-      accommodations: filteredAccommodations,
+      accommodations: filteredHotels,
       searchParams: {
         location,
         checkIn,
@@ -286,13 +331,95 @@ router.get("/accommodations", async (req, res) => {
           amenities: amenities ? (amenities as string).split(',') : null
         }
       },
-      total: filteredAccommodations.length
+      total: filteredHotels.length
     });
+
   } catch (error) {
-    console.error("Error searching accommodations:", error);
+    console.error("❌ SEARCH: Erro ao pesquisar hospedagens reais:", error);
     res.status(500).json({ 
       error: "Erro ao pesquisar hospedagens",
       message: "Tente novamente mais tarde" 
+    });
+  }
+});
+
+// ✅ NOVA ROTA: Detalhes de hotel específico
+router.get("/accommodations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log("🎯 SEARCH: Buscando detalhes do hotel:", id);
+
+    // Buscar hotel real
+    const hotel = await getAccommodationById(id);
+    
+    if (!hotel) {
+      return res.status(404).json({
+        success: false,
+        message: "Hotel não encontrado"
+      });
+    }
+
+    if (!hotel.isAvailable) {
+      return res.status(404).json({
+        success: false,
+        message: "Hotel não está disponível para reservas"
+      });
+    }
+
+    // Buscar quartos disponíveis
+    const allRooms = await getRoomsByHotelId(id);
+    const availableRooms = allRooms.filter(room => 
+      room.isAvailable && room.status === 'available'
+    );
+
+    // Calcular preço mínimo
+    const minPrice = availableRooms.length > 0 
+      ? Math.min(...availableRooms.map(room => Number(room.pricePerNight || 0)))
+      : null;
+
+    // Preparar dados do hotel
+    const hotelData = {
+      id: hotel.id,
+      name: hotel.name,
+      type: hotel.type,
+      address: hotel.address,
+      rating: hotel.rating,
+      reviewCount: hotel.reviewCount,
+      images: hotel.images || [],
+      amenities: hotel.amenities || [],
+      description: hotel.description,
+      lat: hotel.lat,
+      lng: hotel.lng,
+      distanceFromCenter: hotel.distanceFromCenter,
+      contactEmail: hotel.contactEmail,
+      contactPhone: hotel.contactPhone,
+      checkInTime: hotel.checkInTime,
+      checkOutTime: hotel.checkOutTime,
+      policies: hotel.policies,
+      minPrice,
+      totalRooms: allRooms.length,
+      availableRooms: availableRooms.length,
+      offerDriverDiscounts: hotel.offerDriverDiscounts,
+      driverDiscountRate: hotel.driverDiscountRate,
+      transportDiscount: hotel.transportDiscount,
+      isVerified: true
+    };
+
+    console.log(`✅ SEARCH: Detalhes do hotel ${hotel.name} carregados`);
+
+    res.json({
+      success: true,
+      data: {
+        hotel: hotelData,
+        rooms: availableRooms
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ SEARCH: Erro ao buscar detalhes do hotel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro interno do servidor"
     });
   }
 });
@@ -501,35 +628,42 @@ router.get("/all", async (req, res) => {
 
     // Search rides (mock implementation)
     if (!type || type === 'rides') {
-      // This would search through actual ride data in a real implementation
-      results.rides = [
-        {
-          id: "ride_search_1",
-          title: "Maputo → Beira",
-          type: "ride",
-          price: 250.00,
-          description: "Viagem confortável com motorista verificado"
-        }
-      ].filter(item => 
-        item.title.toLowerCase().includes(searchTerm) ||
-        item.description.toLowerCase().includes(searchTerm)
-      );
+      try {
+        const allRides = await storage.ride.searchRides({});
+        // ✅ CORREÇÃO: Usar fromLocation e toLocation em vez de fromAddress e toAddress
+        results.rides = allRides.filter((ride: any) => 
+          ride.fromLocation?.toLowerCase().includes(searchTerm) ||
+          ride.toLocation?.toLowerCase().includes(searchTerm) ||
+          (ride.driver?.firstName + ' ' + ride.driver?.lastName)?.toLowerCase().includes(searchTerm)
+        ).slice(0, 5);
+      } catch (error) {
+        console.error("Erro ao buscar rides:", error);
+        results.rides = [];
+      }
     }
 
-    // Search accommodations
+    // Search accommodations - AGORA COM DADOS REAIS
     if (!type || type === 'accommodations') {
-      results.accommodations = [
-        {
-          id: "acc_search_1",
-          title: "Hotel Maputo Luxury",
+      try {
+        const hotels = await getAccommodations({ isAvailable: true });
+        const matchingHotels = hotels.filter(hotel => 
+          hotel.name.toLowerCase().includes(searchTerm) ||
+          hotel.description?.toLowerCase().includes(searchTerm) ||
+          hotel.address.toLowerCase().includes(searchTerm)
+        );
+
+        results.accommodations = matchingHotels.map(hotel => ({
+          id: hotel.id,
+          title: hotel.name,
           type: "accommodation",
-          price: 3500.00,
-          description: "Hotel de luxo no centro da cidade"
-        }
-      ].filter(item => 
-        item.title.toLowerCase().includes(searchTerm) ||
-        item.description.toLowerCase().includes(searchTerm)
-      );
+          price: 0,
+          description: hotel.description,
+          address: hotel.address
+        })).slice(0, 5);
+      } catch (error) {
+        console.error("Erro ao buscar acomodações reais:", error);
+        results.accommodations = [];
+      }
     }
 
     // Search events
@@ -545,7 +679,7 @@ router.get("/all", async (req, res) => {
       ].filter(item => 
         item.title.toLowerCase().includes(searchTerm) ||
         item.description.toLowerCase().includes(searchTerm)
-      );
+      ).slice(0, 5);
     }
 
     results.total = results.rides.length + results.accommodations.length + results.events.length;

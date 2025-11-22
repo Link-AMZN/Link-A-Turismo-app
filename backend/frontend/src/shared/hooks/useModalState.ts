@@ -1,17 +1,11 @@
 import { useState } from 'react';
 
+// ---------------- Interfaces ----------------
 export interface RideSearchParams {
   from?: string;
   to?: string;
   date?: string;
   passengers?: number;
-}
-
-export interface HotelSearchParams {
-  location?: string;
-  checkIn?: string;
-  checkOut?: string;
-  guests?: number;
 }
 
 export interface RideCreateParams {
@@ -20,6 +14,21 @@ export interface RideCreateParams {
   date?: string;
   seats?: number;
   price?: number;
+}
+
+export interface HotelSearchParams {
+  location?: string;
+  locationId?: string;
+  checkIn?: string;
+  checkOut?: string;
+  guests?: number;
+}
+
+export interface HotelBookingParams {
+  hotelId: string;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
 }
 
 export interface ModalState {
@@ -37,81 +46,55 @@ export interface ModalState {
   };
   hotelBooking: {
     isOpen: boolean;
-    params: any;
+    params: HotelBookingParams | null;
   };
 }
 
+// ---------------- Estado Inicial ----------------
 const initialModalState: ModalState = {
-  rideSearch: { isOpen: false, params: {} },
-  rideCreate: { isOpen: false, params: {} },
-  hotelSearch: { isOpen: false, params: {} },
-  hotelBooking: { isOpen: false, params: {} },
+  rideSearch: { isOpen: false, params: {} as RideSearchParams },
+  rideCreate: { isOpen: false, params: {} as RideCreateParams },
+  hotelSearch: { isOpen: false, params: {} as HotelSearchParams },
+  hotelBooking: { isOpen: false, params: null },
 };
 
+// ---------------- Hook ----------------
 export function useModalState() {
   const [modalState, setModalState] = useState<ModalState>(initialModalState);
 
-  const openRideSearch = (params: RideSearchParams = {}) => {
-    console.log('🔍 [useModalState] openRideSearch params:', params); // ← LOG ADICIONADO
-    console.log('🔍 [useModalState] Tipo dos params:', typeof params); // ← LOG ADICIONADO
+  // Função genérica para abrir/fechar modais
+  const setModal = <
+    T extends keyof ModalState,
+    P extends ModalState[T]['params']
+  >(
+    key: T,
+    isOpen: boolean,
+    params: P = {} as P
+  ) => {
     setModalState(prev => ({
       ...prev,
-      rideSearch: { isOpen: true, params }
+      [key]: { isOpen, params },
     }));
   };
 
-  const closeRideSearch = () => {
-    setModalState(prev => ({
-      ...prev,
-      rideSearch: { isOpen: false, params: {} }
-    }));
-  };
+  // Métodos específicos usando a função genérica
+  const openRideSearch = (params: RideSearchParams = {}) =>
+    setModal('rideSearch', true, params);
+  const closeRideSearch = () => setModal('rideSearch', false);
 
-  const openRideCreate = (params: RideCreateParams = {}) => {
-    setModalState(prev => ({
-      ...prev,
-      rideCreate: { isOpen: true, params }
-    }));
-  };
+  const openRideCreate = (params: RideCreateParams = {}) =>
+    setModal('rideCreate', true, params);
+  const closeRideCreate = () => setModal('rideCreate', false);
 
-  const closeRideCreate = () => {
-    setModalState(prev => ({
-      ...prev,
-      rideCreate: { isOpen: false, params: {} }
-    }));
-  };
+  const openHotelSearch = (params: HotelSearchParams = {}) =>
+    setModal('hotelSearch', true, params);
+  const closeHotelSearch = () => setModal('hotelSearch', false);
 
-  const openHotelSearch = (params: HotelSearchParams = {}) => {
-    setModalState(prev => ({
-      ...prev,
-      hotelSearch: { isOpen: true, params }
-    }));
-  };
+  const openHotelBooking = (params: HotelBookingParams) =>
+    setModal('hotelBooking', true, params);
+  const closeHotelBooking = () => setModal('hotelBooking', false, null);
 
-  const closeHotelSearch = () => {
-    setModalState(prev => ({
-      ...prev,
-      hotelSearch: { isOpen: false, params: {} }
-    }));
-  };
-
-  const openHotelBooking = (params: any = {}) => {
-    setModalState(prev => ({
-      ...prev,
-      hotelBooking: { isOpen: true, params }
-    }));
-  };
-
-  const closeHotelBooking = () => {
-    setModalState(prev => ({
-      ...prev,
-      hotelBooking: { isOpen: false, params: {} }
-    }));
-  };
-
-  const closeAllModals = () => {
-    setModalState(initialModalState);
-  };
+  const closeAllModals = () => setModalState(initialModalState);
 
   return {
     modalState,

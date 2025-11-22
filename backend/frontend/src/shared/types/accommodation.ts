@@ -1,4 +1,4 @@
-// TIPO UNIFICADO COMPLETO PARA ACCOMMODATION
+// ✅ TIPO UNIFICADO COMPLETO PARA ACCOMMODATION - FONTE ÚNICA
 export interface Accommodation {
   id: string;
   hostId: string;
@@ -35,11 +35,25 @@ export interface Accommodation {
   roomTypes?: any[];
   
   // ✅ PROPRIEDADE CRÍTICA QUE ESTAVA FALTANDO:
-  pricePerNight?: number; // ⚠️ ESSA ERA A QUE ESTAVA CAUSANDO O ERRO!
+  pricePerNight?: number;
   
   // Campos de data
   createdAt: string;
   updatedAt: string;
+  
+  // ✅ NOVOS CAMPOS PARA BUSCA INTELIGENTE (POSTGIS)
+  match_type?: number;
+  distance?: number;
+  hasAvailableRooms?: boolean;
+  availableRoomsList?: any[];
+  rooms?: any[];
+  locality?: string;
+  province?: string;
+  
+  // ✅ CAMPOS ADICIONAIS DA PRIMEIRA VERSÃO PARA COMPATIBILIDADE
+  location?: string;
+  price?: number;
+  availableRooms?: number;
 }
 
 export interface CreateAccommodationData {
@@ -57,4 +71,25 @@ export interface CreateAccommodationData {
   pricePerNight?: number;
   lat?: number;
   lng?: number;
+}
+
+// ✅ INTERFACES ADICIONAIS PARA BUSCA E SUGESTÕES
+export interface SearchFilters {
+  address?: string;
+  location?: string;
+  checkIn?: string;
+  checkOut?: string;
+  guests?: number;
+  isAvailable?: boolean;
+}
+
+export interface LocationSuggestion {
+  id: string;
+  name: string;
+  province: string;
+  district: string;
+  type: string;
+  lat: number;
+  lng: number;
+  relevance_rank?: number; // ✅ CORRIGIDO: tornado opcional para compatibilidade
 }

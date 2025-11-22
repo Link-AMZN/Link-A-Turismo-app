@@ -43,7 +43,6 @@ import {
 import LocationAutocomplete from '@/shared/components/LocationAutocomplete';
 import apiService from '@/services/api';
 import { useToast } from '@/shared/hooks/use-toast';
-import { AppUser } from '@/shared/hooks/useAuth';
 import HotelCreationWizard from '@/components/hotel-wizard/HotelCreationWizard';
 import { HotelFormData } from '@/components/hotel-wizard/types';
 
@@ -111,17 +110,47 @@ interface HotelStats {
   availableRooms: number;
 }
 
+// ✅ CORREÇÃO: Interfaces para parcerias corrigidas
+interface Partnership {
+  id: string;
+  title: string;
+  description: string;
+  commission: number;
+  benefits: string[];
+  requirements: string[];
+  targetRoutes: string[];
+  status: 'active' | 'inactive' | 'pending';
+  createdAt: string;
+  hotelId: string;
+  driverCount?: number;
+  totalEarnings?: number;
+}
+
 interface DriverPartnership {
   id: string;
-  driver: string;
+  driverId: string;
+  driverName: string;
   route: string;
   commission: number;
   clientsBrought: number;
   totalEarnings: number;
-  lastMonth: number;
+  lastMonthEarnings: number;
   rating: number;
   joinedDate: string;
-  status: string;
+  status: 'active' | 'pending' | 'ended';
+  partnershipId: string;
+  contactInfo?: string;
+}
+
+// ✅ CORREÇÃO: PartnershipFormData com tipos corretos
+interface PartnershipFormData {
+  title: string;
+  description: string;
+  commission: number;
+  benefits: string;
+  requirements: string;
+  targetRoutes: string[];
+  status?: 'active';
 }
 
 interface ChatMessage {
@@ -326,23 +355,132 @@ export default function HotelsHome() {
   // ✅ ADICIONADO: Estado para controlar visibilidade do cadastro
   const [showHotelCreation, setShowHotelCreation] = useState(false);
 
+  // ✅ ADICIONADO: Estado para controlar edição de parceria
+  const [editingPartnership, setEditingPartnership] = useState<Partnership | null>(null);
+
+  // ✅ CORREÇÃO CRÍTICA: Estados inicializados como arrays vazios em vez de undefined
+  const [hotelPartnerships, setHotelPartnerships] = useState<any[]>([]);
+  const [driverPartnerships, setDriverPartnerships] = useState<any[]>([]);
+
   const toggleModal = useCallback((modal: keyof typeof modals, isOpen: boolean) => {
     setModals(prev => ({ ...prev, [modal]: isOpen }));
   }, []);
 
+  // ✅ CORREÇÃO: Form states usando helper
+  const roomForm = useFormState({
+    name: '',
+    type: 'standard',
+    description: '',
+    pricePerNight: 0,
+    totalRooms: 1,
+    maxGuests: 2,
+    amenities: [] as string[],
+    bedType: 'Cama de Casal',
+    hasBalcony: false,
+    hasSeaView: false,
+    size: 25
+  });
+
+  const hotelForm = useFormState({
+    name: '',
+    address: '',
+    description: '',
+    contactEmail: '',
+    contactPhone: '',
+    amenities: [] as string[],
+    images: [] as string[],
+    isActive: true
+  });
+
+  const eventForm = useFormState({
+    title: '',
+    description: '',
+    eventType: 'festival',
+    venue: '',
+    startDate: '',
+    endDate: '',
+    startTime: '10:00',
+    endTime: '18:00',
+    ticketPrice: 0,
+    maxTickets: 100
+  });
+
+  // ✅ CORREÇÃO: Partnership form com tipos corretos (string em vez de array)
+  const partnershipForm = useFormState({
+    title: '',
+    description: '',
+    commission: 10,
+    benefits: '',
+    requirements: '',
+    targetRoutes: [] as string[]
+  });
+
   // ✅ CORREÇÃO: Hook customizado para quartos
   const { rooms: hotelRooms, loading: roomsLoading, refetch: refetchRooms } = useHotelRooms(selectedHotelId);
+
+  // ✅ CORREÇÃO: Query para buscar hotéis do usuário
+  const { data: userHotels, isLoading: hotelsLoading } = useQuery<Hotel[], Error>({
+    queryKey: ['user-hotels', user?.id],
+    queryFn: async (): Promise<Hotel[]> => {
+      try {
+        console.log('Fetching user hotels for user:', user?.id);
+        const response = await apiService.getUserAccommodations() as unknown as ApiResponse;
+        console.log('API response:', response);
+        
+        if (!response.success || !Array.isArray(response.data)) {
+          console.error('Invalid API response structure:', response);
+          throw new Error('Invalid response structure from API');
+        }
+
+        const hotels = response.data
+          .filter((acc: any) => acc.type === 'hotel')
+          .map((acc: any) => ({
+            id: acc.id,
+            userId: user?.id || '',
+            name: acc.name,
+            description: acc.description || 'Hotel de qualidade com excelente localização',
+            address: acc.address || 'Endereço não definido',
+            contactEmail: acc.contactEmail || user?.email || '',
+            contactPhone: acc.contactPhone || '',
+            amenities: acc.amenities || [],
+            images: acc.images || [],
+            isActive: acc.isAvailable !== false,
+            createdAt: acc.createdAt || '2024-01-01',
+            updatedAt: acc.updatedAt || '2024-09-07',
+          }));
+        
+        console.log('Processed hotels:', hotels);
+        return hotels;
+      } catch (error) {
+        console.error('Error fetching hotels:', error);
+        toast({
+          title: 'Erro',
+          description: 'Falha ao carregar hotéis',
+          variant: 'destructive',
+        });
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+    retry: false,
+  });
+
+  // ✅ CORREÇÃO CRÍTICA: userHotel definido ANTES de ser usado
+  const userHotel = useMemo(() => {
+    if (!userHotels || userHotels.length === 0) return null;
+    return userHotels.find((hotel: Hotel) => hotel.id === selectedHotelId) || userHotels[0];
+  }, [userHotels, selectedHotelId]);
 
   // ✅ CORREÇÃO: Mutations atualizadas para incluir autenticação
   const updateRoomMutation = useMutation({
     mutationFn: async ({ roomId, roomData }: { roomId: string; roomData: any }) => {
-      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
+      const token = await user?.getIdToken?.();
       
       const response = await fetch(`/api/hotels/${userHotel?.id}/rooms/${roomId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(roomData)
       });
@@ -365,12 +503,12 @@ export default function HotelsHome() {
 
   const deleteRoomMutation = useMutation({
     mutationFn: async (roomId: string) => {
-      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
+      const token = await user?.getIdToken?.();
       
       const response = await fetch(`/api/hotels/${userHotel?.id}/rooms/${roomId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -390,7 +528,7 @@ export default function HotelsHome() {
     }
   });
 
-  // ✅ CORREÇÃO: Query para buscar eventos do usuário atual - usando user?.id em vez de user?.uid
+  // ✅ CORREÇÃO: Query para buscar eventos do usuário atual
   const { data: userEvents, isLoading: eventsLoading, refetch: refetchEvents } = useQuery({
     queryKey: ['user-events', user?.id],
     queryFn: async () => {
@@ -415,53 +553,231 @@ export default function HotelsHome() {
     enabled: !!user?.id
   });
 
-  // ✅ ADICIONADO: Paginação para eventos
-  const paginatedEvents = useMemo(() => {
-    if (!userEvents) return [];
-    const startIndex = (currentEventsPage - 1) * EVENTS_PER_PAGE;
-    const endIndex = startIndex + EVENTS_PER_PAGE;
-    return userEvents.slice(startIndex, endIndex);
-  }, [userEvents, currentEventsPage]);
+  // ✅ CORREÇÃO CRÍTICA: Query para buscar parcerias do hotel - INICIALIZAÇÃO CORRETA
+  const { isLoading: partnershipsLoading, refetch: refetchPartnerships } = useQuery({
+    queryKey: ['hotel-partnerships', userHotel?.id],
+    queryFn: async () => {
+      if (!userHotel?.id) return [];
+      
+      const token = await user?.getIdToken?.();
+      console.log('🔄 Buscando parcerias do hotel...');
+      
+      const response = await fetch(`/api/hotels/${userHotel.id}/partnerships`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
 
-  const totalEventsPages = useMemo(() => {
-    if (!userEvents) return 0;
-    return Math.ceil(userEvents.length / EVENTS_PER_PAGE);
-  }, [userEvents]);
+      if (!response.ok) {
+        console.log('❌ API de parcerias não disponível ou erro:', response.status);
+        return [];
+      }
 
-  // ✅ ADICIONADO: Funções de navegação da paginação
-  const nextEventsPage = () => {
-    if (currentEventsPage < totalEventsPages) {
-      setCurrentEventsPage(prev => prev + 1);
-    }
-  };
+      const result = await response.json();
+      console.log('✅ Parcerias carregadas:', result);
+      const partnerships = result.data || result || [];
+      setHotelPartnerships(partnerships); // ✅ CORREÇÃO: Atualiza estado local
+      return partnerships;
+    },
+    enabled: !!userHotel?.id
+  });
 
-  const prevEventsPage = () => {
-    if (currentEventsPage > 1) {
-      setCurrentEventsPage(prev => prev - 1);
-    }
-  };
+  // ✅ CORREÇÃO CRÍTICA: Query para buscar motoristas parceiros - INICIALIZAÇÃO CORRETA
+  const { isLoading: driversLoading } = useQuery({
+    queryKey: ['driver-partnerships', userHotel?.id],
+    queryFn: async () => {
+      if (!userHotel?.id) return [];
+      
+      const token = await user?.getIdToken?.();
+      console.log('🔄 Buscando motoristas parceiros...');
+      
+      const response = await fetch(`/api/hotels/${userHotel.id}/driver-partnerships`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
 
-  // ✅ CORREÇÃO: Mutation para criar eventos com endpoint CORRETO
-  const createEventMutation = useMutation({
-    mutationFn: async (data: any) => {
+      if (!response.ok) {
+        console.log('❌ Não foi possível buscar motoristas parceiros:', response.status);
+        return [];
+      }
+
+      const result = await response.json();
+      console.log('✅ Motoristas parceiros carregados:', result);
+      const drivers = result.data || result || [];
+      setDriverPartnerships(drivers); // ✅ CORREÇÃO: Atualiza estado local
+      return drivers;
+    },
+    enabled: !!userHotel?.id
+  });
+
+  // ✅ SOLUÇÃO 1 APLICADA: Mutation para criar parceria - ENDPOINT CORRETO
+  const createPartnershipMutation = useMutation({
+    mutationFn: async (partnershipData: PartnershipFormData) => {
       const token = await user?.getIdToken?.();
       
-      console.log("🎯 FRONTEND: Enviando dados para criar evento:", data);
+      console.log('🎯 Criando nova parceria:', partnershipData);
       
-      const response = await fetch('/api/events', { // ✅ ENDPOINT CORRETO
+      // ✅ SOLUÇÃO 1: Usando o endpoint correto que você implementou
+      const response = await fetch(`/api/hotels/${userHotel?.id}/partnerships`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          // ✅ CORREÇÃO: Mapear campos conforme esperado pelo backend
+          title: partnershipData.title,
+          description: partnershipData.description,
+          commission: SafeNumber.toInt(partnershipData.commission),
+          benefits: partnershipData.benefits ? partnershipData.benefits.split(',').map((b: string) => b.trim()).filter(Boolean) : [],
+          requirements: partnershipData.requirements ? partnershipData.requirements.split(',').map((r: string) => r.trim()).filter(Boolean) : [],
+          targetRoutes: partnershipData.targetRoutes,
+          status: 'active'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Falha ao criar parceria');
+      }
+
+      const result = await response.json();
+      console.log('✅ Parceria criada com sucesso:', result);
+      return result;
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Parceria criada com sucesso!' });
+      toggleModal('createPartnership', false);
+      partnershipForm.resetForm();
+      refetchPartnerships(); // ✅ CORREÇÃO: Recarrega as parcerias
+    },
+    onError: (error: any) => {
+      console.error('❌ Erro ao criar parceria:', error);
+      toast({ 
+        title: 'Erro', 
+        description: error.message || 'Erro ao criar parceria', 
+        variant: 'destructive' 
+      });
+    }
+  });
+
+  // ✅ ADICIONADO: Mutation para editar parceria
+  const updatePartnershipMutation = useMutation({
+    mutationFn: async ({ partnershipId, partnershipData }: { partnershipId: string; partnershipData: any }) => {
+      const token = await user?.getIdToken?.();
+      
+      console.log('🎯 Atualizando parceria:', partnershipId, partnershipData);
+      
+      // ✅ SOLUÇÃO 1: Usando o endpoint correto que você implementou
+      const response = await fetch(`/api/partnerships/proposals/${partnershipId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(partnershipData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Falha ao atualizar parceria');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Parceria atualizada com sucesso!' });
+      toggleModal('createPartnership', false);
+      partnershipForm.resetForm();
+      refetchPartnerships(); // ✅ CORREÇÃO: Recarrega as parcerias
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Erro', 
+        description: error.message || 'Erro ao atualizar parceria', 
+        variant: 'destructive' 
+      });
+    }
+  });
+
+  // ✅ CORREÇÃO: Handler para editar parceria existente
+  const handleEditPartnership = useCallback((partnership: Partnership) => {
+    partnershipForm.setForm({
+      title: partnership.title,
+      description: partnership.description,
+      commission: partnership.commission,
+      benefits: Array.isArray(partnership.benefits) ? partnership.benefits.join(', ') : partnership.benefits || '',
+      requirements: Array.isArray(partnership.requirements) ? partnership.requirements.join(', ') : partnership.requirements || '',
+      targetRoutes: partnership.targetRoutes || []
+    });
+    
+    // Armazenar o ID da parceria sendo editada
+    setEditingPartnership(partnership);
+    toggleModal('createPartnership', true);
+  }, [partnershipForm, toggleModal]);
+
+  // ✅ CORREÇÃO: Handler para salvar parceria (criar ou editar)
+  const handleSavePartnership = useCallback(() => {
+    if (!partnershipForm.form.title.trim()) {
+      toast({ title: "Erro", description: "Título da parceria é obrigatório", variant: "destructive" });
+      return;
+    }
+
+    if (!partnershipForm.form.commission || SafeNumber.toInt(partnershipForm.form.commission) <= 0) {
+      toast({ title: "Erro", description: "Comissão deve ser maior que zero", variant: "destructive" });
+      return;
+    }
+
+    const partnershipData: PartnershipFormData = {
+      title: partnershipForm.form.title,
+      description: partnershipForm.form.description,
+      commission: SafeNumber.toInt(partnershipForm.form.commission),
+      benefits: partnershipForm.form.benefits,
+      requirements: partnershipForm.form.requirements,
+      targetRoutes: partnershipForm.form.targetRoutes,
+      status: 'active'
+    };
+
+    if (editingPartnership) {
+      // Editar parceria existente
+      updatePartnershipMutation.mutate({
+        partnershipId: editingPartnership.id,
+        partnershipData
+      });
+    } else {
+      // Criar nova parceria
+      createPartnershipMutation.mutate(partnershipData);
+    }
+  }, [partnershipForm.form, editingPartnership, createPartnershipMutation, updatePartnershipMutation, toast]);
+
+  // ✅ CORREÇÃO: Reset do estado de edição quando fechar modal
+  useEffect(() => {
+    if (!modals.createPartnership) {
+      setEditingPartnership(null);
+      partnershipForm.resetForm();
+    }
+  }, [modals.createPartnership]);
+
+  // ✅ CORREÇÃO: Mutation para criar eventos
+  const createEventMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const token = await user?.getIdToken?.();
+      
+      console.log("🎯 FRONTEND: Enviando dados para criar evento:", data);
+      
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
           title: data.title,
           description: data.description,
           eventType: data.eventType,
-          category: data.eventType, // Usar eventType como category
+          category: data.eventType,
           venue: data.venue,
-          address: data.venue, // venue → address no backend
+          address: data.venue,
           startDate: data.startDate,
           endDate: data.endDate,
           startTime: data.startTime || '10:00',
@@ -490,7 +806,7 @@ export default function HotelsHome() {
       toggleModal('createEvent', false);
       eventForm.resetForm();
       queryClient.invalidateQueries({ queryKey: ['user-events'] });
-      setCurrentEventsPage(1); // Reset para primeira página
+      setCurrentEventsPage(1);
     },
     onError: (error: any) => {
       console.error("❌ FRONTEND: Erro ao criar evento:", error);
@@ -502,7 +818,7 @@ export default function HotelsHome() {
     }
   });
 
-  // ✅ CORREÇÃO: Mutation para atualizar eventos (COM CONTADOR DE BILHETES E INVALIDATE CORRETO)
+  // ✅ CORREÇÃO: Mutation para atualizar eventos
   const updateEventMutation = useMutation({
     mutationFn: async (eventData: Partial<HotelEvent>) => {
       const token = await user?.getIdToken?.();
@@ -528,7 +844,7 @@ export default function HotelsHome() {
           endTime: eventData.endTime,
           ticketPrice: SafeNumber.toFloat(eventData.ticketPrice) || 0,
           maxTickets: SafeNumber.toInt(eventData.maxTickets) || 100,
-          ticketsSold: SafeNumber.toInt(eventData.ticketsSold) || 0, // ✅ ADICIONADO: Contador de bilhetes
+          ticketsSold: SafeNumber.toInt(eventData.ticketsSold) || 0,
           status: eventData.status,
         }),
       });
@@ -542,7 +858,6 @@ export default function HotelsHome() {
     },
     onSuccess: () => {
       toast({ title: 'Sucesso', description: 'Evento atualizado com sucesso!' });
-      // ✅ CORREÇÃO: Invalidação mais agressiva para garantir atualização
       queryClient.invalidateQueries({ queryKey: ['user-events'] });
       queryClient.refetchQueries({ queryKey: ['user-events'] });
       setEditEventModalOpen(false);
@@ -581,7 +896,6 @@ export default function HotelsHome() {
       queryClient.invalidateQueries({ queryKey: ['user-events'] });
       setDeleteEventModalOpen(false);
       setEventToDelete(null);
-      // Ajustar paginação se necessário
       if (paginatedEvents.length === 1 && currentEventsPage > 1) {
         setCurrentEventsPage(prev => prev - 1);
       }
@@ -590,6 +904,93 @@ export default function HotelsHome() {
       toast({
         title: 'Erro',
         description: error.message || 'Falha ao eliminar o evento',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // ✅ CORREÇÃO: Mutation para criar quarto
+  const createRoomMutation = useMutation({
+    mutationFn: async (roomData: typeof roomForm.form) => {
+      if (!userHotel?.id) {
+        throw new Error('Hotel não selecionado');
+      }
+
+      const token = await user?.getIdToken?.();
+
+      const response = await fetch(`/api/hotels/${userHotel.id}/rooms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          accommodationId: userHotel.id,
+          roomNumber: `Room-${Date.now()}`,
+          roomType: roomData.type,
+          description: roomData.description,
+          pricePerNight: SafeNumber.toFloat(roomData.pricePerNight),
+          maxOccupancy: SafeNumber.toInt(roomData.maxGuests),
+          bedType: roomData.bedType,
+          bedCount: 1,
+          hasPrivateBathroom: true,
+          hasAirConditioning: roomData.type === 'deluxe' || roomData.type === 'suite',
+          hasWifi: true,
+          hasTV: true,
+          hasBalcony: roomData.hasBalcony,
+          hasKitchen: roomData.type === 'suite',
+          amenities: roomData.amenities,
+          images: [],
+          isAvailable: true,
+          status: 'available'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao criar quarto');
+      }
+
+      return await response.json();
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        toast({ title: 'Sucesso', description: 'Quarto criado com sucesso!' });
+        toggleModal('createRoom', false);
+        roomForm.resetForm();
+        refetchRooms();
+      } else {
+        toast({ title: 'Erro', description: result.error || 'Falha ao criar quarto', variant: 'destructive' });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro', description: error.message || 'Erro ao criar quarto', variant: 'destructive' });
+    }
+  });
+
+  // ✅ CORREÇÃO: Mutation para atualizar hotel
+  const updateHotelMutation = useMutation({
+    mutationFn: async (hotelData: Partial<Hotel>) => {
+      return await apiService.updateHotel(userHotel!.id, {
+        name: hotelData.name,
+        address: hotelData.address,
+        description: hotelData.description,
+        contactEmail: hotelData.contactEmail,
+        contactPhone: hotelData.contactPhone,
+        amenities: hotelData.amenities,
+        images: hotelData.images,
+        isActive: hotelData.isActive,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Sucesso', description: 'Hotel atualizado com sucesso!' });
+      toggleModal('editHotel', false);
+      queryClient.invalidateQueries({ queryKey: ['user-hotels'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Falha ao atualizar hotel',
         variant: 'destructive',
       });
     },
@@ -626,7 +1027,7 @@ export default function HotelsHome() {
       endTime: formData.get('endTime') as string,
       ticketPrice: SafeNumber.toFloat(formData.get('ticketPrice') as string),
       maxTickets: SafeNumber.toInt(formData.get('maxTickets') as string),
-      ticketsSold: SafeNumber.toInt(formData.get('ticketsSold') as string), // ✅ ADICIONADO
+      ticketsSold: SafeNumber.toInt(formData.get('ticketsSold') as string),
       status: formData.get('status') as string,
     };
 
@@ -675,112 +1076,10 @@ export default function HotelsHome() {
     setEditingRoom(null);
   };
 
-  // ✅ CORREÇÃO: Form states usando helper - REMOVIDO o formulário antigo que estava causando problemas
-  const roomForm = useFormState({
-    name: '',
-    type: 'standard',
-    description: '',
-    pricePerNight: 0,
-    totalRooms: 1,
-    maxGuests: 2,
-    amenities: [] as string[],
-    bedType: 'Cama de Casal',
-    hasBalcony: false,
-    hasSeaView: false,
-    size: 25
-  });
-
-  const hotelForm = useFormState({
-    name: '',
-    address: '',
-    description: '',
-    contactEmail: '',
-    contactPhone: '',
-    amenities: [] as string[],
-    images: [] as string[],
-    isActive: true
-  });
-
-  const eventForm = useFormState({
-    title: '',
-    description: '',
-    eventType: 'festival',
-    venue: '',
-    startDate: '',
-    endDate: '',
-    startTime: '10:00',
-    endTime: '18:00',
-    ticketPrice: 0,
-    maxTickets: 100
-  });
-
-  const partnershipForm = useFormState({
-    title: '',
-    description: '',
-    commission: 10,
-    benefits: '',
-    requirements: '',
-    targetRoutes: [] as string[]
-  });
-
-  // ✅ CORREÇÃO: Fetch dos hotéis do usuário com useMemo para otimização
-  const { data: userHotels, isLoading: hotelsLoading } = useQuery<Hotel[], Error>({
-    queryKey: ['user-hotels', user?.id],
-    queryFn: async (): Promise<Hotel[]> => {
-      try {
-        console.log('Fetching user hotels for user:', user?.id);
-        const response = await apiService.getUserAccommodations() as unknown as ApiResponse;
-        console.log('API response:', response);
-        
-        if (!response.success || !Array.isArray(response.data)) {
-          console.error('Invalid API response structure:', response);
-          throw new Error('Invalid response structure from API');
-        }
-
-        const hotels = response.data
-          .filter((acc: any) => acc.type === 'hotel')
-          .map((acc: any) => ({
-            id: acc.id,
-            userId: user?.id || '',
-            name: acc.name,
-            description: acc.description || 'Hotel de qualidade com excelente localização',
-            address: acc.address || 'Endereço não definido',
-            contactEmail: acc.contactEmail || user?.email || '',
-            contactPhone: acc.contactPhone || '',
-            amenities: acc.amenities || [],
-            images: acc.images || [],
-            isActive: acc.isAvailable !== false,
-            createdAt: acc.createdAt || '2024-01-01',
-            updatedAt: acc.updatedAt || '2024-09-07',
-          }));
-        
-        console.log('Processed hotels:', hotels);
-        return hotels;
-      } catch (error) {
-        console.error('Error fetching hotels:', error);
-        toast({
-          title: 'Erro',
-          description: 'Falha ao carregar hotéis',
-          variant: 'destructive',
-        });
-        return [];
-      }
-    },
-    enabled: !!user?.id,
-    retry: false,
-  });
-
-  // ✅ CORREÇÃO CRÍTICA: useEffect corrigido para evitar loop infinito
-  const userHotel = useMemo(() => {
-    if (!userHotels || userHotels.length === 0) return null;
-    return userHotels.find((hotel: Hotel) => hotel.id === selectedHotelId) || userHotels[0];
-  }, [userHotels, selectedHotelId]);
-
-  // ✅ CORREÇÃO: useEffect otimizado para atualizar hotelForm apenas quando necessário
+  // ✅ CORREÇÃO: useEffect corrigido para evitar loop infinito
   useEffect(() => {
     if (hotelsLoading || !userHotel) return;
 
-    // ✅ CORREÇÃO: Verificar se os dados realmente mudaram antes de atualizar
     const currentHotelData = {
       name: userHotel.name,
       address: userHotel.address,
@@ -803,53 +1102,23 @@ export default function HotelsHome() {
       isActive: hotelForm.form.isActive
     };
 
-    // ✅ CORREÇÃO: Só atualiza se os dados forem diferentes
     if (JSON.stringify(currentHotelData) !== JSON.stringify(existingHotelData)) {
       console.log('🔄 Atualizando hotel form com dados do hotel selecionado');
       hotelForm.setForm(currentHotelData);
     }
 
-    // ✅ CORREÇÃO: Só define selectedHotelId se não estiver definido
     if (!selectedHotelId && userHotel.id) {
       setSelectedHotelId(userHotel.id);
     }
-  }, [userHotel, hotelsLoading, selectedHotelId]); // ✅ REMOVIDO: hotelForm.updateForm das dependências
+  }, [userHotel, hotelsLoading, selectedHotelId]);
 
   // ✅ CORREÇÃO: Usar hotelRooms do hook customizado
   const displayedRooms = hotelRooms;
 
-  // ✅ CORREÇÃO: Mutação para atualizar hotel
-  const updateHotelMutation = useMutation({
-    mutationFn: async (hotelData: Partial<Hotel>) => {
-      return await apiService.updateHotel(userHotel!.id, {
-        name: hotelData.name,
-        address: hotelData.address,
-        description: hotelData.description,
-        contactEmail: hotelData.contactEmail,
-        contactPhone: hotelData.contactPhone,
-        amenities: hotelData.amenities,
-        images: hotelData.images,
-        isActive: hotelData.isActive,
-      });
-    },
-    onSuccess: () => {
-      toast({ title: 'Sucesso', description: 'Hotel atualizado com sucesso!' });
-      toggleModal('editHotel', false);
-      queryClient.invalidateQueries({ queryKey: ['user-hotels'] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: 'Erro',
-        description: error.message || 'Falha ao atualizar hotel',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  // ✅ ATUALIZADO: Hotel stats com useMemo para performance - VERSÃO COM EVENTOS REAIS
+  // ✅ ATUALIZADO: Hotel stats com useMemo para performance
   const hotelStats = useMemo((): HotelStats => {
     const activeRooms = displayedRooms.filter(room => 
-      room.isActive !== false // ✅ Considera true ou undefined como ativo
+      room.isActive !== false
     );
     
     const totalRooms = activeRooms.reduce((sum, room) => 
@@ -859,7 +1128,6 @@ export default function HotelsHome() {
       sum + SafeNumber.toInt(room.availableRooms), 0
     );
 
-    // ✅ USAR EVENTOS REAIS do usuário
     const userEventsList = userEvents || [];
     const upcomingEvents = userEventsList.filter((event: any) => 
       new Date(event.startDate) > new Date()
@@ -869,148 +1137,26 @@ export default function HotelsHome() {
       event.status === 'upcoming' || event.status === 'active'
     ).length;
 
-    console.log(`📊 Stats calculados: ${activeRooms.length} tipos, ${totalRooms} total, ${availableRooms} disponíveis, ${userEventsList.length} eventos totais, ${upcomingEvents} eventos futuros`);
+    const activePartnerships = hotelPartnerships?.filter((p: Partnership) => p.status === 'active').length || 0;
+    const partnershipEarnings = hotelPartnerships?.reduce((sum: number, p: Partnership) => sum + (p.totalEarnings || 0), 0) || 0;
+
+    console.log(`📊 Stats calculados: ${activeRooms.length} tipos, ${totalRooms} total, ${availableRooms} disponíveis, ${userEventsList.length} eventos totais, ${upcomingEvents} eventos futuros, ${activePartnerships} parcerias ativas`);
     
     return {
       totalBookings: 73,
       monthlyRevenue: 224500,
       averageRating: 4.8,
       averageOccupancy: 82,
-      totalEvents: userEventsList.length, // ✅ Eventos totais REAIS
-      upcomingEvents: upcomingEvents, // ✅ Eventos futuros REAIS
-      activeEvents: activeEvents, // ✅ Eventos ativos
-      activePartnerships: 2,
-      partnershipEarnings: 11000,
-      totalRoomTypes: activeRooms.length, // ✅ Número de TIPOS de quarto ativos
+      totalEvents: userEventsList.length,
+      upcomingEvents: upcomingEvents,
+      activeEvents: activeEvents,
+      activePartnerships: activePartnerships,
+      partnershipEarnings: partnershipEarnings,
+      totalRoomTypes: activeRooms.length,
       totalRooms,
       availableRooms
     };
-  }, [displayedRooms, userEvents]);
-
-  // ✅ CORREÇÃO: Mutation para criar quarto usando SafeNumber - ATUALIZADA COM AUTENTICAÇÃO
-  const createRoomMutation = useMutation({
-    mutationFn: async (roomData: typeof roomForm.form) => {
-      if (!userHotel?.id) {
-        throw new Error('Hotel não selecionado');
-      }
-
-      const token = await user?.getIdToken?.(); // ✅ Obter token atualizado
-
-      const response = await fetch(`/api/hotels/${userHotel.id}/rooms`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // ✅ Adicionar token de autenticação
-        },
-        body: JSON.stringify({
-          accommodationId: userHotel.id,
-          roomNumber: `Room-${Date.now()}`,
-          roomType: roomData.type,
-          description: roomData.description,
-          pricePerNight: SafeNumber.toFloat(roomData.pricePerNight),
-          maxOccupancy: SafeNumber.toInt(roomData.maxGuests),
-          bedType: roomData.bedType,
-          bedCount: 1,
-          hasPrivateBathroom: true,
-          hasAirConditioning: roomData.type === 'deluxe' || roomData.type === 'suite',
-          hasWifi: true,
-          hasTV: true,
-          hasBalcony: roomData.hasBalcony,
-          hasKitchen: roomData.type === 'suite',
-          amenities: roomData.amenities,
-          images: [],
-          isAvailable: true,
-          status: 'available'
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Falha ao criar quarto');
-      }
-
-      return await response.json();
-    },
-    onSuccess: (result) => {
-      if (result.success) {
-        toast({ title: 'Sucesso', description: 'Quarto criado com sucesso!' });
-        toggleModal('createRoom', false);
-        roomForm.resetForm();
-        refetchRooms();
-      } else {
-        toast({ title: 'Erro', description: result.error || 'Falha ao criar quarto', variant: 'destructive' });
-      }
-    },
-    onError: (error: any) => {
-      toast({ title: 'Erro', description: error.message || 'Erro ao criar quarto', variant: 'destructive' });
-    }
-  });
-
-  // ✅ CORREÇÃO: Partnership and chat data com useMemo
-  const driverPartnerships = useMemo((): DriverPartnership[] => [
-    {
-      id: '1',
-      driver: 'João M.',
-      route: 'Maputo → Beira',
-      commission: 10,
-      clientsBrought: 8,
-      totalEarnings: 15600,
-      lastMonth: 4200,
-      rating: 4.8,
-      joinedDate: '2023-11-15',
-      status: 'active'
-    },
-    {
-      id: '2',
-      driver: 'Maria S.',
-      route: 'Nampula → Nacala',
-      commission: 12,
-      clientsBrought: 12,
-      totalEarnings: 22400,
-      lastMonth: 6800,
-      rating: 4.9,
-      joinedDate: '2023-10-20',
-      status: 'active'
-    }
-  ], []);
-
-  const driverChats = useMemo(() => [
-    {
-      id: 1,
-      driver: 'João M.',
-      route: 'Maputo → Beira',
-      subject: 'Negociação Parceria - 15% Comissão',
-      lastMessage: 'Posso começar na próxima semana',
-      timestamp: '14:30',
-      unread: 1,
-      status: 'negotiating',
-      rating: 4.8
-    },
-    {
-      id: 2,
-      driver: 'Maria S.',
-      route: 'Nampula → Nacala',
-      subject: 'Parceria Ativa - Comissões',
-      lastMessage: 'Cliente confirmado para amanhã',
-      timestamp: '11:15',
-      unread: 0,
-      status: 'active',
-      rating: 4.9
-    }
-  ], []);
-
-  const chatMessages = useMemo((): Record<number, ChatMessage[]> => ({
-    1: [
-      { id: 1, sender: 'João M.', message: 'Olá! Vi o post sobre parceria com 15% de comissão', time: '13:00', isHotel: false },
-      { id: 2, sender: 'Eu', message: 'Olá João! Sim, procuramos motoristas regulares para Beira', time: '13:15', isHotel: true },
-      { id: 3, sender: 'João M.', message: 'Faço essa rota 3x por semana. Posso começar na próxima semana', time: '14:30', isHotel: false }
-    ],
-    2: [
-      { id: 1, sender: 'Maria S.', message: 'Trouxe uma família de 4 pessoas hoje', time: '10:00', isHotel: false },
-      { id: 2, sender: 'Eu', message: 'Excelente Maria! Já temos a reserva confirmada', time: '10:30', isHotel: true },
-      { id: 3, sender: 'Maria S.', message: 'Cliente confirmado para amanhã', time: '11:15', isHotel: false }
-    ]
-  }), []);
+  }, [displayedRooms, userEvents, hotelPartnerships]);
 
   // ✅ CORREÇÃO: Handlers usando useCallback
   const handleCreateEvent = useCallback(() => {
@@ -1181,7 +1327,7 @@ export default function HotelsHome() {
     };
   }, [editingRoom, wizardMode, userHotel, user]);
 
-  // ✅ ADICIONADO: Componente de Paginação para Eventos
+  // ✅ ADICIONADO: Paginação para Eventos
   const EventsPagination = () => {
     if (!userEvents || userEvents.length <= EVENTS_PER_PAGE) return null;
 
@@ -1217,6 +1363,32 @@ export default function HotelsHome() {
     );
   };
 
+  // ✅ ADICIONADO: Funções de navegação da paginação
+  const nextEventsPage = () => {
+    if (currentEventsPage < totalEventsPages) {
+      setCurrentEventsPage(prev => prev + 1);
+    }
+  };
+
+  const prevEventsPage = () => {
+    if (currentEventsPage > 1) {
+      setCurrentEventsPage(prev => prev - 1);
+    }
+  };
+
+  // ✅ ADICIONADO: Paginação para eventos
+  const paginatedEvents = useMemo(() => {
+    if (!userEvents) return [];
+    const startIndex = (currentEventsPage - 1) * EVENTS_PER_PAGE;
+    const endIndex = startIndex + EVENTS_PER_PAGE;
+    return userEvents.slice(startIndex, endIndex);
+  }, [userEvents, currentEventsPage]);
+
+  const totalEventsPages = useMemo(() => {
+    if (!userEvents) return 0;
+    return Math.ceil(userEvents.length / EVENTS_PER_PAGE);
+  }, [userEvents]);
+
   // ✅ CORREÇÃO: Debug para verificar estado atual
   console.log('🔍 DEBUG - Estado atual:');
   console.log('  selectedHotelId:', selectedHotelId);
@@ -1225,6 +1397,8 @@ export default function HotelsHome() {
   console.log('  displayedRooms:', displayedRooms);
   console.log('  roomsLoading:', roomsLoading);
   console.log('  userEvents:', userEvents);
+  console.log('  hotelPartnerships:', hotelPartnerships);
+  console.log('  driverPartnerships:', driverPartnerships);
 
   // ✅ MODIFICADO: Renderização condicional baseada em showHotelCreation
   if (showHotelCreation) {
@@ -1509,11 +1683,11 @@ export default function HotelsHome() {
                             <Label htmlFor="hotel-location">Localização</Label>
                             <LocationAutocomplete
                               id="hotel-location"
+                              placeholder="Localização do hotel..."
                               value={hotelForm.form.address}
                               onChange={(value) =>
                                 hotelForm.updateForm({ address: value })
                               }
-                              placeholder="Localização do hotel..."
                             />
                           </div>
                           <div>
@@ -1629,7 +1803,6 @@ export default function HotelsHome() {
                   <CardContent>
                     <Tabs defaultValue="published">
                       <TabsList>
-                        {/* ✅ CORREÇÃO: Mostra número de TIPOS de quarto ativos, não quartos disponíveis */}
                         <TabsTrigger value="published">
                           Publicados ({
                             displayedRooms.filter(rt => rt.isActive !== false).length
@@ -1663,9 +1836,8 @@ export default function HotelsHome() {
                           </div>
                         ) : (
                           <div className="grid gap-4">
-                            {/* ✅ CORREÇÃO: Filtro mais flexível para isActive */}
                             {displayedRooms
-                              .filter(rt => rt.isActive !== false) // ✅ Mostra se true ou undefined
+                              .filter(rt => rt.isActive !== false)
                               .map((roomType: RoomType) => (
                               <Card key={roomType.id} className="border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
                                 <CardContent className="pt-6">
@@ -1718,7 +1890,6 @@ export default function HotelsHome() {
                                       </div>
                                     </div>
                                     
-                                    {/* ✅ ATUALIZADO: Botões com as novas funcionalidades */}
                                     <div className="flex flex-col gap-2 ml-4">
                                       <Button 
                                         size="sm" 
@@ -1842,74 +2013,174 @@ export default function HotelsHome() {
                           <CardTitle className="flex items-center gap-2">
                             <Handshake className="w-5 h-5" />
                             Parcerias com Motoristas
+                            {hotelPartnerships && (
+                              <Badge variant="secondary">
+                                {hotelPartnerships.length} ativas
+                              </Badge>
+                            )}
                           </CardTitle>
-                          <Button onClick={() => toggleModal('createPartnership', true)} size="sm" className="bg-green-600 hover:bg-green-700">
+                          <Button 
+                            onClick={() => {
+                              setEditingPartnership(null);
+                              partnershipForm.resetForm();
+                              toggleModal('createPartnership', true);
+                            }} 
+                            size="sm" 
+                            className="bg-green-600 hover:bg-green-700"
+                            disabled={!userHotel?.id}
+                          >
                             <Plus className="w-4 h-4 mr-2" />
                             Nova Parceria
                           </Button>
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-4">
-                          {driverPartnerships.map((partnership) => (
-                            <Card key={partnership.id} className="border-l-4 border-l-blue-500">
-                              <CardContent className="pt-4">
-                                <div className="flex justify-between items-start">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-2">
-                                      <div className="p-2 bg-blue-100 rounded-lg">
-                                        <Users className="h-4 w-4 text-blue-600" />
-                                      </div>
-                                      <div>
-                                        <h4 className="font-semibold">{partnership.driver}</h4>
-                                        <p className="text-sm text-gray-600">{partnership.route}</p>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                      <div>
-                                        <span className="text-gray-600">Comissão:</span>
-                                        <p className="font-semibold">{partnership.commission}%</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600">Clientes:</span>
-                                        <p className="font-semibold">{partnership.clientsBrought}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600">Este mês:</span>
-                                        <p className="font-semibold">{partnership.lastMonth.toLocaleString()} MT</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600">Avaliação:</span>
-                                        <div className="flex items-center gap-1">
-                                          <Star className="h-3 w-3 text-yellow-500" />
-                                          <span className="font-semibold">{partnership.rating}</span>
+                        {partnershipsLoading ? (
+                          <div className="flex items-center justify-center p-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                            <span className="ml-2">Carregando parcerias...</span>
+                          </div>
+                        ) : hotelPartnerships && hotelPartnerships.length > 0 ? (
+                          <div className="space-y-4">
+                            {hotelPartnerships.map((partnership: Partnership) => (
+                              <Card key={partnership.id} className="border-l-4 border-l-blue-500">
+                                <CardContent className="pt-4">
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 bg-blue-100 rounded-lg">
+                                          <Handshake className="h-4 w-4 text-blue-600" />
+                                        </div>
+                                        <div>
+                                          <h4 className="font-semibold">{partnership.title}</h4>
+                                          <p className="text-sm text-gray-600">{partnership.description}</p>
                                         </div>
                                       </div>
+                                      
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                                        <div>
+                                          <span className="text-gray-600">Comissão:</span>
+                                          <p className="font-semibold">{partnership.commission}%</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-600">Motoristas:</span>
+                                          <p className="font-semibold">
+                                            {driverPartnerships?.filter((d: DriverPartnership) => d.partnershipId === partnership.id).length || 0}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-600">Status:</span>
+                                          <Badge 
+                                            variant={partnership.status === 'active' ? 'default' : 'secondary'}
+                                            className={partnership.status === 'active' 
+                                              ? 'bg-green-100 text-green-800' 
+                                              : partnership.status === 'pending'
+                                              ? 'bg-yellow-100 text-yellow-800'
+                                              : 'bg-gray-100 text-gray-800'
+                                            }
+                                          >
+                                            {partnership.status === 'active' ? 'Ativa' : 
+                                             partnership.status === 'pending' ? 'Pendente' : 'Inativa'}
+                                          </Badge>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-600">Criada em:</span>
+                                          <p className="font-semibold text-xs">
+                                            {new Date(partnership.createdAt).toLocaleDateString('pt-BR')}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {partnership.benefits && partnership.benefits.length > 0 && (
+                                        <div className="mb-3">
+                                          <span className="text-gray-600 text-sm">Benefícios:</span>
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {partnership.benefits.map((benefit: string, index: number) => (
+                                              <Badge key={index} variant="outline" className="text-xs">
+                                                {benefit}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {partnership.requirements && partnership.requirements.length > 0 && (
+                                        <div className="mb-3">
+                                          <span className="text-gray-600 text-sm">Requisitos:</span>
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {partnership.requirements.map((requirement: string, index: number) => (
+                                              <Badge key={index} variant="secondary" className="text-xs">
+                                                {requirement}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {partnership.targetRoutes && partnership.targetRoutes.length > 0 && (
+                                        <div>
+                                          <span className="text-gray-600 text-sm">Rotas Alvo:</span>
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {partnership.targetRoutes.map((route: string, index: number) => (
+                                              <Badge key={index} variant="outline" className="text-xs bg-blue-50">
+                                                {route}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="flex flex-col gap-2">
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => {
+                                          toast({
+                                            title: "Gestão de Parceria",
+                                            description: `Gerindo parceria: ${partnership.title}`
+                                          });
+                                        }}
+                                      >
+                                        <MessageCircle className="w-3 h-3 mr-1" />
+                                        Gerir
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline"
+                                        onClick={() => handleEditPartnership(partnership)}
+                                        disabled={updatePartnershipMutation.isPending}
+                                      >
+                                        <Edit className="w-3 h-3 mr-1" />
+                                        {updatePartnershipMutation.isPending ? 'Salvando...' : 'Editar'}
+                                      </Button>
                                     </div>
                                   </div>
-                                  
-                                  <div className="flex flex-col gap-2">
-                                    <Badge 
-                                      variant={partnership.status === 'active' ? 'default' : 'secondary'}
-                                      className={partnership.status === 'active' ? 'bg-green-100 text-green-800' : ''}
-                                    >
-                                      {partnership.status === 'active' ? 'Ativa' : 'Inactiva'}
-                                    </Badge>
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline" 
-                                      onClick={() => setSelectedChat(SafeNumber.toInt(partnership.id))}
-                                    >
-                                      <MessageCircle className="w-3 h-3 mr-1" />
-                                      Chat
-                                    </Button>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-12 text-gray-500">
+                            <Handshake className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium mb-2">Nenhuma parceria ativa</h3>
+                            <p className="text-sm mb-4">
+                              Crie parcerias com motoristas para aumentar suas reservas.
+                            </p>
+                            <Button 
+                              onClick={() => {
+                                setEditingPartnership(null);
+                                partnershipForm.resetForm();
+                                toggleModal('createPartnership', true);
+                              }}
+                              className="bg-green-600 hover:bg-green-700"
+                              disabled={!userHotel?.id}
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Criar Primeira Parceria
+                            </Button>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </div>
@@ -1920,13 +2191,39 @@ export default function HotelsHome() {
                         <CardTitle className="flex items-center gap-2">
                           <MessageCircle className="w-4 h-4" />
                           Chat Motoristas
+                          {driverPartnerships && driverPartnerships.length > 0 && (
+                            <Badge variant="secondary">{driverPartnerships.length}</Badge>
+                          )}
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        {!selectedChat ? (
+                        {!driverPartnerships || driverPartnerships.length === 0 ? (
                           <div className="text-center py-8 text-gray-500">
                             <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">Selecione uma parceria para iniciar o chat</p>
+                            <p className="text-sm">Nenhum motorista parceiro ativo</p>
+                            <p className="text-xs mt-1">As conversas aparecerão aqui</p>
+                          </div>
+                        ) : !selectedChat ? (
+                          <div className="space-y-3">
+                            <p className="text-sm text-gray-600 mb-3">Selecione um motorista para conversar:</p>
+                            {driverPartnerships.slice(0, 3).map((driver: DriverPartnership) => (
+                              <div 
+                                key={driver.id}
+                                className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                                onClick={() => setSelectedChat(parseInt(driver.id))}
+                              >
+                                <div className="p-2 bg-blue-100 rounded-lg">
+                                  <Users className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-sm">{driver.driverName}</h4>
+                                  <p className="text-xs text-gray-600">{driver.route}</p>
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {driver.clientsBrought} clientes
+                                </Badge>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <div className="space-y-4">
@@ -1935,28 +2232,36 @@ export default function HotelsHome() {
                                 <Users className="h-4 w-4 text-blue-600" />
                               </div>
                               <div>
-                                <h4 className="font-medium">{driverChats.find(c => c.id === selectedChat)?.driver}</h4>
-                                <p className="text-xs text-gray-600">{driverChats.find(c => c.id === selectedChat)?.route}</p>
+                                <h4 className="font-medium">
+                                  {driverPartnerships.find((d: DriverPartnership) => parseInt(d.id) === selectedChat)?.driverName}
+                                </h4>
+                                <p className="text-xs text-gray-600">
+                                  {driverPartnerships.find((d: DriverPartnership) => parseInt(d.id) === selectedChat)?.route}
+                                </p>
                               </div>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                onClick={() => setSelectedChat(null)}
+                                className="ml-auto"
+                              >
+                                Voltar
+                              </Button>
                             </div>
                             
                             <div className="space-y-3 max-h-64 overflow-y-auto">
-                              {chatMessages[selectedChat]?.map((msg) => (
-                                <div key={msg.id} className={`flex ${msg.isHotel ? 'justify-end' : 'justify-start'}`}>
-                                  <div className={`max-w-xs p-3 rounded-lg text-sm ${
-                                    msg.isHotel 
-                                      ? 'bg-green-600 text-white' 
-                                      : 'bg-gray-100 text-gray-800'
-                                  }`}>
-                                    <p>{msg.message}</p>
-                                    <p className={`text-xs mt-1 ${
-                                      msg.isHotel ? 'text-green-100' : 'text-gray-500'
-                                    }`}>
-                                      {msg.time}
-                                    </p>
-                                  </div>
+                              <div className="flex justify-start">
+                                <div className="max-w-xs p-3 rounded-lg bg-gray-100 text-gray-800 text-sm">
+                                  <p>Olá! Tenho interesse na sua parceria</p>
+                                  <p className="text-xs mt-1 text-gray-500">10:30</p>
                                 </div>
-                              ))}
+                              </div>
+                              <div className="flex justify-end">
+                                <div className="max-w-xs p-3 rounded-lg bg-green-600 text-white text-sm">
+                                  <p>Olá! Que bom ter você como parceiro</p>
+                                  <p className="text-xs mt-1 text-green-100">10:32</p>
+                                </div>
+                              </div>
                             </div>
                             
                             <div className="flex gap-2 pt-3 border-t">
@@ -1976,6 +2281,28 @@ export default function HotelsHome() {
                             </div>
                           </div>
                         )}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="mt-4">
+                      <CardHeader>
+                        <CardTitle className="text-sm">Estatísticas de Parcerias</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Parcerias Ativas:</span>
+                          <span className="font-semibold">{hotelPartnerships?.filter((p: Partnership) => p.status === 'active').length || 0}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Motoristas Parceiros:</span>
+                          <span className="font-semibold">{driverPartnerships?.length || 0}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Ganhos Totais:</span>
+                          <span className="font-semibold">
+                            {(hotelPartnerships?.reduce((sum: number, p: Partnership) => sum + (p.totalEarnings || 0), 0) || 0).toLocaleString()} MT
+                          </span>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>
@@ -2105,7 +2432,6 @@ export default function HotelsHome() {
                               ))}
                             </div>
                             
-                            {/* ✅ ADICIONADO: Paginação */}
                             <EventsPagination />
                           </>
                         ) : (
@@ -2143,7 +2469,7 @@ export default function HotelsHome() {
               </TabsContent>
             </Tabs>
 
-            {/* ✅ ATUALIZADO: Modal de Edição de Eventos COM CONTADOR DE BILHETES E REFETCH CORRETO */}
+            {/* ✅ ATUALIZADO: Modal de Edição de Eventos */}
             <Dialog open={editEventModalOpen} onOpenChange={setEditEventModalOpen}>
               <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
@@ -2262,7 +2588,6 @@ export default function HotelsHome() {
                           defaultValue={editingEvent.maxTickets}
                         />
                       </div>
-                      {/* ✅ ADICIONADO: Contador de Bilhetes Vendidos */}
                       <div>
                         <Label htmlFor="edit-tickets-sold">Bilhetes Vendidos</Label>
                         <Input
@@ -2290,7 +2615,6 @@ export default function HotelsHome() {
                       </Select>
                     </div>
                     
-                    {/* ✅ ADICIONADO: Barra de Progresso Visual */}
                     {editingEvent.maxTickets > 0 && (
                       <div className="pt-2">
                         <Label>Progresso de Vendas</Label>
@@ -2525,8 +2849,6 @@ export default function HotelsHome() {
               initialData={getWizardInitialData}
             />
 
-            {/* ✅ REMOVIDO: Formulário antigo de edição de hotel que estava causando problemas */}
-            
             <Dialog open={modals.createRoom} onOpenChange={(open) => toggleModal('createRoom', open)}>
               <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
@@ -2678,9 +3000,9 @@ export default function HotelsHome() {
                     <Label htmlFor="event-venue">Local do Evento</Label>
                     <LocationAutocomplete 
                       id="event-venue"
+                      placeholder="Local onde será realizado..."
                       value={eventForm.form.venue}
                       onChange={(value) => eventForm.updateForm({ venue: value })}
-                      placeholder="Local onde será realizado..."
                     />
                   </div>
                   
@@ -2743,17 +3065,23 @@ export default function HotelsHome() {
               </DialogContent>
             </Dialog>
 
+            {/* ✅ CORREÇÃO COMPLETA: Modal de Parcerias com tipos corrigidos */}
             <Dialog open={modals.createPartnership} onOpenChange={(open) => toggleModal('createPartnership', open)}>
               <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
-                  <DialogTitle>Criar Post de Parceria</DialogTitle>
+                  <DialogTitle>
+                    {editingPartnership ? 'Editar Parceria' : 'Criar Post de Parceria'}
+                  </DialogTitle>
                 </DialogHeader>
                 <DialogDescription>
-                  Crie um post de parceria para motoristas, especificando título, descrição, comissão, benefícios e requisitos.
+                  {editingPartnership 
+                    ? 'Atualize as informações da parceria existente.'
+                    : 'Crie um post de parceria para motoristas, especificando título, descrição, comissão, benefícios e requisitos.'
+                  }
                 </DialogDescription>
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="partnership-title">Título da Parceria</Label>
+                    <Label htmlFor="partnership-title">Título da Parceria *</Label>
                     <Input 
                       id="partnership-title" 
                       placeholder="ex: Parceria Exclusiva - 15% Comissão"
@@ -2763,7 +3091,7 @@ export default function HotelsHome() {
                   </div>
                   
                   <div>
-                    <Label htmlFor="partnership-description">Descrição da Oferta</Label>
+                    <Label htmlFor="partnership-description">Descrição da Oferta *</Label>
                     <Textarea 
                       id="partnership-description" 
                       placeholder="Descreva os benefícios e condições da parceria..."
@@ -2775,10 +3103,12 @@ export default function HotelsHome() {
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="commission">Comissão (%)</Label>
+                      <Label htmlFor="commission">Comissão (%) *</Label>
                       <Input 
                         id="commission" 
                         type="number"
+                        min="1"
+                        max="50"
                         value={partnershipForm.form.commission}
                         onChange={(e) => partnershipForm.updateForm({ commission: SafeNumber.toInt(e.target.value) })}
                       />
@@ -2787,10 +3117,11 @@ export default function HotelsHome() {
                       <Label htmlFor="benefits">Benefícios Extras</Label>
                       <Input 
                         id="benefits" 
-                        placeholder="Estadia gratuita, desconto..."
+                        placeholder="Estadia gratuita, desconto em refeições..."
                         value={partnershipForm.form.benefits}
                         onChange={(e) => partnershipForm.updateForm({ benefits: e.target.value })}
                       />
+                      <p className="text-xs text-gray-500 mt-1">Separe por vírgulas</p>
                     </div>
                   </div>
                   
@@ -2798,26 +3129,58 @@ export default function HotelsHome() {
                     <Label htmlFor="requirements">Requisitos do Motorista</Label>
                     <Textarea 
                       id="requirements" 
-                      placeholder="Avaliação mínima, experiência, regularidade..."
+                      placeholder="Avaliação mínima 4.5, experiência mínima 1 ano, regularidade nas rotas..."
                       value={partnershipForm.form.requirements}
                       onChange={(e) => partnershipForm.updateForm({ requirements: e.target.value })}
                       rows={2}
                     />
+                    <p className="text-xs text-gray-500 mt-1">Separe por vírgulas</p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="target-routes">Rotas Alvo</Label>
+                    <Select 
+                      value={partnershipForm.form.targetRoutes[0] || ''}
+                      onValueChange={(value) => {
+                        partnershipForm.updateForm({ 
+                          targetRoutes: value ? [value] : [] 
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecionar rota principal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Maputo → Beira">Maputo → Beira</SelectItem>
+                        <SelectItem value="Maputo → Nampula">Maputo → Nampula</SelectItem>
+                        <SelectItem value="Beira → Quelimane">Beira → Quelimane</SelectItem>
+                        <SelectItem value="Nampula → Pemba">Nampula → Pemba</SelectItem>
+                        <SelectItem value="Maputo → Xai-Xai">Maputo → Xai-Xai</SelectItem>
+                        <SelectItem value="Beira → Tete">Beira → Tete</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   
                   <div className="flex gap-3 pt-4">
                     <Button 
                       className="bg-green-600 hover:bg-green-700"
-                      onClick={() => {
-                        console.log('Creating partnership post:', partnershipForm.form);
-                        toast({ title: 'Sucesso', description: 'Post de parceria criado!' });
-                        toggleModal('createPartnership', false);
-                        partnershipForm.resetForm();
-                      }}
+                      onClick={handleSavePartnership}
+                      disabled={createPartnershipMutation.isPending || updatePartnershipMutation.isPending || !userHotel?.id}
                     >
-                      Publicar Parceria
+                      {(createPartnershipMutation.isPending || updatePartnershipMutation.isPending) ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {editingPartnership ? 'Atualizando...' : 'Criando...'}
+                        </>
+                      ) : (
+                        editingPartnership ? 'Atualizar Parceria' : 'Publicar Parceria'
+                      )}
                     </Button>
-                    <Button variant="outline" onClick={() => toggleModal('createPartnership', false)}>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => toggleModal('createPartnership', false)}
+                      disabled={createPartnershipMutation.isPending || updatePartnershipMutation.isPending}
+                    >
                       Cancelar
                     </Button>
                   </div>

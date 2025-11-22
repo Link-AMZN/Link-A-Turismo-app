@@ -9,11 +9,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Star, Car, Hotel, Calendar, Search, TrendingUp, Menu, UserCircle, LogOut, Shield, Settings, Sparkles, ArrowRight, Users, MapPin, BookOpen, Map, Clock, Zap, Award } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useModalState } from "@/shared/hooks/useModalState";
+import { useToast } from "@/shared/hooks/use-toast";
 import ModalOverlay from "@/shared/components/ModalOverlay";
 import RideSearchModal from "@/shared/components/modals/RideSearchModal";
 import RideCreateModal from "@/shared/components/modals/RideCreateModal";
 import HotelSearchModal from "@/shared/components/modals/HotelSearchModal";
-import LocationAutocomplete from "@/shared/components/LocationAutocomplete";
+import LocationAutocomplete, { LocationOption } from "@/shared/components/LocationAutocomplete";
+import { format, parseISO, addDays, formatISO } from 'date-fns';
 
 interface RideHighlight {
   from: string;
@@ -46,11 +48,192 @@ interface ApiHighlights {
   featuredEvents: EventHighlight[];
 }
 
+// ✅ CORREÇÃO: Interface estendida para searchQuery com LocationOption
+interface SearchQuery {
+  from: string;
+  to: string;
+  date: string;
+  fromId?: string;
+  toId?: string;
+  fromOption?: LocationOption;  // ✅ NOVO: armazena o objeto completo
+  toOption?: LocationOption;    // ✅ NOVO: armazena o objeto completo
+}
+
+// ✅ CORREÇÃO: Componentes separados para melhor organização
+const RidesList = ({ rides, user }: { rides: RideHighlight[], user: any }) => (
+  <>
+    {rides.slice(0, 6).map((ride, index) => (
+      <Card key={index} className="border-l-4 border-l-blue-500 overflow-hidden hover:shadow-lg transition-shadow">
+        <div className="h-40 bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center border-b relative">
+          <div className="text-center">
+            <Car className="w-12 h-12 text-blue-600 mb-2" />
+            <span className="text-xs text-gray-600">Foto do veículo</span>
+          </div>
+          <div className="absolute top-2 right-2">
+            <Badge className="bg-blue-500 text-white text-xs">Popular</Badge>
+          </div>
+        </div>
+        <CardContent className="pt-4">
+          <div className="mb-3">
+            <h3 className="font-semibold text-lg flex items-center gap-2 mb-1">
+              <span>{ride.from} → {ride.to}</span>
+            </h3>
+            <div className="flex items-center justify-between text-sm text-gray-600">
+              <div className="flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                <span>{ride.driver}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                <span className="font-medium">{ride.rating}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xl font-bold text-green-600">{ride.price} MZN</p>
+              <div className="text-xs text-gray-500">
+                por pessoa
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <Calendar className="w-3 h-3" />
+              <span>{ride.date ? format(parseISO(ride.date), 'dd/MM/yyyy') : '-'}</span>
+              <Clock className="w-3 h-3 ml-2" />
+              <span>Partida às 07:00</span>
+            </div>
+          </div>
+          
+          {user ? (
+            <Button className="w-full bg-blue-600 hover:bg-blue-700" size="sm" data-testid={`button-book-ride-${index}`}>
+              Ver Detalhes & Reservar
+            </Button>
+          ) : (
+            <Link href="/signup" className="block w-full">
+              <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-ride-${index}`}>
+                Registar para Reservar
+              </Button>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+    ))}
+  </>
+);
+
+const StaysList = ({ stays, user }: { stays: HotelHighlight[], user: any }) => (
+  <>
+    {stays.map((stay, index) => (
+      <Card key={index} className="border-l-4 border-l-green-500 overflow-hidden">
+        <div className="h-48 bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center border-b">
+          <div className="text-center">
+            <span className="text-4xl mb-2 block">{stay.image}</span>
+            <span className="text-sm text-gray-600">Foto do alojamento</span>
+          </div>
+        </div>
+        <CardContent className="pt-4">
+          <div className="mb-2">
+            <h3 className="font-semibold text-lg">{stay.name}</h3>
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              {stay.location}
+            </p>
+          </div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-2xl font-bold text-green-600">{stay.price} MZN/noite</p>
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+              <span className="font-medium">{stay.rating}</span>
+            </div>
+          </div>
+          {user ? (
+            <Button className="w-full" size="sm" data-testid={`button-book-stay-${index}`}>
+              Reservar Estadia
+            </Button>
+          ) : (
+            <Link href="/signup" className="block w-full">
+              <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-stay-${index}`}>
+                Registar para Reservar
+              </Button>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+    ))}
+  </>
+);
+
+const EventsList = ({ events, user }: { events: EventHighlight[], user: any }) => (
+  <>
+    {events.map((event, index) => (
+      <Card key={index} className="border-l-4 border-l-purple-500 overflow-hidden">
+        <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center border-b">
+          <div className="text-center">
+            <span className="text-4xl mb-2 block">{event.image}</span>
+            <span className="text-sm text-gray-600">Foto do evento</span>
+          </div>
+        </div>
+        <CardContent className="pt-4">
+          <div className="mb-2">
+            <h3 className="font-semibold text-lg">{event.name}</h3>
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              {event.location}
+            </p>
+          </div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-2xl font-bold text-green-600">{event.price} MZN</p>
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <Calendar className="w-3 h-3" />
+              <span>{event.date ? format(parseISO(event.date), 'dd/MM/yyyy') : '-'}</span>
+            </p>
+          </div>
+          {user ? (
+            <Button className="w-full" size="sm" data-testid={`button-book-event-${index}`}>
+              Reservar Ingresso
+            </Button>
+          ) : (
+            <Link href="/signup" className="block w-full">
+              <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-event-${index}`}>
+                Registar para Reservar
+              </Button>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+    ))}
+  </>
+);
+
+// ✅ CORREÇÃO: Interface tipada para ofertas especiais
+interface SpecialOffer {
+  from: string;
+  to: string;
+  price: number;
+  date: string;
+  driver: string;
+  rating: number;
+  isSpecial: boolean;
+  discount: string;
+}
+
 export default function Home() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [searchType, setSearchType] = useState<"rides" | "stays" | "events">("rides");
-  const [searchQuery, setSearchQuery] = useState({ from: "", to: "", date: "" });
+  
+  // ✅ CORREÇÃO: Inicializar também fromId, toId, fromOption e toOption
+  const [searchQuery, setSearchQuery] = useState<SearchQuery>({ 
+    from: "", 
+    to: "", 
+    date: "",
+    fromId: undefined,
+    toId: undefined,
+    fromOption: undefined,
+    toOption: undefined,
+  });
   
   // Estado dos modais
   const {
@@ -63,101 +246,196 @@ export default function Home() {
     closeHotelSearch,
   } = useModalState();
 
-  // ✅ FUNÇÃO CORRIGIDA: Buscar viagens na API via GET
-const handleSearch = async () => {
-  console.log('Busca:', { type: searchType, ...searchQuery });
+  // ✅ CORREÇÃO: Função auxiliar para mostrar toast
+  const showToast = (
+    title: string, 
+    description: string, 
+    variant: 'default' | 'destructive' = 'default', 
+    action?: React.ReactNode
+  ) => {
+    toast({ title, description, variant, action });
+  };
 
-  if (searchType === "rides") {
+  // ✅ CORREÇÃO: Função para calcular check-out automático usando date-fns
+  const calculateCheckOut = (checkIn: string): string => {
+    if (!checkIn) return '';
     try {
-      // Converter parâmetros em query string
-      const params = new URLSearchParams({
-        from: searchQuery.from,
-        to: searchQuery.to,
-        date: searchQuery.date,
-        passengers: '1'
-      }).toString();
+      const checkInDate = parseISO(checkIn);
+      const checkOutDate = addDays(checkInDate, 1);
+      return formatISO(checkOutDate, { representation: 'date' });
+    } catch (error) {
+      console.error('Erro ao calcular check-out:', error);
+      return '';
+    }
+  };
 
-      // Fazer fetch via GET
-      const response = await fetch(`/api/rides-simple/search?${params}`);
+  // ✅ CORREÇÃO: Função para mudança manual do input - AGORA RECEBE LocationOption DIRETAMENTE
+  const handleInputChange = (locationOption: LocationOption, type: 'from' | 'to') => {
+    setSearchQuery(prev => ({
+      ...prev,
+      [type]: locationOption.label, // ✅ usa o label do LocationOption
+      // Limpa o ID e option quando o usuário digita manualmente
+      [`${type}Id`]: undefined,
+      [`${type}Option`]: undefined
+    }));
+  };
 
-      if (response.ok) {
-        const results = await response.json();
+  // ✅ CORREÇÃO: Função para lidar com seleção de localização - AGORA RECEBE LocationOption DIRETAMENTE
+  const handleLocationSelect = (locationOption: LocationOption, type: 'from' | 'to' = 'from') => {
+    if (!locationOption || !locationOption.label) {
+      showToast(
+        "Localização inválida", 
+        "Por favor, selecione uma localização válida da lista.", 
+        "destructive"
+      );
+      return;
+    }
+    
+    setSearchQuery(prev => ({
+      ...prev,
+      [type]: locationOption.label, // ✅ string para display
+      [`${type}Id`]: locationOption.id, // ✅ id da localização
+      [`${type}Option`]: locationOption // ✅ objeto completo
+    }));
+  };
 
-        // ✅ SALVAR NO SESSIONSTORAGE COMO BACKUP
-        sessionStorage.setItem('lastSearchResults', JSON.stringify({
-          rides: results,
-          searchParams: {
-            from: searchQuery.from,
-            to: searchQuery.to,
-            date: searchQuery.date,
-            passengers: 1
-          }
-        }));
+  // ✅ CORREÇÃO: Função de logout usando sessionStorage
+  const handleLogout = () => {
+    // Limpar dados da sessão
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('authToken');
+    sessionStorage.removeItem('lastSearchResults');
+    sessionStorage.removeItem('ridesSearchData');
+    
+    // Recarregar a página para limpar estado
+    window.location.href = '/';
+  };
 
-        // ✅ NAVEGAR COM STATE CORRETAMENTE
-        setLocation('/rides/search', {
-          state: {
-            rides: results,
-            searchParams: {
-              from: searchQuery.from,
-              to: searchQuery.to,
-              date: searchQuery.date,
-              passengers: 1
-            }
-          }
-        });
-      } else {
-        console.error('Erro na API:', response.statusText);
-        // fallback: abrir modal
-        openRideSearch({
+  // ✅✅✅ CORREÇÃO CRÍTICA: Função de busca simplificada - só navega, não busca
+  const handleSearch = async () => {
+    console.log('Busca:', { type: searchType, ...searchQuery });
+
+    // ✅ VALIDAÇÃO 1: Usuário não logado
+    if (!user) {
+      showToast(
+        "Conta necessária",
+        "Precisa de criar uma conta gratuita para fazer reservas.",
+        "default",
+        (
+          <Link href="/signup">
+            <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+              Criar Conta
+            </Button>
+          </Link>
+        )
+      );
+      return;
+    }
+
+    // ✅ VALIDAÇÃO 2: Localização obrigatória
+    if (!searchQuery.from) {
+      showToast(
+        "Localização necessária",
+        "Por favor, selecione uma localização.",
+        "destructive"
+      );
+      return;
+    }
+
+    // ✅ VALIDAÇÃO 3: Data obrigatória
+    if (!searchQuery.date) {
+      showToast(
+        "Data necessária",
+        "Por favor, selecione uma data.",
+        "destructive"
+      );
+      return;
+    }
+
+    // ✅ VALIDAÇÃO 4: Para estadias, verificar se localização foi selecionada da lista
+    if (searchType === "stays" && !searchQuery.fromOption?.id) {
+      showToast(
+        "Selecione uma localização",
+        "Por favor, escolha uma localização da lista de sugestões para resultados precisos.",
+        "destructive"
+      );
+      return;
+    }
+
+    // ✅ VALIDAÇÃO 5: Para rides, destino obrigatório
+    if (searchType === "rides" && !searchQuery.to) {
+      showToast(
+        "Destino necessário",
+        "Por favor, selecione um destino para a viagem.",
+        "destructive"
+      );
+      return;
+    }
+
+    // ✅✅✅ CORREÇÃO CRÍTICA: Só navegar, a página de search faz a busca
+    try {
+      if (searchType === "rides") {
+        // ✅ Só criar query params e navegar - SEM BUSCAR
+        const queryParams = new URLSearchParams({
           from: searchQuery.from,
           to: searchQuery.to,
           date: searchQuery.date,
-          passengers: 1
+          passengers: '1',
+          fromId: searchQuery.fromOption?.id || '',
+          toId: searchQuery.toOption?.id || ''
+        }).toString();
+        
+        console.log('🚀 Navegando para search com params:', queryParams);
+        setLocation(`/rides/search?${queryParams}`);
+        
+      } else if (searchType === "stays") {
+        openHotelSearch({
+          location: searchQuery.from,
+          locationId: searchQuery.fromOption?.id, // ✅ usa o ID do option
+          checkIn: searchQuery.date,
+          checkOut: calculateCheckOut(searchQuery.date),
+          guests: 2
         });
+      } else if (searchType === "events") {
+        const searchParams = new URLSearchParams({
+          location: searchQuery.from,
+          date: searchQuery.date
+        }).toString();
+        window.location.href = `/eventos?${searchParams}`;
       }
     } catch (error) {
-      console.error('Erro na busca:', error);
-      openRideSearch({
-        from: searchQuery.from,
-        to: searchQuery.to,
-        date: searchQuery.date,
-        passengers: 1
-      });
+      console.error('Erro na navegação:', error);
+      showToast(
+        "Erro na navegação",
+        "Ocorreu um erro ao processar sua busca. Tente novamente.",
+        "destructive"
+      );
     }
-  } else if (searchType === "stays") {
-    openHotelSearch({
-      location: searchQuery.from,
-      checkIn: searchQuery.date,
-      checkOut: '',
-      guests: 2
-    });
-  } else if (searchType === "events") {
-    const searchParams = new URLSearchParams({
-      location: searchQuery.from,
-      date: searchQuery.date
-    }).toString();
-    window.location.href = `/eventos?${searchParams}`;
-  }
-};
-  // ✅ NOVA FUNÇÃO: Navegar para página de resultados com dados
-  const handleShowAllResults = (rides: any[], searchParams: any) => {
-    // ✅ CORREÇÃO: Passar o state corretamente como segundo parâmetro
-    setLocation('/rides/search', { 
-      state: {
-        rides,
-        searchParams: {
-          from: searchParams.from || "",
-          to: searchParams.to || "",
-          date: searchParams.date || "",
-          passengers: searchParams.passengers || 1
-        }
-      }
-    });
   };
 
-  const handleLogout = () => {
-    console.log('Logout');
+  // ✅ CORREÇÃO: Navegar para página de resultados usando query params
+  const handleShowAllResults = (rides: any[], searchParams: any) => {
+    // Salvar dados completos no sessionStorage
+    sessionStorage.setItem('ridesSearchData', JSON.stringify({
+      rides,
+      searchParams: {
+        from: searchParams.from || searchQuery.from || "",
+        to: searchParams.to || searchQuery.to || "",
+        date: searchParams.date || searchQuery.date || "",
+        passengers: searchParams.passengers || 1
+      }
+    }));
+
+    // Usar query params para navegação
+    const queryParams = new URLSearchParams({
+      from: searchParams.from || searchQuery.from || "",
+      to: searchParams.to || searchQuery.to || "",
+      date: searchParams.date || searchQuery.date || "",
+      passengers: (searchParams.passengers || 1).toString(),
+      source: 'home_highlights'
+    }).toString();
+
+    setLocation(`/rides/search?${queryParams}`);
   };
 
   // ✅ Dados mock para evitar erros 404
@@ -181,11 +459,15 @@ const handleSearch = async () => {
     ]
   };
 
-  // Dados para ofertas especiais
-  const specialRideOffers = [
+  // ✅ CORREÇÃO: Dados para ofertas especiais com tipagem correta
+  const specialRideOffers: SpecialOffer[] = [
     { from: "Maputo", to: "Vilanculos", price: 1800, date: "2024-01-20", driver: "Sofia R.", rating: 4.9, isSpecial: true, discount: "20% OFF" },
-    { from: "Beira", to: "Gorongosa", price: 800, date: "2024-01-21", driver: "Manuel C.", rating: 4.8, isSpecial: true, discount: "Oferta VIP" }
+    { from: "Beira", to: "Gorongosa", price: 800, date: "2024-01-21", driver: "Manuel C.", rating: 4.8, isSpecial: true, discount: "Oferta VIP" },
+    { from: "Nampula", to: "Pemba", price: 1200, date: "2024-01-22", driver: "Antonio M.", rating: 4.7, isSpecial: false, discount: "" }
   ];
+
+  // ✅ CORREÇÃO: Filtrar apenas ofertas especiais
+  const filteredSpecialOffers = specialRideOffers.filter(offer => offer.isSpecial);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -289,7 +571,7 @@ const handleSearch = async () => {
               Bem-vindo ao Futuro do Turismo em Moçambique
             </h2>
             <p className="text-xl mb-8 max-w-3xl mx-auto opacity-90">
-              Encontre boleias, alojamentos and eventos incríveis. Conecte-se com motoristas e anfitriões verificados. 
+              Encontre boleias, alojamentos e eventos incríveis. Conecte-se com motoristas e anfitriões verificados. 
               Desfrute de descontos exclusivos e uma experiência única de viagem.
             </p>
             
@@ -380,7 +662,8 @@ const handleSearch = async () => {
                 <LocationAutocomplete
                   id="search-from"
                   value={searchQuery.from}
-                  onChange={(value) => setSearchQuery({...searchQuery, from: value})}
+                  onChange={(locationOption) => handleInputChange(locationOption, 'from')} // ✅ AGORA RECEBE LocationOption DIRETAMENTE
+                  onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'from')} // ✅ AGORA RECEBE LocationOption DIRETAMENTE
                   placeholder={searchType === "rides" ? "Cidade de origem (Moçambique)" : "Onde quer ficar (Moçambique)"}
                 />
               </div>
@@ -390,7 +673,8 @@ const handleSearch = async () => {
                   <LocationAutocomplete
                     id="search-to"
                     value={searchQuery.to}
-                    onChange={(value) => setSearchQuery({...searchQuery, to: value})}
+                    onChange={(locationOption) => handleInputChange(locationOption, 'to')} // ✅ AGORA RECEBE LocationOption DIRETAMENTE
+                    onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'to')} // ✅ AGORA RECEBE LocationOption DIRETAMENTE
                     placeholder="Cidade de destino (Moçambique)"
                   />
                 </div>
@@ -402,10 +686,15 @@ const handleSearch = async () => {
                   value={searchQuery.date}
                   onChange={(e) => setSearchQuery({...searchQuery, date: e.target.value})}
                   data-testid="input-date"
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
               <div className="flex items-end">
-                <Button onClick={handleSearch} className="w-full" data-testid="button-search">
+                <Button 
+                  onClick={handleSearch} 
+                  className="w-full" 
+                  data-testid="button-search"
+                >
                   <Search className="w-4 h-4 mr-2" />
                   {user ? 'Buscar' : 'Ver Disponibilidade'}
                 </Button>
@@ -429,10 +718,17 @@ const handleSearch = async () => {
                 </div>
               </div>
             )}
+
+            {/* ✅ FEEDBACK VISUAL: Atualizado para usar fromOption */}
+            {searchType === "stays" && searchQuery.from && !searchQuery.fromOption?.id && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                ⚠️ Por favor, selecione uma localização da lista de sugestões para obter resultados precisos
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {searchType === "rides" && specialRideOffers && specialRideOffers.length > 0 && (
+        {searchType === "rides" && filteredSpecialOffers && filteredSpecialOffers.length > 0 && (
           <Card className="mb-8 border-2 border-dashed border-yellow-300 bg-gradient-to-r from-yellow-50 to-orange-50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -445,7 +741,7 @@ const handleSearch = async () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {specialRideOffers.map((offer: any, index: number) => (
+                {filteredSpecialOffers.map((offer: SpecialOffer, index: number) => (
                   <Card key={index} className="border-2 border-yellow-400 bg-white shadow-lg hover:shadow-xl transition-shadow">
                     <CardContent className="pt-4">
                       <div className="flex justify-between items-start mb-3">
@@ -475,7 +771,7 @@ const handleSearch = async () => {
                         <div className="flex items-center gap-4 text-xs text-gray-600">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
-                            {offer.date}
+                            {offer.date ? format(parseISO(offer.date), 'dd/MM/yyyy') : '-'}
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
@@ -521,149 +817,15 @@ const handleSearch = async () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {searchType === "rides" && (
-                <>
-                  {weeklyHighlights.topRides.slice(0, 6).map((ride, index) => (
-                    <Card key={index} className="border-l-4 border-l-blue-500 overflow-hidden hover:shadow-lg transition-shadow">
-                      <div className="h-40 bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center border-b relative">
-                        <div className="text-center">
-                          <Car className="w-12 h-12 text-blue-600 mb-2" />
-                          <span className="text-xs text-gray-600">Foto do veículo</span>
-                        </div>
-                        <div className="absolute top-2 right-2">
-                          <Badge className="bg-blue-500 text-white text-xs">Popular</Badge>
-                        </div>
-                      </div>
-                      <CardContent className="pt-4">
-                        <div className="mb-3">
-                          <h3 className="font-semibold text-lg flex items-center gap-2 mb-1">
-                            <span>{ride.from} → {ride.to}</span>
-                          </h3>
-                          <div className="flex items-center justify-between text-sm text-gray-600">
-                            <div className="flex items-center gap-1">
-                              <Users className="w-3 h-3" />
-                              <span>{ride.driver}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                              <span className="font-medium">{ride.rating}</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2 mb-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xl font-bold text-green-600">{ride.price} MZN</p>
-                            <div className="text-xs text-gray-500">
-                              por pessoa
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <Calendar className="w-3 h-3" />
-                            <span>{new Date(ride.date).toLocaleDateString('pt-MZ')}</span>
-                            <Clock className="w-3 h-3 ml-2" />
-                            <span>Partida às 07:00</span>
-                          </div>
-                        </div>
-                        
-                        {user ? (
-                          <Button className="w-full bg-blue-600 hover:bg-blue-700" size="sm" data-testid={`button-book-ride-${index}`}>
-                            Ver Detalhes & Reservar
-                          </Button>
-                        ) : (
-                          <Link href="/signup" className="block w-full">
-                            <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-ride-${index}`}>
-                              Registar para Reservar
-                            </Button>
-                          </Link>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </>
+                <RidesList rides={weeklyHighlights.topRides} user={user} />
               )}
 
               {searchType === "stays" && (
-                <>
-                  {weeklyHighlights.topHotels.map((stay, index) => (
-                    <Card key={index} className="border-l-4 border-l-green-500 overflow-hidden">
-                      <div className="h-48 bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center border-b">
-                        <div className="text-center">
-                          <span className="text-4xl mb-2 block">{stay.image}</span>
-                          <span className="text-sm text-gray-600">Foto do alojamento</span>
-                        </div>
-                      </div>
-                      <CardContent className="pt-4">
-                        <div className="mb-2">
-                          <h3 className="font-semibold text-lg">{stay.name}</h3>
-                          <p className="text-sm text-gray-600 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {stay.location}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-2xl font-bold text-green-600">{stay.price} MZN/noite</p>
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="font-medium">{stay.rating}</span>
-                          </div>
-                        </div>
-                        {user ? (
-                          <Button className="w-full" size="sm" data-testid={`button-book-stay-${index}`}>
-                            Reservar Estadia
-                          </Button>
-                        ) : (
-                          <Link href="/signup" className="block w-full">
-                            <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-stay-${index}`}>
-                              Registar para Reservar
-                            </Button>
-                          </Link>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </>
+                <StaysList stays={weeklyHighlights.topHotels} user={user} />
               )}
 
               {searchType === "events" && (
-                <>
-                  {weeklyHighlights.featuredEvents.map((event, index) => (
-                    <Card key={index} className="border-l-4 border-l-purple-500 overflow-hidden">
-                      <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center border-b">
-                        <div className="text-center">
-                          <span className="text-4xl mb-2 block">{event.image}</span>
-                          <span className="text-sm text-gray-600">Foto do evento</span>
-                        </div>
-                      </div>
-                      <CardContent className="pt-4">
-                        <div className="mb-2">
-                          <h3 className="font-semibold text-lg">{event.name}</h3>
-                          <p className="text-sm text-gray-600 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {event.location}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-2xl font-bold text-green-600">{event.price} MZN</p>
-                          <p className="text-sm text-gray-600 flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {event.date}
-                          </p>
-                        </div>
-                        {user ? (
-                          <Button className="w-full" size="sm" data-testid={`button-book-event-${index}`}>
-                            Reservar Ingresso
-                          </Button>
-                        ) : (
-                          <Link href="/signup" className="block w-full">
-                            <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-event-${index}`}>
-                              Registar para Reservar
-                            </Button>
-                          </Link>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </>
+                <EventsList events={weeklyHighlights.featuredEvents} user={user} />
               )}
             </div>
             
@@ -674,9 +836,7 @@ const handleSearch = async () => {
                   size="lg" 
                   className="border-blue-500 text-blue-600 hover:bg-blue-50"
                   onClick={() => handleShowAllResults(weeklyHighlights.topRides, {
-                    from: "",
-                    to: "", 
-                    date: "",
+                    ...searchQuery,
                     passengers: 1
                   })}
                   data-testid="button-view-all-rides"
@@ -734,7 +894,8 @@ const handleSearch = async () => {
           </Card>
         )}
       </div>
-      
+
+      {/* ✅ CORREÇÃO: Modal de Busca de Viagens com fallback */}
       <ModalOverlay 
         isOpen={modalState.rideSearch.isOpen} 
         onClose={closeRideSearch}
@@ -742,12 +903,11 @@ const handleSearch = async () => {
         maxWidth="6xl"
       >
         <RideSearchModal 
-          initialParams={modalState.rideSearch.params}
-          onClose={closeRideSearch}
-          onShowAllResults={handleShowAllResults}
+          initialParams={modalState.rideSearch.params || { from: '', to: '', date: '', passengers: 1 }}
         />
       </ModalOverlay>
       
+      {/* ✅ CORREÇÃO: Modal de Criar Viagem */}
       <ModalOverlay 
         isOpen={modalState.rideCreate.isOpen} 
         onClose={closeRideCreate}
@@ -755,11 +915,12 @@ const handleSearch = async () => {
         maxWidth="4xl"
       >
         <RideCreateModal 
-          initialParams={modalState.rideCreate.params}
+          initialParams={modalState.rideCreate.params || { from: '', to: '', date: '', passengers: 1 }}
           onClose={closeRideCreate}
         />
       </ModalOverlay>
       
+      {/* ✅ CORREÇÃO: Modal de Busca de Hotéis */}
       <ModalOverlay 
         isOpen={modalState.hotelSearch.isOpen} 
         onClose={closeHotelSearch}

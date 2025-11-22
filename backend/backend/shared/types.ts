@@ -10,7 +10,16 @@ import { z } from 'zod';
 
 export const USER_ROLES = ['client', 'driver', 'hotel_manager', 'admin'] as const;
 export const VERIFICATION_STATUSES = ['pending', 'in_review', 'verified', 'rejected'] as const;
-export const BOOKING_STATUSES = ['pending', 'confirmed', 'cancelled', 'completed', 'in_progress', 'approved', 'rejected'] as const;
+export const BOOKING_STATUSES = [
+  'pending',
+  'confirmed',
+  'cancelled',
+  'completed',
+  'in_progress',
+  'approved',
+  'rejected',
+  'available', // ✅ adicionado
+] as const;
 export const BOOKING_TYPES = ['ride', 'accommodation', 'event'] as const;
 export const SERVICE_TYPES = ['ride', 'stay', 'event'] as const;
 export const DOCUMENT_TYPES = ['identity', 'profile_photo', 'vehicle_registration', 'driving_license', 'vehicle_insurance'] as const;
@@ -18,6 +27,13 @@ export const PAYMENT_METHODS = ['card', 'mpesa', 'bank', 'mobile_money', 'bank_t
 export const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'] as const;
 export const MESSAGE_TYPES = ['text', 'image', 'file', 'system'] as const;
 export const NOTIFICATION_TYPES = ['booking', 'message', 'payment', 'verification', 'system'] as const;
+export const RIDE_STATUSES = [
+  'pending',
+  'active',
+  'completed',
+  'cancelled',
+  'available', // ✅ adicionado
+] as const;
 
 // ===== TYPE UNIONS =====
 
@@ -31,6 +47,7 @@ export type PaymentMethod = typeof PAYMENT_METHODS[number];
 export type PaymentStatus = typeof PAYMENT_STATUSES[number];
 export type MessageType = typeof MESSAGE_TYPES[number];
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
+export type RideStatus = typeof RIDE_STATUSES[number];
 
 // ===== BASE INTERFACES =====
 
@@ -93,7 +110,6 @@ export interface AuthenticatedUser {
   firstName?: string;
   lastName?: string;
   profileImageUrl?: string;
-  // Index signature para compatibilidade com propriedades extras
   [key: string]: any;
 }
 
@@ -104,44 +120,37 @@ export interface AuthenticatedRequest extends Request {
 // ===== USER TYPES =====
 
 export interface UserProfile extends BaseEntity {
-  // Core info
   email: string | null;
   firstName: string | null;
   lastName: string | null;
   fullName: string | null;
   phone: string | null;
   
-  // System data
   userType: UserRole;
   roles: UserRole[];
   canOfferServices: boolean;
   isVerified: boolean;
   isBlocked?: boolean;
   
-  // Profile data
   profileImageUrl: string | null;
   avatar: string | null;
   rating: number;
   totalReviews: number;
   
-  // Verification data
   verificationStatus: VerificationStatus;
   verificationDate: Date | null;
   verificationNotes: string | null;
   verificationBadge: string | null;
   badgeEarnedDate: Date | null;
   
-  // Documents
   identityDocumentUrl: string | null;
   identityDocumentType: string | null;
   profilePhotoUrl: string | null;
   documentNumber: string | null;
   dateOfBirth: Date | null;
   
-  // Status
   registrationCompleted: boolean;
 
-  // Auth claims (para Firebase/auth0)
   claims?: {
     sub?: string;
     email?: string;
@@ -210,7 +219,6 @@ export interface SupportTicket extends BaseEntity {
   assignedAgentId?: string;
 }
 
-// Simplified ChatRoom for backward compatibility  
 export interface SimpleChatRoom {
   id: string;
   fromUserId: string;
@@ -246,8 +254,8 @@ export interface Booking extends BaseEntity {
   rideId?: string;
   passengerId?: string;
   seatsBooked: number;
-  totalPrice: string;
-  status?: string;
+  totalPrice: number; // ✅ CORRIGIDO: de string para number
+  status?: BookingStatus; // ✅ CORRIGIDO: usando enum
   accommodationId?: string;
   eventId?: string;
   type: BookingType;
@@ -297,10 +305,10 @@ export interface Ride extends BaseEntity {
   departureDate: Date;
   departureTime: string;
   availableSeats: number;
-  pricePerSeat: string;
+  pricePerSeat: number; // ✅ CORRIGIDO: de string para number
   vehicleType?: string;
   additionalInfo?: string;
-  status: string;
+  status: RideStatus; // ✅ CORRIGIDO: usando enum
   driver?: UserProfile;
 }
 
@@ -323,10 +331,10 @@ export interface Accommodation extends BaseEntity {
   type: string;
   hostId: string;
   address: string;
-  lat?: string;
-  lng?: string;
-  pricePerNight: string;
-  rating?: string;
+  lat?: number; // ✅ CORRIGIDO: de string para number
+  lng?: number; // ✅ CORRIGIDO: de string para number
+  pricePerNight: number; // ✅ CORRIGIDO: de string para number
+  rating?: number; // ✅ CORRIGIDO: de string para number
   reviewCount: number;
   images: string[];
   amenities: string[];
@@ -334,8 +342,8 @@ export interface Accommodation extends BaseEntity {
   distanceFromCenter?: string;
   isAvailable: boolean;
   offerDriverDiscounts: boolean;
-  driverDiscountRate: string;
-  minimumDriverLevel: string;
+  driverDiscountRate: number; // ✅ CORRIGIDO: de string para number
+  minimumDriverLevel: number; // ✅ CORRIGIDO: de string para number
   partnershipBadgeVisible: boolean;
   host?: UserProfile;
 }
@@ -377,10 +385,78 @@ export const messageDataSchema = z.object({
   messageType: z.enum(MESSAGE_TYPES).default('text'),
 });
 
+// ✅ ATUALIZADO: Schema para Ride agora inclui 'available'
+export const createRideSchema = z.object({
+  driverId: z.string(),
+  fromLocation: z.string().min(1, "Local de partida é obrigatório"),
+  toLocation: z.string().min(1, "Local de destino é obrigatório"),
+  departureDate: z.date(),
+  departureTime: z.string().min(1, "Horário de partida é obrigatório"),
+  availableSeats: z.number().int().positive("Número de assentos deve ser positivo"),
+  pricePerSeat: z.number().positive("Preço por assento deve ser positivo"),
+  vehicleType: z.string().optional(),
+  additionalInfo: z.string().optional(),
+  status: z.enum(RIDE_STATUSES).optional(), // ✅ inclui 'available'
+});
+
+export const updateRideSchema = createRideSchema.partial();
+
+// ✅ ATUALIZADO: Schema para Booking agora inclui 'available'
+export const createBookingSchema = z.object({
+  rideId: z.string().optional(),
+  accommodationId: z.string().optional(),
+  eventId: z.string().optional(),
+  type: z.enum(BOOKING_TYPES),
+  passengerId: z.string(),
+  seatsBooked: z.number().int().positive().optional(),
+  totalPrice: z.number().positive("Preço total deve ser positivo"),
+  guestInfo: z.object({
+    name: z.string().min(1, "Nome é obrigatório"),
+    email: z.string().email("Email inválido"),
+    phone: z.string().min(1, "Telefone é obrigatório"),
+  }),
+  details: z.object({
+    passengers: z.number().int().positive().optional(),
+    checkIn: z.string().optional(),
+    checkOut: z.string().optional(),
+    totalAmount: z.number().positive("Valor total deve ser positivo"),
+  }),
+  status: z.enum(BOOKING_STATUSES).optional(), // ✅ inclui 'available'
+});
+
+export const updateBookingSchema = createBookingSchema.partial();
+
+// ✅ ADICIONADO: Schema para Accommodation
+export const createAccommodationSchema = z.object({
+  name: z.string().min(1, "Nome é obrigatório"),
+  type: z.string().min(1, "Tipo é obrigatório"),
+  hostId: z.string(),
+  address: z.string().min(1, "Endereço é obrigatório"),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  pricePerNight: z.number().positive("Preço por noite deve ser positivo"),
+  rating: z.number().min(0).max(5).optional(),
+  reviewCount: z.number().int().nonnegative().default(0),
+  images: z.array(z.string().url()).default([]),
+  amenities: z.array(z.string()).default([]),
+  description: z.string().optional(),
+  distanceFromCenter: z.string().optional(),
+  isAvailable: z.boolean().default(true),
+  offerDriverDiscounts: z.boolean().default(false),
+  driverDiscountRate: z.number().min(0).max(100).default(0),
+  minimumDriverLevel: z.number().int().nonnegative().default(0),
+  partnershipBadgeVisible: z.boolean().default(false),
+});
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type PaginationInput = z.infer<typeof paginationSchema>;
 export type MessageDataInput = z.infer<typeof messageDataSchema>;
+export type CreateRideInput = z.infer<typeof createRideSchema>;
+export type UpdateRideInput = z.infer<typeof updateRideSchema>;
+export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
+export type CreateAccommodationInput = z.infer<typeof createAccommodationSchema>;
 
 // ===== HELPER FUNCTIONS =====
 
@@ -413,8 +489,6 @@ export function hasAnyRole(user: AuthenticatedUser, roles: UserRole[]): boolean 
   return roles.some(role => user.roles?.includes(role)) || false;
 }
 
-// ===== TYPE GUARDS FOR SAFE ACCESS =====
-
 export function isAuthenticatedRequest(req: Request): req is AuthenticatedRequest {
   return 'user' in req;
 }
@@ -429,4 +503,32 @@ export function requireAuthenticatedUser(req: Request): AuthenticatedUser {
     throw new Error('Authentication required');
   }
   return user;
+}
+
+// ✅ ATUALIZADO: Funções de validação para enums agora incluem 'available'
+export function isValidBookingStatus(status: string): status is BookingStatus {
+  return BOOKING_STATUSES.includes(status as BookingStatus);
+}
+
+export function isValidRideStatus(status: string): status is RideStatus {
+  return RIDE_STATUSES.includes(status as RideStatus);
+}
+
+export function isValidUserRole(role: string): role is UserRole {
+  return USER_ROLES.includes(role as UserRole);
+}
+
+// ✅ ADICIONADO: Funções de conversão para garantir tipos numéricos
+export function ensureNumber(value: any): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const num = parseFloat(value);
+    return isNaN(num) ? 0 : num;
+  }
+  return 0;
+}
+
+export function ensurePositiveNumber(value: any, defaultValue: number = 0): number {
+  const num = ensureNumber(value);
+  return num >= 0 ? num : defaultValue;
 }

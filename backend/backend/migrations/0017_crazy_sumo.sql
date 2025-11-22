@@ -1,0 +1,27 @@
+ALTER TABLE "accommodations" ALTER COLUMN "hostId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "adminActions" ALTER COLUMN "adminId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "adminActions" ALTER COLUMN "targetUserId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "bookings" ALTER COLUMN "passengerId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "chatMessages" ALTER COLUMN "fromUserId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "chatMessages" ALTER COLUMN "toUserId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "chatRooms" ALTER COLUMN "participantOneId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "chatRooms" ALTER COLUMN "participantTwoId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "driverDocuments" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "driverStats" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "eventManagers" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "events" ALTER COLUMN "organizerId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "loyaltyProgram" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "notifications" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "partnershipApplications" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "payments" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "pickupRequests" ALTER COLUMN "passengerId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "pickupRequests" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "pointsHistory" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "priceNegotiations" ALTER COLUMN "passengerId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "priceNegotiations" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "ratings" ALTER COLUMN "fromUserId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "ratings" ALTER COLUMN "toUserId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "rewardRedemptions" ALTER COLUMN "userId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "rides" ALTER COLUMN "driverId" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "id" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "id" DROP DEFAULT;
