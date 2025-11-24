@@ -14,8 +14,9 @@ import PageHeader from "@/shared/components/PageHeader";
 import MobileNavigation from "@/shared/components/MobileNavigation";
 import useAuth from "@/shared/hooks/useAuth";
 
-// ✅ IMPORTAR INTERFACE DO APISERVICE
-import { type Ride } from '@/services/api';
+// ✅ IMPORTAR INTERFACE E FUNÇÃO DE MAPEAMENTO
+import { type Ride } from '@/api/client/rides';
+import { mapRidesToFrontend, type RideFrontend } from '../../../../../types/rideFrontend';
 
 // ✅ CORREÇÃO: Interface MatchStats atualizada
 export interface MatchStats {
@@ -38,8 +39,8 @@ export interface RideMatchInfo {
   distance_to_city_km?: number;
 }
 
-// ✅ TIPO COMBINADO PARA RIDE COM MATCHING
-type RideWithMatch = Ride & RideMatchInfo;
+// ✅ TIPO COMBINADO PARA RIDE COM MATCHING - AGORA USANDO RideFrontend
+type RideWithMatch = RideFrontend & RideMatchInfo;
 
 // ✅ INTERFACE EXTENDIDA PARA PARÂMETROS DE BUSCA COM COORDENADAS
 interface RideSearchParamsExtended {
@@ -55,8 +56,6 @@ interface RideSearchParamsExtended {
   transportType?: string;
   fromCity?: string;
   toCity?: string;
-  fromDistrict?: string;
-  toDistrict?: string;
   fromId?: string;
   toId?: string;
 }
@@ -196,7 +195,7 @@ export default function RideSearchPage() {
     setLocation('/');
   };
 
-  // ✅✅✅ CORREÇÃO CRÍTICA: Função fetchSmartRides com parâmetros explícitos
+  // ✅✅✅ CORREÇÃO CRÍTICA: Função fetchSmartRides SIMPLIFICADA - SEM MAPEAMENTO MANUAL
   const fetchSmartRides = async (params: RideSearchParamsExtended): Promise<RideWithMatch[]> => {
     try {
       console.log('🧠 [SMART-FINAL] Buscando com parâmetros:', {
@@ -240,41 +239,10 @@ export default function RideSearchPage() {
       if (data.success && data.data) {
         const ridesArray = Array.isArray(data.data.rides) ? data.data.rides : [];
         
-        // ✅ CORREÇÃO: Mapear campos específicos do smart final
-        const mappedRides: RideWithMatch[] = ridesArray.map((ride: any) => ({
-          ...ride,
-          // ✅ Campos específicos do smart final (snake_case do backend)
-          id: ride.ride_id || ride.id,
-          driverId: ride.driver_id || ride.driverId,
-          match_type: ride.match_type,
-          route_compatibility: ride.route_compatibility,
-          matchScore: ride.route_compatibility, // ✅ Compatibilidade com frontend
-          dist_from_user_km: ride.distance_from_city_km,
-          distance_from_city_km: ride.distance_from_city_km,
-          distance_to_city_km: ride.distance_to_city_km,
-          // ✅ Campos de normalização do backend para frontend
-          fromLocation: ride.from_location || ride.from_city || ride.from_address || ride.fromLocation,
-          toLocation: ride.to_location || ride.to_city || ride.to_address || ride.toLocation,
-          fromAddress: ride.from_address || ride.from_location || ride.from_city || ride.fromAddress,
-          toAddress: ride.to_address || ride.to_location || ride.to_city || ride.toAddress,
-          price: ride.price || ride.price_per_seat,
-          pricePerSeat: ride.price_per_seat || ride.price,
-          availableSeats: ride.available_seats || ride.availableSeats,
-          vehicleType: ride.vehicle_type || ride.vehicleType,
-          departureDate: ride.departure_date || ride.departureDate,
-          departureTime: ride.departure_time || ride.departureTime,
-          driverName: ride.driver_name || ride.driverName,
-          // ✅ Informações do driver
-          driver: ride.driver || {
-            firstName: ride.driver_name?.split(' ')[0] || 'Motorista',
-            lastName: ride.driver_name?.split(' ').slice(1).join(' ') || '',
-            rating: ride.driver_rating || ride.driverRating,
-            isVerified: ride.is_verified_driver || ride.isVerifiedDriver
-          },
-          // ✅ ADICIONAR: Metadados de normalização do backend
-          search_metadata: ride.search_metadata || data.data?.search_metadata
-        }));
-
+        // ✅✅✅ CORREÇÃO CRÍTICA: USAR mapRidesToFrontend EM VEZ DE MAPEAMENTO MANUAL
+        console.log('🔄 [MAPEAMENTO-AUTO] Aplicando mapRidesToFrontend...');
+        const mappedRides: RideWithMatch[] = mapRidesToFrontend(ridesArray);
+        
         console.log('🎯 Rides mapeados do smart final:', mappedRides.length);
         
         // ✅ LOG DETALHADO DOS MATCHES ENCONTRADOS E NORMALIZAÇÃO
@@ -337,7 +305,9 @@ export default function RideSearchPage() {
       
       const data = await response.json();
       console.log('✅ [TRADITIONAL-SECONDARY] Resultados:', data.length);
-      return data;
+      
+      // ✅✅✅ CORREÇÃO: USAR mapRidesToFrontend também para resultados tradicionais
+      return mapRidesToFrontend(data);
       
     } catch (error) {
       console.error('❌ [TRADITIONAL-SECONDARY] Erro seguro:', error);
@@ -392,7 +362,7 @@ export default function RideSearchPage() {
     }
   };
 
-  // ✅✅✅ CORREÇÃO: executeSearchWithParams recebe parâmetros explicitamente
+  // ✅✅✅ CORREÇÃO: executeSearchWithParams recebe parâmetros explicitamente - AGORA COM MAPEAMENTO
   const executeSearchWithParams = async (params: RideSearchParamsExtended) => {
     console.log('🚀 [EXECUTE-SEARCH] Executando busca com parâmetros:', {
       from: params.from,
@@ -418,11 +388,16 @@ export default function RideSearchPage() {
         console.log('📊 [SECONDARY-TRADITIONAL-RESULTS] Resultados tradicionais:', searchResults.length);
       }
       
+      // ✅✅✅ CORREÇÃO CRÍTICA: MAPEAR OS RESULTADOS PARA O FRONTEND
+      console.log('🔄 [MAPEAMENTO] Aplicando mapeamento para frontend...');
+      const mappedRides: RideWithMatch[] = mapRidesToFrontend(searchResults);
+      console.log('✅ [MAPEAMENTO] Resultados mapeados:', mappedRides.length);
+      
       // ✅ CORREÇÃO: Exibir estatísticas de matching
-      if (searchResults.length > 0) {
-        const smartMatches = searchResults.filter(r => r.match_type).length;
-        const exactMatches = searchResults.filter(r => r.match_type === 'exact_match').length;
-        const similarMatches = searchResults.filter(r => 
+      if (mappedRides.length > 0) {
+        const smartMatches = mappedRides.filter(r => r.match_type).length;
+        const exactMatches = mappedRides.filter(r => r.match_type === 'exact_match').length;
+        const similarMatches = mappedRides.filter(r => 
           r.match_type === 'same_segment' || r.match_type === 'same_direction'
         ).length;
         
@@ -430,24 +405,25 @@ export default function RideSearchPage() {
         
         // ✅ FEEDBACK POSITIVO PARA BUSCA INTELIGENTE
         toast({
-          title: `🎯 ${searchResults.length} viagens encontradas`,
+          title: `🎯 ${mappedRides.length} viagens encontradas`,
           description: `${exactMatches} matchs exatos + ${similarMatches} rotas similares`,
           variant: "default",
           duration: 4000,
         });
       }
 
-      setRides(searchResults);
+      // ✅✅✅ CORREÇÃO: Usar os rides mapeados em vez dos originais
+      setRides(mappedRides);
       
       // ✅ ATUALIZAR SESSION STORAGE
       const searchState: LocationState = {
-        rides: searchResults,
+        rides: mappedRides,
         searchParams: params, // ✅ Usar params passados
         timestamp: Date.now()
       };
       sessionStorage.setItem('lastSearchResults', JSON.stringify(searchState));
 
-      if (searchResults.length === 0) {
+      if (mappedRides.length === 0) {
         toast({
           title: "Nenhuma viagem encontrada",
           description: "Tente aumentar o raio de busca para encontrar rotas similares",
@@ -455,7 +431,7 @@ export default function RideSearchPage() {
           duration: 3000,
         });
       } else {
-        console.log('✅ [SEARCH-SUCCESS] Busca concluída:', searchResults.length, 'resultados');
+        console.log('✅ [SEARCH-SUCCESS] Busca concluída:', mappedRides.length, 'resultados');
       }
 
     } catch (error) {
@@ -477,7 +453,7 @@ export default function RideSearchPage() {
   };
 
   // 🆕 Função para obter nome do motorista (compatibilidade) - CORRIGIDA
-  const getDriverName = (ride: Ride): string => {
+  const getDriverName = (ride: RideFrontend): string => {
     if (ride.driver) {
       // ✅ CORREÇÃO: Evitar "undefined undefined"
       return `${ride.driver.firstName ?? ''} ${ride.driver.lastName ?? ''}`.trim() || 'Motorista';
@@ -486,7 +462,7 @@ export default function RideSearchPage() {
   };
 
   // 🆕 Função para obter rating do motorista (compatibilidade) - CORRIGIDA
-  const getDriverRating = (ride: Ride): string => {
+  const getDriverRating = (ride: RideFrontend): string => {
     if (ride.driver?.rating !== undefined) {
       return ride.driver.rating.toString();
     }
@@ -494,7 +470,7 @@ export default function RideSearchPage() {
   };
 
   // 🆕 Função para calcular assentos disponíveis - CORRIGIDA
-  const getAvailableSeats = (ride: Ride): number => {
+  const getAvailableSeats = (ride: RideFrontend): number => {
     // ✅ CORREÇÃO: Tratar 0 corretamente
     return ride.availableSeats !== undefined ? ride.availableSeats : (ride.maxPassengers || 4) - (ride.currentPassengers || 0);
   };

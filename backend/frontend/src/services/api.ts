@@ -90,7 +90,7 @@ interface ChatMessage {
   isHotel: boolean;
 }
 
-// ✅ CORREÇÃO: Interfaces para Rides com tipagem consistente
+// ✅✅✅ INTERFACE RIDE COMPLETAMENTE CORRIGIDA COM TODOS OS NOVOS DADOS DO POSTGRESQL
 export interface Ride {
   id: string;
   driverId: string;
@@ -112,7 +112,7 @@ export interface Ride {
   driver?: {
     firstName: string;
     lastName: string;
-    rating?: number; // ✅ CORREÇÃO: Apenas number
+    rating?: number;
     isVerified?: boolean;
   };
   estimatedDuration?: number;
@@ -122,23 +122,54 @@ export interface Ride {
   status: string;
   type?: string;
   currentPassengers?: number;
+  
+  // ✅✅✅ NOVOS CAMPOS: Dados do motorista do PostgreSQL
   driverName?: string;
-  driverRating?: number; // ✅ CORREÇÃO: Apenas number | undefined
+  driverRating?: number;
+  
+  // ✅✅✅ NOVOS CAMPOS: Dados completos do veículo do PostgreSQL
+  vehicleInfoComplete?: {
+    make: string;
+    model: string;
+    type: string;
+    typeDisplay: string;
+    typeIcon: string;
+    plate: string;
+    color: string;
+    maxPassengers: number;
+  };
+  
   description?: string;
   vehiclePhoto?: string | null;
   availableIn?: number;
   isRoundTrip?: boolean;
   allowPickupEnRoute?: boolean;
   
-  // ✅ CORREÇÃO: Campos de matching inteligente - nomes do backend
+  // ✅✅✅ CAMPOS DE MATCHING INTELIGENTE - nomes do backend
   match_type?: string;
   route_compatibility?: number;
   match_description?: string;
   
-  // ✅ CORREÇÃO: Campos para compatibilidade (camelCase para frontend)
+  // ✅✅✅ CAMPOS PARA COMPATIBILIDADE (camelCase para frontend)
   matchScore?: number;
   matchType?: string;
   matchDescription?: string;
+  
+  // ✅✅✅ NOVOS CAMPOS: Dados geográficos do PostgreSQL
+  from_lat?: number;
+  from_lng?: number;
+  to_lat?: number;
+  to_lng?: number;
+  distance_from_city_km?: number;
+  distance_to_city_km?: number;
+  
+  // ✅✅✅ NOVOS CAMPOS: Dados de busca inteligente
+  search_metadata?: {
+    original_search: { from: string; to: string };
+    normalized_search: { from: string; to: string };
+    function_used?: string;
+    fallback_used?: boolean;
+  };
 }
 
 export interface RideSearchParams {
@@ -150,10 +181,11 @@ export interface RideSearchParams {
   maxPrice?: number;
   vehicleType?: string;
   smartSearch?: boolean;
-  maxDistance?: number; // ✅ NOVO: Parâmetro para busca inteligente
+  maxDistance?: number;
+  radiusKm?: number; // ✅✅✅ NOVO: Parâmetro para busca inteligente
 }
 
-// ✅ CORREÇÃO: Interface para MatchStats alinhada com backend
+// ✅✅✅ INTERFACE PARA MATCHSTATS ALINHADA COM BACKEND
 export interface MatchStats {
   exact_match?: number;
   same_segment?: number;
@@ -163,65 +195,321 @@ export interface MatchStats {
   potential?: number;
   traditional?: number;
   total: number;
-  smart_matches?: number; // ✅ NOVO: Campo específico para busca inteligente
+  smart_matches?: number;
+  // ✅✅✅ NOVAS ESTATÍSTICAS: Dados dos motoristas e veículos
+  drivers_with_ratings?: number;
+  average_driver_rating?: number;
+  vehicle_types?: Record<string, number>;
 }
 
 export interface RideSearchResponse {
   success: boolean;
   rides: Ride[];
-  matchStats?: MatchStats; // ✅ CORREÇÃO: Tipo específico
+  matchStats?: MatchStats;
   searchParams?: {
     from: string;
     to: string;
     date?: string;
     passengers?: number;
     smartSearch: boolean;
-    appliedFilters?: any; // ✅ CORREÇÃO: Tornado opcional
-    radiusKm?: number; // ✅ NOVO: Raio usado na busca
-    searchMethod?: string; // ✅ NOVO: Método de busca usado
+    appliedFilters?: any;
+    radiusKm?: number;
+    searchMethod?: string;
+    // ✅✅✅ NOVOS: Dados de normalização
+    normalization?: {
+      applied: boolean;
+      original: { from: string; to: string };
+      normalized: { from: string; to: string };
+    };
   };
   total?: number;
   data?: {
     rides: Ride[];
     stats?: MatchStats;
     searchParams?: any;
-    smart_search?: boolean; // ✅ NOVO: Indicador de busca inteligente
+    smart_search?: boolean;
+    // ✅✅✅ NOVOS: Dados de debug e completude
+    debug_info?: {
+      normalization_applied: boolean;
+      original_input: { from: string; to: string };
+      normalized_input: { from: string; to: string };
+      data_completeness: {
+        driver_names: number;
+        driver_ratings: number;
+        vehicle_data: number;
+        prices: number;
+      };
+    };
   };
-  smart_search?: boolean; // ✅ NOVO: Indicador global de busca inteligente
+  smart_search?: boolean;
 }
 
-// ✅ FUNÇÃO AUXILIAR: Obter label de localização para UI
+// ✅✅✅ MAPEAMENTO PARA TIPOS DE VEÍCULO
+const VEHICLE_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
+  economy: { label: 'Económico', icon: '🚗' },
+  comfort: { label: 'Conforto', icon: '🚙' },
+  luxury: { label: 'Luxo', icon: '🏎️' },
+  family: { label: 'Familiar', icon: '🚐' },
+  cargo: { label: 'Carga', icon: '🚚' },
+  motorcycle: { label: 'Moto', icon: '🏍️' }
+};
+
+// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO COMPLETAMENTE CORRIGIDA - VERSÃO FINAL
+export function normalizeRide(backendRide: any): Ride {
+  console.log('🔧 [NORMALIZAÇÃO] Dados brutos do backend:', backendRide);
+
+  // ✅✅✅ CORREÇÃO CRÍTICA: Extrair dados COMPLETOS do vehicleInfo do PostgreSQL
+  const vehicleInfoComplete = backendRide.vehicleInfo ? {
+    make: backendRide.vehicleInfo.make || backendRide.vehicle_make || '',
+    model: backendRide.vehicleInfo.model || backendRide.vehicle_model || 'Veículo',
+    type: backendRide.vehicleInfo.type || backendRide.vehicle_type || 'economy',
+    typeDisplay: backendRide.vehicleInfo.typeDisplay || VEHICLE_TYPE_DISPLAY[backendRide.vehicle_type || 'economy']?.label || 'Económico',
+    typeIcon: backendRide.vehicleInfo.typeIcon || VEHICLE_TYPE_DISPLAY[backendRide.vehicle_type || 'economy']?.icon || '🚗',
+    plate: backendRide.vehicleInfo.plate || backendRide.vehicle_plate || 'Não informada',
+    color: backendRide.vehicleInfo.color || backendRide.vehicle_color || 'Não informada',
+    maxPassengers: backendRide.vehicleInfo.maxPassengers || backendRide.max_passengers || 4
+  } : {
+    // ✅✅✅ SE vehicleInfo não existe, usar dados diretos do PostgreSQL
+    make: backendRide.vehicle_make || '',
+    model: backendRide.vehicle_model || 'Veículo',
+    type: backendRide.vehicle_type || 'economy',
+    typeDisplay: VEHICLE_TYPE_DISPLAY[backendRide.vehicle_type || 'economy']?.label || 'Económico',
+    typeIcon: VEHICLE_TYPE_DISPLAY[backendRide.vehicle_type || 'economy']?.icon || '🚗',
+    plate: backendRide.vehicle_plate || 'Não informada',
+    color: backendRide.vehicle_color || 'Não informada',
+    maxPassengers: backendRide.max_passengers || 4
+  };
+
+  // ✅✅✅ CORREÇÃO: Converter todos os campos numéricos
+  const pricePerSeatNum = Number(backendRide.pricePerSeat ?? backendRide.priceperseat ?? backendRide.price ?? 0);
+  const driverRatingNum = Number(backendRide.driverRating ?? backendRide.driver_rating ?? backendRide.driver?.rating ?? 4.5);
+  const availableSeatsNum = Number(backendRide.availableSeats ?? backendRide.availableseats ?? 0);
+  const maxPassengersNum = Number(backendRide.maxPassengers ?? backendRide.max_passengers ?? vehicleInfoComplete.maxPassengers ?? 4);
+
+  // ✅✅✅ CORREÇÃO: Formatar data e hora
+  const departureDate = backendRide.departureDate || backendRide.departuredate;
+  const departureDateFormatted = departureDate ? formatDate(departureDate) : '';
+  const departureTimeFormatted = departureDate ? formatTime(departureDate) : '08:00';
+
+  const normalized: Ride = {
+    id: backendRide.id || backendRide.ride_id || '',
+    driverId: backendRide.driverId || backendRide.driver_id || '',
+    fromLocation: backendRide.fromLocation || backendRide.from_address || backendRide.from_city || '',
+    toLocation: backendRide.toLocation || backendRide.to_address || backendRide.to_city || '',
+    fromAddress: backendRide.fromAddress || backendRide.from_address || backendRide.fromLocation || '',
+    toAddress: backendRide.toAddress || backendRide.to_address || backendRide.toLocation || '',
+    fromProvince: backendRide.fromProvince || backendRide.from_province,
+    toProvince: backendRide.toProvince || backendRide.to_province,
+    departureDate: departureDate || '',
+    departureTime: backendRide.departureTime || departureTimeFormatted,
+    price: pricePerSeatNum,
+    pricePerSeat: pricePerSeatNum,
+    availableSeats: availableSeatsNum,
+    maxPassengers: maxPassengersNum,
+    vehicleType: backendRide.vehicleType || backendRide.vehicle_type || 'economy',
+    status: backendRide.status || 'active',
+    
+    // ✅✅✅ DADOS DO MOTORISTA DO POSTGRESQL
+    driverName: backendRide.driver_name || backendRide.driverName || 'Motorista',
+    driverRating: driverRatingNum,
+    
+    // ✅✅✅ DADOS COMPLETOS DO VEÍCULO DO POSTGRESQL
+    vehicleInfoComplete: vehicleInfoComplete,
+    
+    // ✅✅✅ DADOS GEOGRÁFICOS DO POSTGRESQL
+    from_lat: backendRide.from_lat,
+    from_lng: backendRide.from_lng,
+    to_lat: backendRide.to_lat,
+    to_lng: backendRide.to_lng,
+    distance_from_city_km: backendRide.distance_from_city_km,
+    distance_to_city_km: backendRide.distance_to_city_km,
+  };
+
+  // ✅✅✅ CORREÇÃO: Campos opcionais - verificar explicitamente por undefined
+  if (backendRide.vehicleInfo !== undefined) normalized.vehicleInfo = backendRide.vehicleInfo;
+  if (backendRide.vehicleFeatures !== undefined) normalized.vehicleFeatures = backendRide.vehicleFeatures;
+  if (backendRide.description !== undefined) normalized.description = backendRide.description;
+  if (backendRide.estimatedDuration !== undefined) normalized.estimatedDuration = backendRide.estimatedDuration;
+  if (backendRide.estimatedDistance !== undefined) normalized.estimatedDistance = backendRide.estimatedDistance;
+  if (backendRide.currentPassengers !== undefined) normalized.currentPassengers = backendRide.currentPassengers;
+  if (backendRide.type !== undefined) normalized.type = backendRide.type;
+  if (backendRide.vehiclePhoto !== undefined) normalized.vehiclePhoto = backendRide.vehiclePhoto;
+  if (backendRide.availableIn !== undefined) normalized.availableIn = backendRide.availableIn;
+  if (backendRide.isRoundTrip !== undefined) normalized.isRoundTrip = backendRide.isRoundTrip;
+  if (backendRide.allowPickupEnRoute !== undefined) normalized.allowPickupEnRoute = backendRide.allowPickupEnRoute;
+  if (backendRide.allowNegotiation !== undefined) normalized.allowNegotiation = backendRide.allowNegotiation;
+  if (backendRide.isVerifiedDriver !== undefined) normalized.isVerifiedDriver = backendRide.isVerifiedDriver;
+
+  // ✅✅✅ CORREÇÃO: Campos de matching do backend (snake_case)
+  if (backendRide.match_type !== undefined) normalized.match_type = backendRide.match_type;
+  if (backendRide.route_compatibility !== undefined) normalized.route_compatibility = backendRide.route_compatibility;
+  if (backendRide.match_description !== undefined) normalized.match_description = backendRide.match_description;
+
+  // ✅✅✅ CORREÇÃO: Campos de compatibilidade para frontend (camelCase)
+  normalized.matchType = backendRide.match_type !== undefined ? backendRide.match_type : backendRide.matchType;
+  normalized.matchScore = backendRide.route_compatibility !== undefined ? backendRide.route_compatibility : backendRide.matchScore;
+  normalized.matchDescription = backendRide.match_description !== undefined ? backendRide.match_description : backendRide.matchDescription;
+
+  // ✅✅✅ CORREÇÃO: Informações do driver
+  if (backendRide.driver) {
+    normalized.driver = {
+      firstName: backendRide.driver.firstName || '',
+      lastName: backendRide.driver.lastName || '',
+      rating: backendRide.driver.rating ? Number(backendRide.driver.rating) : undefined,
+      isVerified: backendRide.driver.isVerified || false,
+    };
+    // ✅✅✅ Priorizar driver_name do PostgreSQL se disponível
+    if (!normalized.driverName || normalized.driverName === 'Motorista') {
+      normalized.driverName = `${normalized.driver.firstName} ${normalized.driver.lastName}`.trim() || 'Motorista';
+    }
+    normalized.isVerifiedDriver = normalized.driver.isVerified;
+    if (normalized.driver.rating !== undefined && !normalized.driverRating) {
+      normalized.driverRating = normalized.driver.rating;
+    }
+  }
+
+  // ✅✅✅ CORREÇÃO: Search metadata
+  if (backendRide.search_metadata) {
+    normalized.search_metadata = backendRide.search_metadata;
+  }
+
+  console.log('✅ [NORMALIZAÇÃO] Ride normalizado:', {
+    id: normalized.id,
+    driverName: normalized.driverName,
+    driverRating: normalized.driverRating,
+    vehicleInfo: normalized.vehicleInfoComplete,
+    price: normalized.pricePerSeat,
+    availableSeats: normalized.availableSeats
+  });
+
+  return normalized;
+}
+
+// ✅✅✅ FUNÇÕES AUXILIARES PARA FORMATAÇÃO
+function formatDate(dateString: string | Date): string {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-MZ');
+  } catch (error) {
+    console.warn('Erro ao formatar data:', error);
+    return '';
+  }
+}
+
+function formatTime(dateString: string | Date): string {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' });
+  } catch (error) {
+    console.warn('Erro ao formatar hora:', error);
+    return '08:00';
+  }
+}
+
+// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO DE LISTA
+export function normalizeRides(backendRides: any[]): Ride[] {
+  console.log(`🔄 [NORMALIZAÇÃO] Normalizando ${backendRides?.length || 0} rides`);
+  return (backendRides || []).map(normalizeRide);
+}
+
+// ✅✅✅ CRIAR MATCHSTATS PADRÃO
+export function createDefaultMatchStats(): MatchStats {
+  return {
+    exact_match: 0,
+    same_segment: 0,
+    same_direction: 0,
+    same_origin: 0,
+    same_destination: 0,
+    potential: 0,
+    traditional: 0,
+    smart_matches: 0,
+    drivers_with_ratings: 0,
+    average_driver_rating: 0,
+    vehicle_types: {},
+    total: 0
+  };
+}
+
+// ✅✅✅ FUNÇÃO PARA OBTER INFORMAÇÕES DO VEÍCULO
+export function getVehicleInfo(ride: Ride) {
+  if (ride.vehicleInfoComplete) {
+    return {
+      display: `${ride.vehicleInfoComplete.make} ${ride.vehicleInfoComplete.model} - ${ride.vehicleInfoComplete.color}`,
+      typeDisplay: ride.vehicleInfoComplete.typeDisplay,
+      typeIcon: ride.vehicleInfoComplete.typeIcon,
+      plate: ride.vehicleInfoComplete.plate,
+      color: ride.vehicleInfoComplete.color,
+      maxPassengers: ride.vehicleInfoComplete.maxPassengers,
+      make: ride.vehicleInfoComplete.make,
+      model: ride.vehicleInfoComplete.model
+    };
+  }
+  
+  const typeInfo = VEHICLE_TYPE_DISPLAY[ride.vehicleType || ride.type || 'economy'] || VEHICLE_TYPE_DISPLAY.economy;
+  
+  return {
+    display: ride.vehicleType || ride.type || 'Veículo',
+    typeDisplay: typeInfo.label,
+    typeIcon: typeInfo.icon,
+    plate: 'Não informada',
+    color: 'Não informada',
+    maxPassengers: ride.maxPassengers || 4,
+    make: '',
+    model: 'Veículo'
+  };
+}
+
+// ✅✅✅ FUNÇÃO PARA OBTER NOME DO MOTORISTA
+export function getDriverName(ride: Ride): string {
+  // ✅✅✅ Priorizar driver_name do PostgreSQL
+  if (ride.driverName && ride.driverName !== 'Motorista') {
+    return ride.driverName;
+  }
+  
+  return ride.driver
+    ? `${ride.driver.firstName ?? ''} ${ride.driver.lastName ?? ''}`.trim() || 'Motorista'
+    : 'Motorista';
+}
+
+// ✅✅✅ FUNÇÃO PARA OBTER RATING DO MOTORISTA
+export function getDriverRating(ride: Ride): number {
+  // ✅✅✅ Priorizar driver_rating do PostgreSQL
+  if (ride.driverRating && ride.driverRating > 0) {
+    return ride.driverRating;
+  }
+  
+  return ride.driver?.rating ?? 4.5;
+}
+
+// ✅✅✅ FUNÇÃO AUXILIAR: Obter label de localização para UI
 export function getRideLocation(ride: Ride, type: 'from' | 'to'): string {
   if (type === 'from') {
-    return ride.fromLocation || ride.fromProvince || '';
+    return ride.fromLocation ?? ride.fromAddress ?? ride.fromProvince ?? '';
   }
-  return ride.toLocation || ride.toProvince || '';
+  return ride.toLocation ?? ride.toAddress ?? ride.toProvince ?? '';
 }
 
-// ✅ FUNÇÃO AUXILIAR: Obter route compatibility para UI
+// ✅✅✅ FUNÇÃO AUXILIAR: Obter route compatibility para UI
 export function getRouteCompatibility(ride: Ride): number | undefined {
-  // ✅ CORREÇÃO: Usar route_compatibility do backend ou matchScore do frontend
   return ride.route_compatibility !== undefined ? ride.route_compatibility : ride.matchScore;
 }
 
-// ✅ FUNÇÃO AUXILIAR: Obter match type para UI
+// ✅✅✅ FUNÇÃO AUXILIAR: Obter match type para UI
 export function getMatchType(ride: Ride): string | undefined {
-  // ✅ CORREÇÃO: Usar match_type do backend ou matchType do frontend
   return ride.match_type !== undefined ? ride.match_type : ride.matchType;
 }
 
-// ✅ FUNÇÃO AUXILIAR: Obter match description para UI
+// ✅✅✅ FUNÇÃO AUXILIAR: Obter match description para UI
 export function getMatchDescription(ride: Ride): string | undefined {
-  // ✅ CORREÇÃO: Usar match_description do backend ou matchDescription do frontend
   return ride.match_description !== undefined ? ride.match_description : ride.matchDescription;
 }
 
-// ✅ CORREÇÃO: Função para determinar se é uma busca inteligente
+// ✅✅✅ FUNÇÃO PARA DETERMINAR SE É UMA BUSCA INTELIGENTE
 export function isSmartSearch(ride: Ride): boolean {
   return !!(ride.match_type || ride.route_compatibility || ride.match_description);
 }
 
-// ✅ CORREÇÃO: Função para obter badge de compatibilidade
+// ✅✅✅ FUNÇÃO PARA OBTER BADGE DE COMPATIBILIDADE
 export function getCompatibilityBadge(ride: Ride): { label: string; color: string } {
   const compatibility = getRouteCompatibility(ride);
   
@@ -238,101 +526,6 @@ export function getCompatibilityBadge(ride: Ride): { label: string; color: strin
   } else {
     return { label: 'Compatível', color: 'orange' };
   }
-}
-
-// ✅ CORREÇÃO: Exportar funções de normalização para reutilização
-export function normalizeRide(backendRide: any): Ride {
-  const normalized: Ride = {
-    id: backendRide.id || backendRide.ride_id || '',
-    driverId: backendRide.driverId || backendRide.driver_id || '',
-    fromLocation: backendRide.fromLocation || backendRide.from_address || backendRide.from_city || '',
-    toLocation: backendRide.toLocation || backendRide.to_address || backendRide.to_city || '',
-    fromAddress: backendRide.fromAddress || backendRide.from_address || backendRide.fromLocation || '',
-    toAddress: backendRide.toAddress || backendRide.to_address || backendRide.toLocation || '',
-    fromProvince: backendRide.fromProvince || backendRide.from_province,
-    toProvince: backendRide.toProvince || backendRide.to_province,
-    departureDate: backendRide.departureDate || backendRide.departure_date || '',
-    departureTime: backendRide.departureTime || backendRide.departure_time || '08:00',
-    // ✅ CORREÇÃO: Usar nullish coalescing para evitar duplicidade
-    price: Number(backendRide.price ?? backendRide.pricePerSeat ?? backendRide.price_per_seat ?? 0),
-    pricePerSeat: Number(backendRide.pricePerSeat ?? backendRide.price_per_seat ?? backendRide.price ?? 0),
-    availableSeats: backendRide.availableSeats || backendRide.available_seats || 0,
-    maxPassengers: backendRide.maxPassengers || backendRide.max_passengers || backendRide.availableSeats || backendRide.available_seats || 4,
-    vehicleType: backendRide.vehicleType || backendRide.vehicle_type || 'car',
-    status: backendRide.status || 'active',
-    // ✅ CORREÇÃO: Normalizar driverRating para number
-    driverRating: backendRide.driverRating ? Number(backendRide.driverRating) : undefined,
-  };
-
-  // ✅ CORREÇÃO: Campos opcionais - verificar explicitamente por undefined
-  if (backendRide.vehicleInfo !== undefined) normalized.vehicleInfo = backendRide.vehicleInfo;
-  if (backendRide.vehicleFeatures !== undefined) normalized.vehicleFeatures = backendRide.vehicleFeatures;
-  if (backendRide.description !== undefined) normalized.description = backendRide.description;
-  if (backendRide.estimatedDuration !== undefined) normalized.estimatedDuration = backendRide.estimatedDuration;
-  if (backendRide.estimatedDistance !== undefined) normalized.estimatedDistance = backendRide.estimatedDistance;
-  if (backendRide.currentPassengers !== undefined) normalized.currentPassengers = backendRide.currentPassengers;
-  if (backendRide.type !== undefined) normalized.type = backendRide.type;
-  if (backendRide.vehiclePhoto !== undefined) normalized.vehiclePhoto = backendRide.vehiclePhoto;
-  if (backendRide.availableIn !== undefined) normalized.availableIn = backendRide.availableIn;
-  if (backendRide.isRoundTrip !== undefined) normalized.isRoundTrip = backendRide.isRoundTrip;
-  if (backendRide.allowPickupEnRoute !== undefined) normalized.allowPickupEnRoute = backendRide.allowPickupEnRoute;
-  if (backendRide.allowNegotiation !== undefined) normalized.allowNegotiation = backendRide.allowNegotiation;
-  if (backendRide.isVerifiedDriver !== undefined) normalized.isVerifiedDriver = backendRide.isVerifiedDriver;
-
-  // ✅ CORREÇÃO: Campos de matching do backend (snake_case)
-  if (backendRide.match_type !== undefined) normalized.match_type = backendRide.match_type;
-  if (backendRide.route_compatibility !== undefined) normalized.route_compatibility = backendRide.route_compatibility;
-  if (backendRide.match_description !== undefined) normalized.match_description = backendRide.match_description;
-
-  // ✅ CORREÇÃO: Campos de compatibilidade para frontend (camelCase)
-  // Mapear snake_case do backend para camelCase do frontend
-  normalized.matchType = backendRide.match_type !== undefined ? backendRide.match_type : backendRide.matchType;
-  normalized.matchScore = backendRide.route_compatibility !== undefined ? backendRide.route_compatibility : backendRide.matchScore;
-  normalized.matchDescription = backendRide.match_description !== undefined ? backendRide.match_description : backendRide.matchDescription;
-
-  // ✅ CORREÇÃO: Informações do driver
-  if (backendRide.driver) {
-    normalized.driver = {
-      firstName: backendRide.driver.firstName || '',
-      lastName: backendRide.driver.lastName || '',
-      // ✅ CORREÇÃO: Normalizar rating para number
-      rating: backendRide.driver.rating ? Number(backendRide.driver.rating) : undefined,
-      isVerified: backendRide.driver.isVerified || false,
-    };
-    normalized.driverName = `${normalized.driver.firstName} ${normalized.driver.lastName}`.trim();
-    normalized.isVerifiedDriver = normalized.driver.isVerified;
-    // ✅ CORREÇÃO: Usar rating do driver se disponível
-    if (normalized.driver.rating !== undefined) {
-      normalized.driverRating = normalized.driver.rating;
-    }
-  }
-
-  // ✅ CORREÇÃO: Campos específicos do driver_name do backend
-  if (backendRide.driver_name && !normalized.driverName) {
-    normalized.driverName = backendRide.driver_name;
-  }
-
-  return normalized;
-}
-
-// ✅ CORREÇÃO: Exportar função de normalização de lista
-export function normalizeRides(backendRides: any[]): Ride[] {
-  return (backendRides || []).map(normalizeRide);
-}
-
-// ✅ CORREÇÃO: Criar MatchStats padrão
-export function createDefaultMatchStats(): MatchStats {
-  return {
-    exact_match: 0,
-    same_segment: 0,
-    same_direction: 0,
-    same_origin: 0,
-    same_destination: 0,
-    potential: 0,
-    traditional: 0,
-    smart_matches: 0,
-    total: 0
-  };
 }
 
 /**
@@ -389,10 +582,10 @@ class ApiService {
     }
   }
 
-  // ===== RIDES API ATUALIZADA =====
+  // ===== RIDES API COMPLETAMENTE CORRIGIDA =====
   async searchRides(params: RideSearchParams): Promise<RideSearchResponse> {
     try {
-      // ✅ PRIMEIRO TENTA BUSCA INTELIGENTE SE smartSearch=true
+      // ✅✅✅ PRIMEIRO TENTA BUSCA INTELIGENTE SE smartSearch=true
       if (params.smartSearch !== false) {
         try {
           const searchParams = new URLSearchParams();
@@ -400,15 +593,15 @@ class ApiService {
           if (params.to) searchParams.append('to', params.to);
           if (params.passengers) searchParams.append('passengers', params.passengers.toString());
           if (params.date) searchParams.append('date', params.date);
-          // ✅ NOVO: Adicionar maxDistance para busca inteligente (padrão 100km)
-          const maxDistance = params.maxDistance || 100;
-          searchParams.append('maxDistance', maxDistance.toString());
+          // ✅✅✅ NOVO: Usar radiusKm para busca inteligente (padrão 100km)
+          const radiusKm = params.radiusKm || params.maxDistance || 100;
+          searchParams.append('radiusKm', radiusKm.toString());
           
-          console.log(`🧠 FRONTEND: Buscando rides inteligentes: ${params.from} → ${params.to} (raio: ${maxDistance}km)`);
+          console.log(`🧠 FRONTEND: Buscando rides inteligentes: ${params.from} → ${params.to} (raio: ${radiusKm}km)`);
           
           const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
           
-          // ✅ NORMALIZAR RESPOSTA DO BACKEND
+          // ✅✅✅ NORMALIZAR RESPOSTA DO BACKEND COM NOVOS DADOS
           if (response.success && response.data) {
             const searchParamsResponse = {
               from: params.from || '',
@@ -416,9 +609,14 @@ class ApiService {
               date: params.date,
               passengers: params.passengers,
               smartSearch: true,
-              radiusKm: maxDistance,
+              radiusKm: radiusKm,
               searchMethod: response.data.searchParams?.searchMethod || 'smart_final_direct',
-              appliedFilters: params
+              appliedFilters: params,
+              normalization: response.data.debug_info?.normalization_applied ? {
+                applied: true,
+                original: response.data.debug_info.original_input,
+                normalized: response.data.debug_info.normalized_input
+              } : undefined
             };
 
             return {
@@ -428,7 +626,7 @@ class ApiService {
               searchParams: searchParamsResponse,
               total: response.data.rides?.length || 0,
               data: response.data,
-              smart_search: response.data.smart_search || true // ✅ NOVO: Indicador de busca inteligente
+              smart_search: response.data.smart_search || true
             };
           }
         } catch (smartError) {
@@ -436,9 +634,8 @@ class ApiService {
         }
       }
       
-      // ✅ FALLBACK PARA BUSCA TRADICIONAL
+      // ✅✅✅ FALLBACK PARA BUSCA TRADICIONAL
       const searchParams = new URLSearchParams();
-      // ✅ CORREÇÃO: Usar parâmetros que o backend espera
       if (params.from) searchParams.append('from', params.from);
       if (params.to) searchParams.append('to', params.to);
       if (params.date) searchParams.append('date', params.date);
@@ -449,7 +646,7 @@ class ApiService {
 
       console.log(`🔍 FRONTEND: Buscando rides tradicionais: ${params.from} → ${params.to}`);
       
-      // ✅✅✅ CORREÇÃO CRÍTICA: Mudar de /api/rides/search para /api/rides/smart/search
+      // ✅✅✅ CORREÇÃO: Usar endpoint de busca inteligente como fallback
       const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
       
       const searchParamsResponse = {
@@ -467,7 +664,7 @@ class ApiService {
         matchStats: response.matchStats || response.data?.stats || createDefaultMatchStats(),
         searchParams: searchParamsResponse,
         total: response.total || response.data?.total || 0,
-        smart_search: response.smart_search || response.data?.smart_search || false // ✅ NOVO: Indicador explícito
+        smart_search: response.smart_search || response.data?.smart_search || false
       };
       
     } catch (error) {
@@ -476,23 +673,23 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO: Busca inteligente específica (para uso direto)
+  // ✅✅✅ BUSCA INTELIGENTE ESPECÍFICA
   async searchSmartRides(params: {
     from: string;
     to: string;
     date?: string;
     passengers?: number;
-    maxDistance?: number;
+    radiusKm?: number;
   }): Promise<RideSearchResponse> {
     const searchParams = new URLSearchParams();
     searchParams.append('from', params.from);
     searchParams.append('to', params.to);
     if (params.date) searchParams.append('date', params.date);
     if (params.passengers) searchParams.append('passengers', params.passengers.toString());
-    const maxDistance = params.maxDistance || 100;
-    searchParams.append('maxDistance', maxDistance.toString());
+    const radiusKm = params.radiusKm || 100;
+    searchParams.append('radiusKm', radiusKm.toString());
 
-    console.log(`🧠 FRONTEND: Busca SMART específica: ${params.from} → ${params.to} (${maxDistance}km)`);
+    console.log(`🧠 FRONTEND: Busca SMART específica: ${params.from} → ${params.to} (${radiusKm}km)`);
 
     const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
     
@@ -503,9 +700,14 @@ class ApiService {
         date: params.date,
         passengers: params.passengers,
         smartSearch: true,
-        radiusKm: maxDistance,
+        radiusKm: radiusKm,
         searchMethod: response.data.searchParams?.searchMethod || 'smart_final_direct',
-        appliedFilters: params
+        appliedFilters: params,
+        normalization: response.data.debug_info?.normalization_applied ? {
+          applied: true,
+          original: response.data.debug_info.original_input,
+          normalized: response.data.debug_info.normalized_input
+        } : undefined
       };
 
       return {
@@ -522,7 +724,7 @@ class ApiService {
     throw new Error('Busca inteligente falhou');
   }
 
-  // ✅ NOVO: Busca universal inteligente
+  // ✅✅✅ BUSCA UNIVERSAL INTELIGENTE
   async searchUniversalRides(params: {
     from?: string;
     to?: string;
@@ -586,10 +788,9 @@ class ApiService {
     return this.request('POST', '/api/rides', rideData);
   }
 
-  // 🆕 Obter detalhes de um ride específico
+  // 🆕 OBTER DETALHES DE UM RIDE ESPECÍFICO
   async getRideDetails(rideId: string): Promise<{ success: boolean; data: { ride: Ride } }> {
     const response = await this.request<any>('GET', `/api/rides/${rideId}`);
-    // ✅ CORREÇÃO: Normalizar a resposta
     if (response.success) {
       return {
         success: true,
@@ -601,7 +802,7 @@ class ApiService {
     return response;
   }
 
-  // 🆕 Buscar rides próximos
+  // 🆕 BUSCAR RIDES PRÓXIMOS
   async getNearbyRides(location: string, radius: number = 50, passengers: number = 1): Promise<RideSearchResponse> {
     const searchParams = new URLSearchParams();
     searchParams.append('location', location);
@@ -628,7 +829,7 @@ class ApiService {
     };
   }
 
-  // 🆕 Solicitar reserva de viagem
+  // 🆕 SOLICITAR RESERVA DE VIAGEM
   async requestRide(rideId: string, passengers: number, pickupLocation?: string, notes?: string): Promise<{ 
     success: boolean; 
     message: string; 
@@ -640,7 +841,7 @@ class ApiService {
       passengers,
       pickupLocation,
       notes,
-      type: 'ride' // ✅ CORREÇÃO: Especificar tipo de booking
+      type: 'ride'
     });
   }
 
@@ -671,14 +872,14 @@ class ApiService {
       if (type === 'ride') {
         payload = {
           rideId: bookingData.rideId,
-          passengerId: user.uid, // ✅ CORREÇÃO: Verificar se backend usa passengerId ou userId
-          seatsBooked: bookingData.passengers, // ✅ CORREÇÃO: Verificar se backend usa seatsBooked ou passengers
+          passengerId: user.uid,
+          seatsBooked: bookingData.passengers,
           totalPrice: bookingData.totalAmount,
           guestName: bookingData.guestInfo?.name,
           guestEmail: bookingData.guestInfo?.email,
           guestPhone: bookingData.guestInfo?.phone,
           rideDetails: bookingData.rideDetails,
-          type: 'ride' // ✅ CORREÇÃO: Especificar tipo
+          type: 'ride'
         };
         
         const result = await this.bookRide(payload);
@@ -687,14 +888,14 @@ class ApiService {
       } else if (type === 'hotel') {
         payload = {
           accommodationId: bookingData.accommodationId,
-          passengerId: user.uid, // ✅ CORREÇÃO: Verificar se backend usa passengerId ou userId
+          passengerId: user.uid,
           totalPrice: bookingData.totalAmount,
           guestName: bookingData.guestInfo?.name,
           guestEmail: bookingData.guestInfo?.email,
           guestPhone: bookingData.guestInfo?.phone,
           checkInDate: bookingData.checkInDate,
           checkOutDate: bookingData.checkOutDate,
-          type: 'hotel' // ✅ CORREÇÃO: Especificar tipo
+          type: 'hotel'
         };
         
         const result = await this.bookHotel(payload);

@@ -282,6 +282,7 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
     // ✅ Aplicar limite de resultados
     matchingRides = matchingRides.slice(0, maxResults);
 
+    // ✅✅✅ CORREÇÃO: ESTATÍSTICAS ATUALIZADAS COM DADOS COMPLETOS
     const matchStats = {
       smart_matches: matchingRides.filter(r => r.match_type === 'smart_final_direct' || r.match_type === 'smart_match').length,
       exact_match: matchingRides.filter(r => r.match_type === 'exact_match').length,
@@ -289,8 +290,32 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
       same_direction: matchingRides.filter(r => r.match_type === 'same_direction').length,
       potential: matchingRides.filter(r => r.match_type === 'potential').length,
       traditional: matchingRides.filter(r => !r.match_type || r.match_type === 'traditional').length,
-      total: matchingRides.length
+      total: matchingRides.length,
+      // ✅ NOVAS ESTATÍSTICAS: Dados dos motoristas e veículos
+      drivers_with_ratings: matchingRides.filter(r => r.driverRating && r.driverRating > 0).length,
+      average_driver_rating: matchingRides.length > 0 
+        ? parseFloat((matchingRides.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / matchingRides.length).toFixed(1))
+        : 0,
+      vehicle_types: matchingRides.reduce((acc: any, ride) => {
+        const type = ride.vehicleInfo?.type || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {})
     };
+
+    // ✅✅✅ CORREÇÃO: DEBUG COM DADOS COMPLETOS
+    console.log('🎯 [PROVIDER-SMART-SEARCH] Resultados com dados completos:', {
+      totalResults: matchingRides.length,
+      sampleResults: matchingRides.slice(0, 3).map(ride => ({
+        driverName: ride.driverName,
+        driverRating: ride.driverRating,
+        vehicle: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'N/A',
+        vehicleType: ride.vehicleInfo?.typeDisplay || 'N/A',
+        price: ride.pricePerSeat,
+        match_type: ride.match_type
+      })),
+      stats: matchStats
+    });
 
     logger.info('✅ PROVIDER: Busca inteligente concluída', {
       driverId,
@@ -323,6 +348,12 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
           applied: originalFrom !== normalizedFrom || originalTo !== normalizedTo,
           original: { from: originalFrom, to: originalTo },
           normalized: { from: normalizedFrom, to: normalizedTo }
+        },
+        data_completeness: {
+          driver_names: matchingRides.filter(r => r.driverName && r.driverName !== 'Motorista').length,
+          driver_ratings: matchingRides.filter(r => r.driverRating && r.driverRating > 0).length,
+          vehicle_data: matchingRides.filter(r => r.vehicleInfo && r.vehicleInfo.make).length,
+          prices: matchingRides.filter(r => r.pricePerSeat && r.pricePerSeat > 0).length
         },
         smart_search: true
       }
@@ -423,7 +454,7 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       });
     }
 
-    // ✅ Análise de preços
+    // ✅✅✅ CORREÇÃO: ANÁLISE COMPLETA COM NOVOS DADOS
     const prices = marketRides
       .filter(ride => safeNumber(ride.pricePerSeat) > 0)
       .map(ride => safeNumber(ride.pricePerSeat));
@@ -439,12 +470,21 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
     const totalAvailableSeats = marketRides.reduce((sum, ride) => sum + safeNumber(ride.availableSeats), 0);
     const totalRides = marketRides.length;
     
-    // ✅ Análise de veículos
+    // ✅✅✅ CORREÇÃO: ANÁLISE DE MOTORISTAS E VEÍCULOS COMPLETA
     const vehicleTypes = marketRides.reduce((acc, ride) => {
-      const type = safeString(ride.vehicleType, 'desconhecido');
+      const type = ride.vehicleInfo?.type || 'desconhecido';
       acc[type] = (acc[type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
+
+    // ✅ Análise de ratings dos motoristas
+    const driverRatings = marketRides
+      .filter(ride => safeNumber(ride.driverRating) > 0)
+      .map(ride => safeNumber(ride.driverRating));
+    
+    const averageDriverRating = driverRatings.length > 0 
+      ? driverRatings.reduce((sum, rating) => sum + rating, 0) / driverRatings.length 
+      : 0;
 
     // ✅ Análise de datas
     const upcomingRides = marketRides.filter(ride => {
@@ -452,6 +492,7 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       return departureDate >= new Date();
     }).length;
 
+    // ✅✅✅ CORREÇÃO: ANÁLISE DE MERCADO COMPLETA
     const marketAnalysis = {
       route: { from: originalFrom, to: originalTo, normalizedFrom, normalizedTo },
       pricing: {
@@ -471,11 +512,21 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
           ? 'Ótima oportunidade - pouca concorrência'
           : `Mercado ${totalRides < 5 ? 'moderado' : 'competitivo'} - ${totalRides} rides ativas`
       },
+      drivers: {
+        totalUnique: new Set(marketRides.map(ride => ride.driverId)).size,
+        averageRating: parseFloat(averageDriverRating.toFixed(1)),
+        recommendation: averageDriverRating > 4.5 
+          ? 'Mercado com motoristas bem avaliados - mantenha alta qualidade'
+          : 'Oportunidade para se destacar com bom atendimento'
+      },
       vehicles: {
         types: vehicleTypes,
         mostCommon: Object.keys(vehicleTypes).length > 0 
           ? Object.keys(vehicleTypes).reduce((a, b) => vehicleTypes[a] > vehicleTypes[b] ? a : b)
-          : 'desconhecido'
+          : 'desconhecido',
+        recommendation: Object.keys(vehicleTypes).length > 0 
+          ? `Veículo mais comum: ${Object.keys(vehicleTypes).reduce((a, b) => vehicleTypes[a] > vehicleTypes[b] ? a : b)}`
+          : 'Diversidade de veículos no mercado'
       },
       timing: {
         upcomingRides,
@@ -485,10 +536,25 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       }
     };
 
+    // ✅✅✅ CORREÇÃO: DEBUG DETALHADO DA ANÁLISE
+    console.log('📊 [PROVIDER-MARKET-ANALYSIS] Análise completa:', {
+      totalRides,
+      averagePrice: marketAnalysis.pricing.average,
+      driverStats: marketAnalysis.drivers,
+      vehicleStats: marketAnalysis.vehicles,
+      sampleRides: marketRides.slice(0, 3).map(ride => ({
+        driverName: ride.driverName,
+        driverRating: ride.driverRating,
+        vehicle: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'N/A',
+        price: ride.pricePerSeat
+      }))
+    });
+
     logger.info('✅ PROVIDER: Análise de mercado concluída', {
       driverId,
       totalRides,
       averagePrice: marketAnalysis.pricing.average,
+      averageDriverRating: marketAnalysis.drivers.averageRating,
       normalization: {
         applied: originalFrom !== normalizedFrom || originalTo !== normalizedTo,
         original: { from: originalFrom, to: originalTo },
@@ -500,7 +566,15 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       success: true,
       data: {
         analysis: marketAnalysis,
-        sampleRides: marketRides.slice(0, 5),
+        sampleRides: marketRides.slice(0, 5).map(ride => ({
+          id: ride.id,
+          driverName: ride.driverName,
+          driverRating: ride.driverRating,
+          vehicleInfo: ride.vehicleInfo,
+          pricePerSeat: ride.pricePerSeat,
+          availableSeats: ride.availableSeats,
+          departureDate: ride.departureDate
+        })),
         searchParams: {
           from: originalFrom,
           to: originalTo,
@@ -513,6 +587,12 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
           applied: originalFrom !== normalizedFrom || originalTo !== normalizedTo,
           original: { from: originalFrom, to: originalTo },
           normalized: { from: normalizedFrom, to: normalizedTo }
+        },
+        data_completeness: {
+          driver_names: marketRides.filter(r => r.driverName && r.driverName !== 'Motorista').length,
+          driver_ratings: marketRides.filter(r => r.driverRating && r.driverRating > 0).length,
+          vehicle_data: marketRides.filter(r => r.vehicleInfo && r.vehicleInfo.make).length,
+          prices: marketRides.filter(r => r.pricePerSeat && r.pricePerSeat > 0).length
         },
         smart_analysis: true
       }
@@ -552,8 +632,8 @@ router.get('/driver/stats', verifyFirebaseToken, requireDriverRole, async (req: 
       .reduce((sum, ride) => sum + calculateRideRevenue(ride), 0);
 
     const ratings = driverRides
-      .filter(ride => safeNumber(ride.rating) > 0)
-      .map(ride => safeNumber(ride.rating));
+      .filter(ride => safeNumber(ride.driverRating) > 0)
+      .map(ride => safeNumber(ride.driverRating));
     
     const averageRating = ratings.length > 0 
       ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
@@ -691,6 +771,20 @@ router.get('/', verifyFirebaseToken, requireDriverRole, async (req: Authenticate
     const endIndex = startIndex + limitNum;
     const paginatedRides = driverRides.slice(startIndex, endIndex);
     
+    // ✅✅✅ CORREÇÃO: DEBUG COM DADOS COMPLETOS
+    console.log('📋 [PROVIDER-RIDES-LIST] Rides do motorista:', {
+      total: driverRides.length,
+      returned: paginatedRides.length,
+      sampleRides: paginatedRides.slice(0, 3).map(ride => ({
+        id: ride.id,
+        driverName: ride.driverName,
+        driverRating: ride.driverRating,
+        vehicle: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'N/A',
+        price: ride.pricePerSeat,
+        status: ride.status
+      }))
+    });
+
     logger.info('✅ Listagem de viagens concluída', {
       driverId,
       total: driverRides.length,
@@ -706,6 +800,12 @@ router.get('/', verifyFirebaseToken, requireDriverRole, async (req: Authenticate
           limit: limitNum,
           total: driverRides.length,
           totalPages: Math.ceil(driverRides.length / limitNum)
+        },
+        data_completeness: {
+          driver_names: paginatedRides.filter(r => r.driverName && r.driverName !== 'Motorista').length,
+          driver_ratings: paginatedRides.filter(r => r.driverRating && r.driverRating > 0).length,
+          vehicle_data: paginatedRides.filter(r => r.vehicleInfo && r.vehicleInfo.make).length,
+          prices: paginatedRides.filter(r => r.pricePerSeat && r.pricePerSeat > 0).length
         }
       }
     });
@@ -1086,11 +1186,29 @@ router.get('/:id', verifyFirebaseToken, requireDriverRole, async (req: Authentic
       });
     }
     
+    // ✅✅✅ CORREÇÃO: DEBUG COM DADOS COMPLETOS
+    console.log('🔍 [PROVIDER-RIDE-DETAILS] Detalhes completos da ride:', {
+      rideId,
+      driverName: ride.driverName,
+      driverRating: ride.driverRating,
+      vehicleInfo: ride.vehicleInfo,
+      price: ride.pricePerSeat,
+      status: ride.status
+    });
+
     logger.info('✅ Detalhes da ride retornados com sucesso', { driverId, rideId });
 
     res.json({
       success: true,
-      data: { ride }
+      data: { 
+        ride,
+        data_completeness: {
+          has_driver_name: !!ride.driverName && ride.driverName !== 'Motorista',
+          has_driver_rating: !!ride.driverRating && ride.driverRating > 0,
+          has_vehicle_data: !!ride.vehicleInfo && !!ride.vehicleInfo.make,
+          has_price: !!ride.pricePerSeat && ride.pricePerSeat > 0
+        }
+      }
     });
   } catch (error) {
     logger.error('Erro ao buscar detalhes da viagem:', error);

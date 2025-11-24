@@ -2,11 +2,32 @@ import { db } from "../../db";
 import { rides, type Ride } from "../../shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 
-// ✅ INTERFACE CORRIGIDA
+// ✅ MAPEAMENTO PARA TIPOS DE VEÍCULO
+const VEHICLE_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
+  economy: { label: 'Económico', icon: '🚗' },
+  comfort: { label: 'Conforto', icon: '🚙' },
+  luxury: { label: 'Luxo', icon: '🏎️' },
+  family: { label: 'Familiar', icon: '🚐' },
+  cargo: { label: 'Carga', icon: '🚚' },
+  motorcycle: { label: 'Moto', icon: '🏍️' }
+};
+
+// ✅ INTERFACE CORRIGIDA COM NOVOS CAMPOS
 interface RideWithCompatibility {
   id: string;
   driverId: string;
   driverName?: string;
+  driverRating?: number;
+  vehicleInfo?: {
+    make: string;
+    model: string;
+    type: string;
+    typeDisplay: string;
+    typeIcon: string;
+    plate: string;
+    color: string;
+    maxPassengers: number;
+  };
   fromAddress: string;
   toAddress: string;
   fromProvince?: string;
@@ -19,6 +40,7 @@ interface RideWithCompatibility {
   toLocality?: string;
   departureDate: Date;
   departureTime: string;
+  departureDateFormatted?: string;
   availableSeats: number;
   pricePerSeat: number | string;
   vehicleType?: string;
@@ -47,15 +69,18 @@ interface RideWithCompatibility {
   polyline?: any;
 }
 
-// ✅✅✅ FUNÇÃO DE CONVERSÃO COMPLETAMENTE CORRIGIDA
+// ✅✅✅ FUNÇÃO DE CONVERSÃO COMPLETAMENTE CORRIGIDA COM NOVOS DADOS
 export function toRideWithCompatibility(ride: any): RideWithCompatibility {
   console.log('🔧 [CONVERSION-DEBUG] Convertendo ride:', {
     rideId: ride.ride_id || ride.id,
-    hasFromCity: !!ride.from_city,
-    hasToCity: !!ride.to_city,
-    hasDepartureDate: !!ride.departuredate,
-    hasAvailableSeats: ride.availableseats !== undefined,
-    hasPricePerSeat: ride.priceperseat !== undefined,
+    hasDriverName: !!ride.driver_name,
+    hasDriverRating: !!ride.driver_rating,
+    hasVehicleMake: !!ride.vehicle_make,
+    hasVehicleModel: !!ride.vehicle_model,
+    hasVehicleType: !!ride.vehicle_type,
+    hasVehiclePlate: !!ride.vehicle_plate,
+    hasVehicleColor: !!ride.vehicle_color,
+    hasMaxPassengers: !!ride.max_passengers,
     rawRide: ride
   });
 
@@ -65,15 +90,46 @@ export function toRideWithCompatibility(ride: any): RideWithCompatibility {
   const departureDate = ride.departuredate || ride.departureDate;
   const fromCity = ride.from_city || ride.fromCity || '';
   const toCity = ride.to_city || ride.toCity || '';
-  const fromAddress = ride.from_address || ride.fromAddress || fromCity; // ✅ Usa cidade como fallback
-  const toAddress = ride.to_address || ride.toAddress || toCity; // ✅ Usa cidade como fallback
-  
+  const fromAddress = ride.from_address || ride.fromAddress || fromCity;
+  const toAddress = ride.to_address || ride.toAddress || toCity;
   const distanceRealKm = ride.distance_real_km;
 
+  // ✅ NOVOS CAMPOS: Dados do motorista e veículo
+  const driverName = ride.driver_name || ride.driverName || 'Motorista';
+  const driverRating = ride.driver_rating || ride.driverRating || 4.5;
+  const vehicleMake = ride.vehicle_make || '';
+  const vehicleModel = ride.vehicle_model || 'Veículo';
+  const vehicleType = ride.vehicle_type || ride.vehicleType || 'economy';
+  const vehiclePlate = ride.vehicle_plate || 'Não informada';
+  const vehicleColor = ride.vehicle_color || 'Não informada';
+  const maxPassengers = ride.max_passengers || ride.maxPassengers || 4;
+
+  // ✅ MAPEAMENTO PARA EXIBIÇÃO AMIGÁVEL
+  const typeInfo = VEHICLE_TYPE_DISPLAY[vehicleType] || VEHICLE_TYPE_DISPLAY.economy;
+  
+  const departureDateObj = departureDate ? new Date(departureDate) : new Date();
+  
   const convertedRide = {
     id: ride.ride_id || ride.id,
     driverId: ride.driver_id || ride.driverId,
-    driverName: ride.driver_name || ride.driverName || 'Motorista',
+    
+    // ✅ NOVOS CAMPOS: Dados do motorista
+    driverName: driverName,
+    driverRating: typeof driverRating === 'string' ? parseFloat(driverRating) : driverRating,
+    
+    // ✅ NOVOS CAMPOS: Dados completos do veículo
+    vehicleInfo: {
+      make: vehicleMake,
+      model: vehicleModel,
+      type: vehicleType,
+      typeDisplay: typeInfo.label,
+      typeIcon: typeInfo.icon,
+      plate: vehiclePlate,
+      color: vehicleColor,
+      maxPassengers: typeof maxPassengers === 'string' ? parseInt(maxPassengers) : maxPassengers
+    },
+    
+    // Campos de localização
     fromAddress: fromAddress,
     toAddress: toAddress,
     fromCity: fromCity,
@@ -84,13 +140,16 @@ export function toRideWithCompatibility(ride: any): RideWithCompatibility {
     toDistrict: ride.to_district || ride.toDistrict || '',
     fromLocality: ride.from_locality || ride.fromLocality || '',
     toLocality: ride.to_locality || ride.toLocality || '',
-    // ✅ CORREÇÃO CRÍTICA: Data correta
-    departureDate: departureDate ? new Date(departureDate) : new Date(),
+    
+    // ✅ CORREÇÃO CRÍTICA: Data e hora corretas
+    departureDate: departureDateObj,
     departureTime: ride.departure_time || ride.departureTime || '08:00',
+    departureDateFormatted: departureDateObj.toLocaleDateString('pt-MZ'),
+    
     // ✅ CORREÇÃO CRÍTICA: Campos numéricos corretos
     availableSeats: typeof availableSeats === 'string' ? parseInt(availableSeats) : availableSeats,
     pricePerSeat: typeof pricePerSeat === 'string' ? parseFloat(pricePerSeat) : pricePerSeat,
-    vehicleType: ride.vehicle_type || ride.vehicleType || 'carro',
+    vehicleType: vehicleType,
     status: ride.status || 'available',
     
     // Campos de matching
@@ -104,7 +163,7 @@ export function toRideWithCompatibility(ride: any): RideWithCompatibility {
     // Campos opcionais
     createdAt: ride.createdAt,
     updatedAt: ride.updatedAt,
-    maxPassengers: ride.max_passengers || ride.maxPassengers || 4,
+    maxPassengers: typeof maxPassengers === 'string' ? parseInt(maxPassengers) : maxPassengers,
     additionalInfo: ride.additional_info || ride.additionalInfo,
     type: ride.type,
     from_geom: ride.from_geom,
@@ -118,14 +177,14 @@ export function toRideWithCompatibility(ride: any): RideWithCompatibility {
     }
   };
 
-  console.log('✅ [CONVERSION-DEBUG] Ride convertido:', {
+  console.log('✅ [CONVERSION-DEBUG] Ride convertido com dados completos:', {
     rideId: convertedRide.id,
-    fromCity: convertedRide.fromCity,
-    toCity: convertedRide.toCity,
-    departureDate: convertedRide.departureDate,
-    availableSeats: convertedRide.availableSeats,
-    pricePerSeat: convertedRide.pricePerSeat,
-    convertedRide: convertedRide
+    driverName: convertedRide.driverName,
+    driverRating: convertedRide.driverRating,
+    vehicle: `${convertedRide.vehicleInfo.make} ${convertedRide.vehicleInfo.model}`,
+    vehicleType: convertedRide.vehicleInfo.typeDisplay,
+    price: convertedRide.pricePerSeat,
+    availableSeats: convertedRide.availableSeats
   });
 
   return convertedRide;

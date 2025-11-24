@@ -31,11 +31,11 @@ import {
   Mail
 } from 'lucide-react';
 import LocationAutocomplete from '@/shared/components/LocationAutocomplete';
-import apiService from '@/services/api';
+import apiService from '@/api/client/rides';
 import { useToast } from '@/shared/hooks/use-toast';
 
 // ✅ Importar interface Ride do ApiService
-import { type Ride } from '@/services/api';
+import { type Ride } from '@/api/client/rides';
 
 // Interface para dados do motorista
 interface DriverStats {

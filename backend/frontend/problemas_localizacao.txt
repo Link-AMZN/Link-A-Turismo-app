@@ -1,0 +1,63 @@
+src/services/api.ts:163:  distance_from_city_km?: number;
+src/services/api.ts:164:  distance_to_city_km?: number;
+src/services/api.ts:297:    fromLocation: backendRide.fromLocation || backendRide.from_address || backendRide.from_city || '',
+src/services/api.ts:298:    toLocation: backendRide.toLocation || backendRide.to_address || backendRide.to_city || '',
+src/services/api.ts:299:    fromAddress: backendRide.fromAddress || backendRide.from_address || backendRide.fromLocation || '',
+src/services/api.ts:300:    toAddress: backendRide.toAddress || backendRide.to_address || backendRide.toLocation || '',
+src/services/api.ts:324:    distance_from_city_km: backendRide.distance_from_city_km,
+src/services/api.ts:325:    distance_to_city_km: backendRide.distance_to_city_km,
+src/api/client/rides.ts:38:  from_city: string;
+src/api/client/rides.ts:39:  to_city: string;
+src/api/client/rides.ts:49:  distance_from_city_km: number;
+src/api/client/rides.ts:50:  distance_to_city_km: number;
+src/api/client/rides.ts:263:    from_city: backendRide.from_city || '',
+src/api/client/rides.ts:264:    to_city: backendRide.to_city || '',
+src/api/client/rides.ts:274:    distance_from_city_km: Number(backendRide.distance_from_city_km) || 0,
+src/api/client/rides.ts:275:    distance_to_city_km: Number(backendRide.distance_to_city_km) || 0,
+src/api/client/rides.ts:287:    from_city: ride.from_city,
+src/api/client/rides.ts:288:    to_city: ride.to_city
+src/apps/main-app/pages/Rides/search.tsx:38:  distance_from_city_km?: number;
+src/apps/main-app/pages/Rides/search.tsx:39:  distance_to_city_km?: number;
+src/apps/main-app/pages/Rides/search.tsx:251:          dist_from_user_km: ride.distance_from_city_km,
+src/apps/main-app/pages/Rides/search.tsx:252:          distance_from_city_km: ride.distance_from_city_km,
+src/apps/main-app/pages/Rides/search.tsx:253:          distance_to_city_km: ride.distance_to_city_km,
+src/apps/main-app/pages/Rides/search.tsx:255:          fromLocation: ride.from_location || ride.from_city || ride.from_address || ride.fromLocation,
+src/apps/main-app/pages/Rides/search.tsx:256:          toLocation: ride.to_location || ride.to_city || ride.to_address || ride.toLocation,
+src/apps/main-app/pages/Rides/search.tsx:257:          fromAddress: ride.from_address || ride.from_location || ride.from_city || ride.fromAddress,
+src/apps/main-app/pages/Rides/search.tsx:258:          toAddress: ride.to_address || ride.to_location || ride.to_city || ride.toAddress,
+src/apps/main-app/pages/Rides/search.tsx:908:                            {(ride.dist_from_user_km || ride.distance_from_city_km) && (
+src/apps/main-app/pages/Rides/search.tsx:909:                              <span>📍 {(ride.dist_from_user_km || ride.distance_from_city_km)?.toFixed(1)} km</span>
+src/shared/components/RideResults.tsx:85:  distance_from_city_km?: number;
+src/shared/components/RideResults.tsx:86:  distance_to_city_km?: number;
+src/shared/components/RideResults.tsx:89:  from_city?: string;
+src/shared/components/RideResults.tsx:90:  to_city?: string;
+src/shared/components/RideResults.tsx:136:          <div>From City: {ride.from_city} | To City: {ride.to_city}</div>
+src/shared/components/RideResults.tsx:392:          // Campos de localização - ✅✅✅ CORREÇÃO: Usar from_city e to_city diretamente
+src/shared/components/RideResults.tsx:393:          fromLocation: ride.fromLocation || ride.from_city || ride.fromAddress || 'Origem',
+src/shared/components/RideResults.tsx:394:          toLocation: ride.toLocation || ride.to_city || ride.toAddress || 'Destino',
+src/shared/components/RideResults.tsx:395:          fromAddress: ride.fromAddress || ride.from_city || ride.fromLocation,
+src/shared/components/RideResults.tsx:396:          toAddress: ride.toAddress || ride.to_city || ride.toLocation,
+src/shared/components/RideResults.tsx:398:          // ✅✅✅ CORREÇÃO: Adicionar campos from_city e to_city
+src/shared/components/RideResults.tsx:399:          from_city: ride.from_city,
+src/shared/components/RideResults.tsx:400:          to_city: ride.to_city,
+src/shared/components/RideResults.tsx:428:          distance_from_city_km: ride.distance_from_city_km,
+src/shared/components/RideResults.tsx:429:          distance_to_city_km: ride.distance_to_city_km,
+src/shared/components/RideResults.tsx:460:          from_city: processedRide.from_city,
+src/shared/components/RideResults.tsx:461:          to_city: processedRide.to_city
+src/shared/components/RideResults.tsx:620:                from_city: ride.from_city,
+src/shared/components/RideResults.tsx:621:                to_city: ride.to_city
+src/shared/components/RideResults.tsx:646:                          {(ride.from_city || ride.to_city) && (
+src/shared/components/RideResults.tsx:648:                              {ride.from_city && <span>Saindo de: {ride.from_city}</span>}
+src/shared/components/RideResults.tsx:649:                              {ride.to_city && <span className="ml-2">Para: {ride.to_city}</span>}
+src/shared/components/RideResults.tsx:696:                            {ride.distance_from_city_km && (
+src/shared/components/RideResults.tsx:697:                              <span>📍 {ride.distance_from_city_km.toFixed(1)} km</span>
+src/shared/components/RideResults.tsx.backup:85:  distance_from_city_km?: number;
+src/shared/components/RideResults.tsx.backup:86:  distance_to_city_km?: number;
+src/shared/components/RideResults.tsx.backup:388:          fromLocation: ride.fromLocation || ride.from_city || ride.fromAddress || 'Origem',
+src/shared/components/RideResults.tsx.backup:389:          toLocation: ride.toLocation || ride.to_city || ride.toAddress || 'Destino',
+src/shared/components/RideResults.tsx.backup:390:          fromAddress: ride.fromAddress || ride.from_city || ride.fromLocation,
+src/shared/components/RideResults.tsx.backup:391:          toAddress: ride.toAddress || ride.to_city || ride.toLocation,
+src/shared/components/RideResults.tsx.backup:419:          distance_from_city_km: ride.distance_from_city_km,
+src/shared/components/RideResults.tsx.backup:420:          distance_to_city_km: ride.distance_to_city_km,
+src/shared/components/RideResults.tsx.backup:675:                            {ride.distance_from_city_km && (
+src/shared/components/RideResults.tsx.backup:676:                              <span>📍 {ride.distance_from_city_km.toFixed(1)} km</span>

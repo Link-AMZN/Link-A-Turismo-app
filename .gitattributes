@@ -2,3 +2,4 @@
 *.zip filter=lfs diff=lfs merge=lfs -text
 **/mozambique_shapefiles/** filter=lfs diff=lfs merge=lfs -text
 *.sqlite filter=lfs diff=lfs merge=lfs -text
+*.extensão filter=lfs diff=lfs merge=lfs -text
