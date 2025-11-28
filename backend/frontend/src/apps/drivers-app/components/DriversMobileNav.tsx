@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/shared/components/ui/button";
-import { TrendingUp, Plus, Car, MessageCircle, Home } from "lucide-react";
+import { TrendingUp, Plus, Car, MessageCircle, Home, Wrench } from "lucide-react";
 
 export default function DriversMobileNav() {
   const [location] = useLocation();
@@ -24,6 +24,13 @@ export default function DriversMobileNav() {
       label: "Ofertas",
       active: location.startsWith("/drivers/offers")
     },
+    // ✅ ADICIONAR ITEM DE VEÍCULOS
+    {
+      href: "/drivers/vehicles",
+      icon: Wrench,
+      label: "Veículos",
+      active: location.startsWith("/drivers/vehicles")
+    },
     {
       href: "/drivers/chat",
       icon: MessageCircle,
@@ -40,7 +47,7 @@ export default function DriversMobileNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 md:hidden">
-      <div className="grid grid-cols-5 h-16">
+      <div className="grid grid-cols-6 h-16"> {/* ✅ MUDAR PARA grid-cols-6 */}
         {navItems.map((item) => {
           const Icon = item.icon;
           return (

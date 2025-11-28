@@ -5,7 +5,9 @@ import { rideService } from '../../src/services/rideService';
 import { insertRideSchema, updateRideSchema } from '../../shared/schema';
 import { z } from 'zod';
 import { db } from '../../db';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
+import { vehicles } from '../../shared/database-schema';
+import { vehicleQueries } from '../../shared/db-helpers';
 
 const router = Router();
 
@@ -61,6 +63,114 @@ async function normalizeLocation(locationName: string): Promise<string> {
   } catch (error) {
     console.error('❌ [PROVIDER-NORMALIZER] Erro, usando fallback:', error);
     return locationName.split(',')[0].trim().toLowerCase();
+  }
+}
+
+// ✅✅✅ CORREÇÃO: Função para chamar RPC do PostgreSQL (CORRIGIDA)
+async function callPostgresFunction(functionName: string, params: any[] = []): Promise<any[]> {
+  try {
+    console.log('🧠 [RPC] Chamando função PostgreSQL:', {
+      function: functionName,
+      params,
+      timestamp: new Date().toISOString()
+    });
+
+    // ✅ VALIDAR FUNÇÕES PERMITIDAS (SEGURANÇA)
+    const allowedFunctions = [
+      'get_rides_smart_final',
+      'normalize_location_name',
+      'search_rides_by_location',
+      'find_nearby_rides'
+    ];
+
+    if (!allowedFunctions.includes(functionName)) {
+      throw new Error(`Função não permitida: ${functionName}`);
+    }
+
+    // ✅✅✅ CORREÇÃO CRÍTICA: Construir query com parâmetros usando template string
+    let query: string;
+    let queryParams: any[] = [];
+
+    if (functionName === 'get_rides_smart_final') {
+      const [search_from, search_to, radius_km, max_results] = params;
+      
+      query = `SELECT * FROM get_rides_smart_final($1, $2, $3, $4)`;
+      queryParams = [
+        search_from || '',
+        search_to || '', 
+        radius_km || 100,
+        max_results || 50
+      ];
+    } else {
+      // ✅ FUNÇÃO GENÉRICA PARA OUTRAS FUNÇÕES
+      const placeholders = params.map((_, index) => `$${index + 1}`).join(', ');
+      query = `SELECT * FROM ${functionName}(${placeholders})`;
+      queryParams = params;
+    }
+
+    console.log('🔍 [RPC] Executando query:', {
+      query,
+      params: queryParams
+    });
+
+    // ✅✅✅ CORREÇÃO CRÍTICA: Usar sql.raw corretamente sem parâmetros extras
+    // Construir a query com os parâmetros já interpolados
+    const rawQuery = sql.raw(query);
+    
+    // ✅ CORREÇÃO: Executar com parâmetros usando método execute correto
+    let result: any;
+    
+    // Tentar diferentes métodos de execução baseado na configuração do Drizzle
+    try {
+      // Método 1: Usando db.execute com sql template (mais seguro)
+      if (functionName === 'get_rides_smart_final') {
+        const [p1, p2, p3, p4] = queryParams;
+        result = await db.execute(sql`
+          SELECT * FROM get_rides_smart_final(${p1}, ${p2}, ${p3}, ${p4})
+        `);
+      } else {
+        // Para outras funções, construir dinamicamente
+        const dynamicSql = sql`SELECT * FROM ${sql.raw(functionName)}(${sql.join(queryParams.map(p => sql`${p}`), sql`, `)})`;
+        result = await db.execute(dynamicSql);
+      }
+    } catch (executeError) {
+      console.warn('❌ [RPC] Método seguro falhou, tentando raw query:', executeError);
+      
+      // Método 2: Fallback para raw query (menos seguro mas funcional)
+      const interpolatedQuery = query.replace(/\$(\d+)/g, (_, index) => {
+        const paramIndex = parseInt(index) - 1;
+        const param = queryParams[paramIndex];
+        return typeof param === 'string' ? `'${param.replace(/'/g, "''")}'` : param;
+      });
+      
+      result = await db.execute(sql.raw(interpolatedQuery));
+    }
+
+    // ✅ EXTRAIR RESULTADOS DE FORMA SEGURA
+    let rows: any[] = [];
+    
+    if (Array.isArray(result)) {
+      rows = result;
+    } else if (result && typeof result === 'object' && 'rows' in result) {
+      rows = (result as any).rows;
+    } else if (result && typeof result === 'object') {
+      const values = Object.values(result);
+      if (Array.isArray(values[0])) {
+        rows = values[0] as any[];
+      }
+    }
+
+    console.log('✅ [RPC] Função executada com sucesso:', {
+      function: functionName,
+      results: rows.length,
+      sample: rows[0] || 'Nenhum resultado'
+    });
+
+    return rows;
+
+  } catch (error) {
+    console.error('❌ [RPC] Erro ao executar função:', error);
+    throw error;
   }
 }
 
@@ -136,7 +246,7 @@ const getDriverId = (req: AuthenticatedRequest): string | null => {
     user.id,
     (user as any).uid,
     (user as any).user_id,
-    (user as any).sub
+    (req.user as any)?.uid // ✅ CORREÇÃO: Acessar uid diretamente do req.user
   ].filter(Boolean);
   
   if (possibleIds.length === 0) {
@@ -213,12 +323,178 @@ const debugRideCreation = async (req: AuthenticatedRequest, res: Response, next:
       toCity: req.body.toCity, 
       departureDate: req.body.departureDate,
       pricePerSeat: req.body.pricePerSeat,
-      availableSeats: req.body.availableSeats
+      availableSeats: req.body.availableSeats,
+      vehicleId: req.body.vehicleId // ✅ NOVO: Incluir vehicleId no debug
     } : 'NO_BODY'
   });
   
   next();
 };
+
+// ✅✅✅ CORREÇÃO CRÍTICA: Rota POST com validação de vehicleId (CORRIGIDA)
+router.post('/', 
+  debugRideCreation,
+  verifyFirebaseToken,
+  ensureUserId,
+  requireDriverRole, 
+  async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🚗 [RIDES-POST] === INICIANDO CRIAÇÃO DE RIDE ===');
+    
+    const driverId = getDriverId(req);
+    const body = req.body;
+    
+    console.log('📋 Dados recebidos para criação:', {
+      driverId,
+      bodyKeys: Object.keys(body),
+      bodyPreview: {
+        fromCity: body.fromCity,
+        toCity: body.toCity,
+        departureDate: body.departureDate,
+        pricePerSeat: body.pricePerSeat,
+        vehicleId: body.vehicleId // ✅ NOVO
+      },
+      user: req.user ? {
+        id: req.user.id,
+        uid: (req.user as any).uid,
+        email: req.user.email,
+        roles: req.user.roles
+      } : 'NO_USER'
+    });
+    
+    if (!driverId) {
+      console.log('❌ [RIDES-POST] driverId não encontrado. User object:', req.user);
+      return res.status(401).json({ 
+        success: false,
+        error: 'Usuário não autenticado' 
+      });
+    }
+
+    // ✅✅✅ VALIDAÇÃO OBRIGATÓRIA DO VEÍCULO (NOVO)
+    if (!body.vehicleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Seleção de veículo é obrigatória'
+      });
+    }
+
+    // ✅✅✅ CORREÇÃO: Usar helper para validação do veículo
+    const vehicle = await vehicleQueries.getVehicleByIdAndDriver(body.vehicleId, driverId);
+
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        error: 'Veículo não encontrado ou não pertence a você'
+      });
+    }
+
+    // ✅✅✅ VERIFICAR CAPACIDADE DO VEÍCULO
+    if (body.maxPassengers > vehicle.max_passengers) {
+      return res.status(400).json({
+        success: false,
+        error: `Número de passageiros (${body.maxPassengers}) excede a capacidade do veículo (máximo: ${vehicle.max_passengers})`
+      });
+    }
+
+    console.log('✅ [RIDES-POST] Validação do veículo concluída:', {
+      vehicleId: body.vehicleId,
+      vehicleInfo: `${vehicle.make} ${vehicle.model} (${vehicle.color}) - ${vehicle.plate_number}`,
+      capacity: `${body.maxPassengers}/${vehicle.max_passengers} passageiros`
+    });
+
+    logger.info('📝 Iniciando criação de ride', { driverId, vehicleId: body.vehicleId });
+
+    const { 
+      fromAddress, 
+      toAddress, 
+      fromProvince,
+      toProvince,
+      fromCity,
+      toCity,
+      fromLocality,
+      toLocality,
+      departureDate, 
+      departureTime,
+      availableSeats, 
+      maxPassengers, 
+      pricePerSeat, 
+      vehicleType, 
+      additionalInfo,
+      vehicleId // ✅ NOVO: Incluir vehicleId
+    } = body;
+    
+    const rideInput = {
+      driverId,
+      fromAddress: safeString(fromAddress),
+      toAddress: safeString(toAddress),
+      fromProvince: normalizeLocationField(fromProvince),
+      toProvince: normalizeLocationField(toProvince),
+      fromCity: normalizeLocationField(fromCity),
+      toCity: normalizeLocationField(toCity),
+      fromLocality: normalizeLocationField(fromLocality),
+      toLocality: normalizeLocationField(toLocality),
+      departureDate: safeDate(departureDate),
+      departureTime: safeString(departureTime, '08:00'),
+      availableSeats: safeNumber(availableSeats, 1),
+      maxPassengers: safeNumber(maxPassengers, 4),
+      pricePerSeat: safeNumber(pricePerSeat, 0),
+      vehicleType: safeString(vehicleType, 'car'),
+      additionalInfo: safeString(additionalInfo),
+      vehicleId: safeString(vehicleId), // ✅ NOVO: Incluir vehicleId
+      status: 'available' as const
+    };
+
+    console.log('📝 Dados normalizados para ride:', rideInput);
+
+    const validatedData = insertRideSchema.parse({
+      ...rideInput,
+      pricePerSeat: rideInput.pricePerSeat.toString()
+    });
+
+    console.log('✅ Dados validados com Zod, criando ride no banco...');
+
+    const newRide = await rideService.createRide(validatedData as any);
+    
+    console.log('🎉 Ride criada com sucesso no banco:', { 
+      rideId: newRide.id,
+      driverId,
+      vehicleId: body.vehicleId
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Viagem criada com sucesso',
+      data: { 
+        ride: newRide,
+        vehicleInfo: {
+          id: vehicle.id,
+          make: vehicle.make,
+          model: vehicle.model,
+          color: vehicle.color,
+          plateNumber: vehicle.plate_number,
+          maxPassengers: vehicle.max_passengers
+        }
+      }
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.log('❌ Erro de validação Zod:', error.errors);
+      logger.warn('❌ Validação Zod falhou', { errors: error.errors });
+      return res.status(400).json({
+        success: false,
+        error: 'Dados inválidos',
+        details: error.errors
+      });
+    }
+
+    console.log('❌ Erro inesperado ao criar ride:', error);
+    logger.error('Erro ao criar viagem:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erro interno do servidor' 
+    });
+  }
+});
 
 // ✅✅✅ CORREÇÃO: Nova rota para busca inteligente de rides do motorista
 // GET /api/provider/rides/smart/search - Busca inteligente para motoristas
@@ -238,7 +514,7 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
     const originalTo = getQueryString(req.query, 'to');
     const date = getQueryString(req.query, 'date');
     const radiusKm = getQueryNumber(req.query, 'radiusKm', 100);
-    const maxResults = getQueryNumber(req.query, 'maxResults', 20);
+    const maxResults = getQueryNumber(req.query, 'maxResults', 50); // ✅ Aumentado para 50
 
     // ✅ APLICAR NORMALIZAÇÃO DO POSTGRESQL
     const normalizedFrom = await normalizeLocation(originalFrom);
@@ -258,8 +534,13 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
     let searchMethod = 'smart_final';
 
     try {
-      // ✅✅✅ CORREÇÃO CRÍTICA: Usar busca SMART FINAL com nomes NORMALIZADOS
-      matchingRides = await rideService.searchRidesSmartFinal(normalizedFrom, normalizedTo, radiusKm);
+      // ✅✅✅ CORREÇÃO CRÍTICA: Usar RPC para busca SMART FINAL com nomes NORMALIZADOS
+      matchingRides = await callPostgresFunction('get_rides_smart_final', [
+        normalizedFrom,
+        normalizedTo,
+        radiusKm,
+        maxResults
+      ]);
       searchMethod = 'smart_final_normalized';
     } catch (smartError) {
       console.warn("❌ PROVIDER: Smart final falhou, usando universal como fallback:", smartError);
@@ -285,37 +566,44 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
     // ✅ Aplicar limite de resultados
     matchingRides = matchingRides.slice(0, maxResults);
 
-    // ✅✅✅ CORREÇÃO: ESTATÍSTICAS ATUALIZADAS COM DADOS COMPLETOS
+    // ✅✅✅ CORREÇÃO: ESTATÍSTICAS ATUALIZADAS COM DADOS DA FUNÇÃO INTELIGENTE
     const matchStats = {
-      smart_matches: matchingRides.filter(r => r.match_type === 'smart_final_direct' || r.match_type === 'smart_match').length,
       exact_match: matchingRides.filter(r => r.match_type === 'exact_match').length,
-      same_segment: matchingRides.filter(r => r.match_type === 'same_segment').length,
-      same_direction: matchingRides.filter(r => r.match_type === 'same_direction').length,
-      potential: matchingRides.filter(r => r.match_type === 'potential').length,
-      traditional: matchingRides.filter(r => !r.match_type || r.match_type === 'traditional').length,
+      exact_province: matchingRides.filter(r => r.match_type === 'exact_province').length,
+      from_correct_province_to: matchingRides.filter(r => r.match_type === 'from_correct_province_to').length,
+      to_correct_province_from: matchingRides.filter(r => r.match_type === 'to_correct_province_from').length,
+      partial_from: matchingRides.filter(r => r.match_type === 'partial_from').length,
+      partial_to: matchingRides.filter(r => r.match_type === 'partial_to').length,
+      nearby: matchingRides.filter(r => r.match_type === 'nearby').length,
+      all_rides: matchingRides.filter(r => r.match_type === 'all_rides').length,
+      other: matchingRides.filter(r => r.match_type === 'other').length,
       total: matchingRides.length,
       // ✅ NOVAS ESTATÍSTICAS: Dados dos motoristas e veículos
-      drivers_with_ratings: matchingRides.filter(r => r.driverRating && r.driverRating > 0).length,
+      drivers_with_ratings: matchingRides.filter(r => r.driver_rating && r.driver_rating > 0).length,
       average_driver_rating: matchingRides.length > 0 
-        ? parseFloat((matchingRides.reduce((sum, ride) => sum + (safeNumber(ride.driverRating) || 0), 0) / matchingRides.length).toFixed(1))
+        ? parseFloat((matchingRides.reduce((sum, ride) => sum + (safeNumber(ride.driver_rating) || 0), 0) / matchingRides.length).toFixed(1))
+        : 0,
+      average_direction_score: matchingRides.length > 0 
+        ? Math.round(matchingRides.reduce((sum, ride) => sum + (safeNumber(ride.direction_score) || 0), 0) / matchingRides.length)
         : 0,
       vehicle_types: matchingRides.reduce((acc: any, ride) => {
-        const type = ride.vehicleInfo?.type || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
     };
 
-    // ✅✅✅ CORREÇÃO: DEBUG COM DADOS COMPLETOS
+    // ✅✅✅ CORREÇÃO: DEBUG COM DADOS COMPLETOS DA FUNÇÃO INTELIGENTE
     console.log('🎯 [PROVIDER-SMART-SEARCH] Resultados com dados completos:', {
       totalResults: matchingRides.length,
       sampleResults: matchingRides.slice(0, 3).map(ride => ({
-        driverName: ride.driverName,
-        driverRating: ride.driverRating,
-        vehicle: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'N/A',
-        vehicleType: ride.vehicleInfo?.typeDisplay || 'N/A',
-        price: ride.pricePerSeat,
-        match_type: ride.match_type
+        driverName: ride.driver_name || ride.driverName,
+        driverRating: ride.driver_rating || ride.driverRating,
+        vehicle: ride.vehicle_make ? `${ride.vehicle_make} ${ride.vehicle_model}` : 'N/A',
+        vehicleType: ride.vehicle_type || 'N/A',
+        price: ride.priceperseat || ride.pricePerSeat,
+        match_type: ride.match_type,
+        direction_score: ride.direction_score
       })),
       stats: matchStats
     });
@@ -353,19 +641,21 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
           normalized: { from: normalizedFrom, to: normalizedTo }
         },
         data_completeness: {
-          driver_names: matchingRides.filter(r => r.driverName && r.driverName !== 'Motorista').length,
-          driver_ratings: matchingRides.filter(r => r.driverRating && safeNumber(r.driverRating) > 0).length,
-          vehicle_data: matchingRides.filter(r => r.vehicleInfo && r.vehicleInfo.make).length,
-          prices: matchingRides.filter(r => r.pricePerSeat && safeNumber(r.pricePerSeat) > 0).length
+          driver_names: matchingRides.filter(r => r.driver_name && r.driver_name !== 'Motorista').length,
+          driver_ratings: matchingRides.filter(r => r.driver_rating && safeNumber(r.driver_rating) > 0).length,
+          vehicle_data: matchingRides.filter(r => r.vehicle_make && r.vehicle_model).length,
+          prices: matchingRides.filter(r => r.priceperseat && safeNumber(r.priceperseat) > 0).length,
+          direction_scores: matchingRides.filter(r => r.direction_score && safeNumber(r.direction_score) > 0).length
         },
-        smart_search: true
+        smart_search: true,
+        smart_function_used: true
       }
     });
   } catch (error) {
     logger.error('❌ PROVIDER: Erro em busca inteligente:', error);
     
     try {
-      const { from, to, maxResults = '20' } = req.query;
+      const { from, to, maxResults = '50' } = req.query;
       
       // ✅ CORREÇÃO: Aplicar normalização do PostgreSQL mesmo no fallback
       const normalizedFromFallback = await normalizeLocation(from as string);
@@ -375,7 +665,7 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
         fromLocation: normalizedFromFallback,
         toLocation: normalizedToFallback,
         status: 'available'
-      }).then(rides => rides.slice(0, safeNumber(maxResults, 20)));
+      }).then(rides => rides.slice(0, safeNumber(maxResults, 50)));
 
       res.json({
         success: true,
@@ -394,7 +684,7 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
             to: to as string,
             normalizedFrom: normalizedFromFallback,
             normalizedTo: normalizedToFallback,
-            maxResults: safeNumber(maxResults, 20)
+            maxResults: safeNumber(maxResults, 50)
           },
           normalization: {
             applied: (from as string) !== normalizedFromFallback || (to as string) !== normalizedToFallback,
@@ -442,11 +732,16 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       normalizationApplied: originalFrom !== normalizedFrom || originalTo !== normalizedTo
     });
 
-    // ✅✅✅ CORREÇÃO: Usar busca SMART FINAL com nomes NORMALIZADOS
+    // ✅✅✅ CORREÇÃO: Usar RPC para busca SMART FINAL com nomes NORMALIZADOS
     let marketRides: any[] = [];
     
     try {
-      marketRides = await rideService.searchRidesSmartFinal(normalizedFrom, normalizedTo, radiusKm);
+      marketRides = await callPostgresFunction('get_rides_smart_final', [
+        normalizedFrom,
+        normalizedTo,
+        radiusKm,
+        50
+      ]);
     } catch (smartError) {
       console.warn("❌ PROVIDER: Smart final falhou na análise, usando universal:", smartError);
       marketRides = await rideService.getRidesUniversal({
@@ -457,10 +752,10 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       });
     }
 
-    // ✅✅✅ CORREÇÃO: ANÁLISE COMPLETA COM NOVOS DADOS
+    // ✅✅✅ CORREÇÃO: ANÁLISE COMPLETA COM NOVOS DADOS DA FUNÇÃO INTELIGENTE
     const prices = marketRides
-      .filter(ride => safeNumber(ride.pricePerSeat) > 0)
-      .map(ride => safeNumber(ride.pricePerSeat));
+      .filter(ride => safeNumber(ride.priceperseat || ride.pricePerSeat) > 0)
+      .map(ride => safeNumber(ride.priceperseat || ride.pricePerSeat));
     
     const averagePrice = prices.length > 0 
       ? prices.reduce((sum, price) => sum + price, 0) / prices.length 
@@ -470,32 +765,41 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
     const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
 
     // ✅ Análise de demanda
-    const totalAvailableSeats = marketRides.reduce((sum, ride) => sum + safeNumber(ride.availableSeats), 0);
+    const totalAvailableSeats = marketRides.reduce((sum, ride) => sum + safeNumber(ride.availableseats || ride.availableSeats), 0);
     const totalRides = marketRides.length;
     
     // ✅✅✅ CORREÇÃO: ANÁLISE DE MOTORISTAS E VEÍCULOS COMPLETA
     const vehicleTypes = marketRides.reduce((acc, ride) => {
-      const type = ride.vehicleInfo?.type || 'desconhecido';
+      const type = ride.vehicle_type || ride.vehicleType || 'desconhecido';
       acc[type] = (acc[type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
     // ✅ Análise de ratings dos motoristas
     const driverRatings = marketRides
-      .filter(ride => safeNumber(ride.driverRating) > 0)
-      .map(ride => safeNumber(ride.driverRating));
+      .filter(ride => safeNumber(ride.driver_rating || ride.driverRating) > 0)
+      .map(ride => safeNumber(ride.driver_rating || ride.driverRating));
     
     const averageDriverRating = driverRatings.length > 0 
       ? driverRatings.reduce((sum, rating) => sum + rating, 0) / driverRatings.length 
       : 0;
 
+    // ✅ Análise de direction scores
+    const directionScores = marketRides
+      .filter(ride => safeNumber(ride.direction_score) > 0)
+      .map(ride => safeNumber(ride.direction_score));
+    
+    const averageDirectionScore = directionScores.length > 0 
+      ? directionScores.reduce((sum, score) => sum + score, 0) / directionScores.length 
+      : 0;
+
     // ✅ Análise de datas
     const upcomingRides = marketRides.filter(ride => {
-      const departureDate = safeDate(ride.departureDate);
+      const departureDate = safeDate(ride.departuredate || ride.departureDate);
       return departureDate >= new Date();
     }).length;
 
-    // ✅✅✅ CORREÇÃO: ANÁLISE DE MERCADO COMPLETA
+    // ✅✅✅ CORREÇÃO: ANÁLISE DE MERCADO COMPLETA COM NOVOS DADOS
     const marketAnalysis = {
       route: { from: originalFrom, to: originalTo, normalizedFrom, normalizedTo },
       pricing: {
@@ -516,8 +820,9 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
           : `Mercado ${totalRides < 5 ? 'moderado' : 'competitivo'} - ${totalRides} rides ativas`
       },
       drivers: {
-        totalUnique: new Set(marketRides.map(ride => ride.driverId)).size,
+        totalUnique: new Set(marketRides.map(ride => ride.driver_id || ride.driverId)).size,
         averageRating: parseFloat(averageDriverRating.toFixed(1)),
+        averageDirectionScore: Math.round(averageDirectionScore),
         recommendation: averageDriverRating > 4.5 
           ? 'Mercado com motoristas bem avaliados - mantenha alta qualidade'
           : 'Oportunidade para se destacar com bom atendimento'
@@ -536,6 +841,13 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
         recommendation: upcomingRides === 0 
           ? 'Horários flexíveis - baixa competição'
           : `Considere horários alternativos - ${upcomingRides} rides futuras`
+      },
+      match_quality: {
+        averageDirectionScore: Math.round(averageDirectionScore),
+        qualityLevel: averageDirectionScore >= 80 ? 'alta' : averageDirectionScore >= 60 ? 'média' : 'baixa',
+        recommendation: averageDirectionScore >= 80 
+          ? 'Mercado com alta qualidade de correspondência'
+          : 'Oportunidade para oferecer rotas mais precisas'
       }
     };
 
@@ -545,11 +857,13 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       averagePrice: marketAnalysis.pricing.average,
       driverStats: marketAnalysis.drivers,
       vehicleStats: marketAnalysis.vehicles,
+      matchQuality: marketAnalysis.match_quality,
       sampleRides: marketRides.slice(0, 3).map(ride => ({
-        driverName: ride.driverName,
-        driverRating: ride.driverRating,
-        vehicle: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'N/A',
-        price: ride.pricePerSeat
+        driverName: ride.driver_name || ride.driverName,
+        driverRating: ride.driver_rating || ride.driverRating,
+        vehicle: ride.vehicle_make ? `${ride.vehicle_make} ${ride.vehicle_model}` : 'N/A',
+        price: ride.priceperseat || ride.pricePerSeat,
+        direction_score: ride.direction_score
       }))
     });
 
@@ -558,6 +872,7 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       totalRides,
       averagePrice: marketAnalysis.pricing.average,
       averageDriverRating: marketAnalysis.drivers.averageRating,
+      averageDirectionScore: marketAnalysis.drivers.averageDirectionScore,
       normalization: {
         applied: originalFrom !== normalizedFrom || originalTo !== normalizedTo,
         original: { from: originalFrom, to: originalTo },
@@ -570,13 +885,19 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
       data: {
         analysis: marketAnalysis,
         sampleRides: marketRides.slice(0, 5).map(ride => ({
-          id: ride.id,
-          driverName: ride.driverName,
-          driverRating: ride.driverRating,
-          vehicleInfo: ride.vehicleInfo,
-          pricePerSeat: ride.pricePerSeat,
-          availableSeats: ride.availableSeats,
-          departureDate: ride.departureDate
+          id: ride.ride_id || ride.id,
+          driverName: ride.driver_name || ride.driverName,
+          driverRating: ride.driver_rating || ride.driverRating,
+          vehicleInfo: ride.vehicle_make ? {
+            make: ride.vehicle_make,
+            model: ride.vehicle_model,
+            type: ride.vehicle_type
+          } : ride.vehicleInfo,
+          pricePerSeat: ride.priceperseat || ride.pricePerSeat,
+          availableSeats: ride.availableseats || ride.availableSeats,
+          departureDate: ride.departuredate || ride.departureDate,
+          match_type: ride.match_type,
+          direction_score: ride.direction_score
         })),
         searchParams: {
           from: originalFrom,
@@ -592,12 +913,14 @@ router.get('/market-analysis', verifyFirebaseToken, requireDriverRole, async (re
           normalized: { from: normalizedFrom, to: normalizedTo }
         },
         data_completeness: {
-          driver_names: marketRides.filter(r => r.driverName && r.driverName !== 'Motorista').length,
-          driver_ratings: marketRides.filter(r => r.driverRating && safeNumber(r.driverRating) > 0).length,
-          vehicle_data: marketRides.filter(r => r.vehicleInfo && r.vehicleInfo.make).length,
-          prices: marketRides.filter(r => r.pricePerSeat && safeNumber(r.pricePerSeat) > 0).length
+          driver_names: marketRides.filter(r => r.driver_name && r.driver_name !== 'Motorista').length,
+          driver_ratings: marketRides.filter(r => r.driver_rating && safeNumber(r.driver_rating) > 0).length,
+          vehicle_data: marketRides.filter(r => r.vehicle_make && r.vehicle_model).length,
+          prices: marketRides.filter(r => r.priceperseat && safeNumber(r.priceperseat) > 0).length,
+          direction_scores: marketRides.filter(r => r.direction_score && safeNumber(r.direction_score) > 0).length
         },
-        smart_analysis: true
+        smart_analysis: true,
+        smart_function_used: true
       }
     });
   } catch (error) {
@@ -815,125 +1138,6 @@ router.get('/', verifyFirebaseToken, requireDriverRole, async (req: Authenticate
     });
   } catch (error) {
     logger.error('Erro ao buscar viagens:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erro interno do servidor' 
-    });
-  }
-});
-
-// ✅✅✅ CORREÇÃO CRÍTICA: Rota POST com debug completo
-router.post('/', 
-  debugRideCreation,
-  verifyFirebaseToken,
-  ensureUserId,
-  requireDriverRole, 
-  async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    console.log('🚗 [RIDES-POST] === INICIANDO CRIAÇÃO DE RIDE ===');
-    
-    const driverId = getDriverId(req);
-    const body = req.body;
-    
-    console.log('📋 Dados recebidos para criação:', {
-      driverId,
-      bodyKeys: Object.keys(body),
-      bodyPreview: {
-        fromCity: body.fromCity,
-        toCity: body.toCity,
-        departureDate: body.departureDate,
-        pricePerSeat: body.pricePerSeat
-      },
-      user: req.user ? {
-        id: req.user.id,
-        uid: (req.user as any).uid,
-        email: req.user.email,
-        roles: req.user.roles
-      } : 'NO_USER'
-    });
-    
-    if (!driverId) {
-      console.log('❌ [RIDES-POST] driverId não encontrado. User object:', req.user);
-      return res.status(401).json({ 
-        success: false,
-        error: 'Usuário não autenticado' 
-      });
-    }
-
-    logger.info('📝 Iniciando criação de ride', { driverId });
-
-    const { 
-      fromAddress, 
-      toAddress, 
-      fromProvince,
-      toProvince,
-      fromCity,
-      toCity,
-      fromLocality,
-      toLocality,
-      departureDate, 
-      departureTime,
-      availableSeats, 
-      maxPassengers, 
-      pricePerSeat, 
-      vehicleType, 
-      additionalInfo 
-    } = body;
-    
-    const rideInput = {
-      driverId,
-      fromAddress: safeString(fromAddress),
-      toAddress: safeString(toAddress),
-      fromProvince: normalizeLocationField(fromProvince),
-      toProvince: normalizeLocationField(toProvince),
-      fromCity: normalizeLocationField(fromCity),
-      toCity: normalizeLocationField(toCity),
-      fromLocality: normalizeLocationField(fromLocality),
-      toLocality: normalizeLocationField(toLocality),
-      departureDate: safeDate(departureDate),
-      departureTime: safeString(departureTime, '08:00'),
-      availableSeats: safeNumber(availableSeats, 1),
-      maxPassengers: safeNumber(maxPassengers, 4),
-      pricePerSeat: safeNumber(pricePerSeat, 0),
-      vehicleType: safeString(vehicleType, 'car'),
-      additionalInfo: safeString(additionalInfo),
-      status: 'available' as const
-    };
-
-    console.log('📝 Dados normalizados para ride:', rideInput);
-
-    const validatedData = insertRideSchema.parse({
-      ...rideInput,
-      pricePerSeat: rideInput.pricePerSeat.toString()
-    });
-
-    console.log('✅ Dados validados com Zod, criando ride no banco...');
-
-    const newRide = await rideService.createRide(validatedData as any);
-    
-    console.log('🎉 Ride criada com sucesso no banco:', { 
-      rideId: newRide.id,
-      driverId 
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Viagem criada com sucesso',
-      data: { ride: newRide }
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      console.log('❌ Erro de validação Zod:', error.errors);
-      logger.warn('❌ Validação Zod falhou', { errors: error.errors });
-      return res.status(400).json({
-        success: false,
-        error: 'Dados inválidos',
-        details: error.errors
-      });
-    }
-
-    console.log('❌ Erro inesperado ao criar ride:', error);
-    logger.error('Erro ao criar viagem:', error);
     res.status(500).json({ 
       success: false,
       error: 'Erro interno do servidor' 

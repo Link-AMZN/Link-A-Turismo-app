@@ -145,7 +145,7 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       toLat,
       toLng,
       radiusKm = '100',
-      maxResults = '20',
+      maxResults = '50', // ✅ Aumentado para 50
       status = 'available'
     } = req.query;
 
@@ -156,11 +156,11 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       });
     }
 
-    const validatedMaxResults = validateMaxResults(maxResults, 20, 50);
+    const validatedMaxResults = validateMaxResults(maxResults, 50, 50); // ✅ Padrão 50
     const radius = parseFloat(radiusKm as string);
 
     console.log('🧠 [UNIVERSAL-CONTROLLER] Busca universal inteligente:', {
-      from, to, radius
+      from, to, radius, maxResults: validatedMaxResults
     });
 
     // ✅ CORREÇÃO: Usar get_rides_smart_final via rideService atualizado
@@ -176,23 +176,28 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       status: status as string
     });
 
-    // ✅ CORREÇÃO: Estatísticas atualizadas com novos dados
+    // ✅ CORREÇÃO: Estatísticas atualizadas com novos dados da função inteligente
     const stats = {
       total: universalRides.length,
-      smart_matches: universalRides.filter(r => r.matchType === 'smart_match' || r.matchType === 'smart_final_direct').length,
       exact_matches: universalRides.filter(r => r.matchType === 'exact_match').length,
-      nearby_matches: universalRides.filter(r => r.matchType === 'nearby').length,
-      traditional_matches: universalRides.filter(r => !r.matchType || r.matchType === 'traditional').length,
-      average_compatibility: universalRides.length > 0 
-        ? Math.round(universalRides.reduce((sum, ride) => sum + (ride.route_compatibility || 0), 0) / universalRides.length)
+      exact_province: universalRides.filter(r => r.matchType === 'exact_province').length,
+      from_correct_province_to: universalRides.filter(r => r.matchType === 'from_correct_province_to').length,
+      to_correct_province_from: universalRides.filter(r => r.matchType === 'to_correct_province_from').length,
+      partial_from: universalRides.filter(r => r.matchType === 'partial_from').length,
+      partial_to: universalRides.filter(r => r.matchType === 'partial_to').length,
+      nearby: universalRides.filter(r => r.matchType === 'nearby').length,
+      all_rides: universalRides.filter(r => r.matchType === 'all_rides').length,
+      other: universalRides.filter(r => r.matchType === 'other').length,
+      average_direction_score: universalRides.length > 0 
+        ? Math.round(universalRides.reduce((sum, ride) => sum + (ride.direction_score || 0), 0) / universalRides.length)
         : 0,
       // ✅ NOVAS ESTATÍSTICAS: Dados dos motoristas e veículos
-      drivers_with_ratings: universalRides.filter(r => r.driverRating && r.driverRating > 0).length,
+      drivers_with_ratings: universalRides.filter(r => r.driver_rating && r.driver_rating > 0).length,
       average_driver_rating: universalRides.length > 0 
-        ? parseFloat((universalRides.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / universalRides.length).toFixed(1))
+        ? parseFloat((universalRides.reduce((sum, ride) => sum + (ride.driver_rating || 0), 0) / universalRides.length).toFixed(1))
         : 0,
       vehicle_types: universalRides.reduce((acc: any, ride) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
@@ -221,13 +226,13 @@ router.get("/search/universal", async (req: Request, res: Response) => {
     console.error("❌ Erro em busca universal:", error);
     
     try {
-      const { from, to, maxResults = '20' } = req.query;
+      const { from, to, maxResults = '50' } = req.query;
       
       const fallbackRides = await rideService.getRides({
         fromLocation: from as string,
         toLocation: to as string,
         status: 'available'
-      }).then(rides => rides.slice(0, validateMaxResults(maxResults, 20, 50)));
+      }).then(rides => rides.slice(0, validateMaxResults(maxResults, 50, 50)));
 
       res.json({
         success: true,
@@ -240,7 +245,7 @@ router.get("/search/universal", async (req: Request, res: Response) => {
           searchParams: {
             from: from as string,
             to: to as string,
-            maxResults: validateMaxResults(maxResults, 20, 50)
+            maxResults: validateMaxResults(maxResults, 50, 50)
           },
           warning: "Sistema universal temporariamente indisponível, usando busca tradicional"
         }
@@ -254,7 +259,7 @@ router.get("/search/universal", async (req: Request, res: Response) => {
   }
 });
 
-// ✅✅✅ PATCH 2 APLICADO: ROTA /smart/search CORRIGIDA
+// ✅✅✅ ROTA /smart/search CORRIGIDA - USANDO FUNÇÃO INTELIGENTE
 // GET /api/rides/smart/search - Busca inteligente pública COM RESPOSTA CONSISTENTE
 router.get("/smart/search", async (req: Request, res: Response) => {
   try {
@@ -263,7 +268,8 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       to,
       date,
       passengers = 1,
-      radiusKm = 100
+      radiusKm = 100,
+      maxResults = 50 // ✅ Novo parâmetro
     } = req.query;
 
     // ✅ VALIDAÇÃO DOS PARÂMETROS OBRIGATÓRIOS
@@ -287,10 +293,11 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       toLng: parsedTo.lng,
       date,
       passengers,
-      radiusKm
+      radiusKm,
+      maxResults
     });
 
-    // ✅ USAR A FUNÇÃO NORMALIZADA DO SERVICE ATUALIZADO
+    // ✅✅✅ USAR A FUNÇÃO INTELIGENTE ATUALIZADA
     const matchingRides = await rideService.searchRidesSmartFinal({
       fromCity: parsedFrom.city,
       toCity: parsedTo.city,
@@ -300,34 +307,58 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       toLng: parsedTo.lng,
       date: date as string,
       passengers: Number(passengers),
-      radiusKm: Number(radiusKm)
+      radiusKm: Number(radiusKm),
+      maxResults: Number(maxResults)
     });
 
-    console.log("✅ Resultados normalizados para frontend:", {
+    console.log("✅ Resultados da busca inteligente:", {
       total: matchingRides.length,
       resultados: matchingRides.map(ride => ({
         id: ride.id,
-        fromCity: ride.fromCity,
-        toCity: ride.toCity,
-        departureDate: ride.departureDate,
-        pricePerSeat: ride.pricePerSeat,
-        availableSeats: ride.availableSeats
+        fromCity: ride.from_city || ride.fromCity,
+        toCity: ride.to_city || ride.toCity,
+        match_type: ride.match_type,
+        direction_score: ride.direction_score,
+        pricePerSeat: ride.priceperseat || ride.pricePerSeat,
+        availableSeats: ride.availableseats || ride.availableSeats
       }))
     });
+
+    // ✅✅✅ ESTATÍSTICAS MELHORADAS COM DADOS DA FUNÇÃO INTELIGENTE
+    const stats = {
+      total: matchingRides.length,
+      exact_matches: matchingRides.filter(r => r.match_type === 'exact_match').length,
+      exact_province: matchingRides.filter(r => r.match_type === 'exact_province').length,
+      from_correct_province_to: matchingRides.filter(r => r.match_type === 'from_correct_province_to').length,
+      to_correct_province_from: matchingRides.filter(r => r.match_type === 'to_correct_province_from').length,
+      partial_from: matchingRides.filter(r => r.match_type === 'partial_from').length,
+      partial_to: matchingRides.filter(r => r.match_type === 'partial_to').length,
+      nearby: matchingRides.filter(r => r.match_type === 'nearby').length,
+      average_direction_score: matchingRides.length > 0 
+        ? Math.round(matchingRides.reduce((sum, ride) => sum + (ride.direction_score || 0), 0) / matchingRides.length)
+        : 0,
+      average_driver_rating: matchingRides.length > 0 
+        ? parseFloat((matchingRides.reduce((sum, ride) => sum + (ride.driver_rating || 0), 0) / matchingRides.length).toFixed(1))
+        : 0
+    };
 
     // ✅ ENVIAR RESPOSTA PADRONIZADA
     res.json({
       success: true,
       total: matchingRides.length,
       results: matchingRides,
+      stats,
       metadata: {
         searchParams: {
           from: parsedFrom.city,
           to: parsedTo.city,
           date,
-          passengers
+          passengers,
+          radiusKm,
+          maxResults
         },
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        smart_function: true
       }
     });
 
@@ -344,7 +375,7 @@ router.get("/smart/search", async (req: Request, res: Response) => {
 // GET /api/rides/between-cities - Busca entre cidades pública ATUALIZADA
 router.get("/between-cities", async (req: Request, res: Response) => {
   try {
-    const { city_from, city_to, radius_km = '100' } = req.query;
+    const { city_from, city_to, radius_km = '100', maxResults = '50' } = req.query;
 
     if (!city_from || !city_to) {
       return res.status(400).json({ 
@@ -360,24 +391,30 @@ router.get("/between-cities", async (req: Request, res: Response) => {
     console.log('🎯 [NORMALIZAÇÃO-CORRIGIDA-CITIES]', {
       original: { from: city_from, to: city_to },
       normalized: { from: normalizedFrom, to: normalizedTo },
-      radius: radius_km
+      radius: radius_km,
+      maxResults
     });
 
     const rides = await rideService.getRidesUniversal({
       fromLocation: normalizedFrom,
       toLocation: normalizedTo,
       radiusKm: parseFloat(radius_km as string),
-      maxResults: 50
+      maxResults: validateMaxResults(maxResults, 50, 50)
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas
+    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: rides.length,
       average_driver_rating: rides.length > 0 
-        ? parseFloat((rides.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / rides.length).toFixed(1))
+        ? parseFloat((rides.reduce((sum, ride) => sum + (ride.driver_rating || ride.driverRating || 0), 0) / rides.length).toFixed(1))
         : 0,
       vehicle_types: rides.reduce((acc: any, ride) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+      match_types: rides.reduce((acc: any, ride) => {
+        const type = ride.match_type || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
@@ -390,7 +427,8 @@ router.get("/between-cities", async (req: Request, res: Response) => {
       searchParams: { 
         city_from: normalizedFrom, 
         city_to: normalizedTo, 
-        radius_km: parseFloat(radius_km as string) 
+        radius_km: parseFloat(radius_km as string),
+        maxResults: validateMaxResults(maxResults, 50, 50)
       },
       smart_search: true
     });
@@ -406,7 +444,7 @@ router.get("/between-cities", async (req: Request, res: Response) => {
 // GET /api/rides/nearby - Busca de viagens próximas pública ATUALIZADA
 router.get("/nearby", async (req: Request, res: Response) => {
   try {
-    const { lat, lng, toLat, toLng, radiusKm = '100' } = req.query;
+    const { lat, lng, toLat, toLng, radiusKm = '100', maxResults = '50' } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({
@@ -431,7 +469,8 @@ router.get("/nearby", async (req: Request, res: Response) => {
     console.log('🧠 [NEARBY] Busca por proximidade inteligente:', {
       lat: latitude,
       lng: longitude,
-      radius
+      radius,
+      maxResults
     });
 
     const nearbyRides = await rideService.getRidesUniversal({
@@ -440,17 +479,22 @@ router.get("/nearby", async (req: Request, res: Response) => {
       toLat: destinationLat,
       toLng: destinationLng,
       radiusKm: radius,
-      maxResults: 50
+      maxResults: validateMaxResults(maxResults, 50, 50)
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas
+    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: nearbyRides.length,
       average_driver_rating: nearbyRides.length > 0 
-        ? parseFloat((nearbyRides.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / nearbyRides.length).toFixed(1))
+        ? parseFloat((nearbyRides.reduce((sum, ride) => sum + (ride.driver_rating || ride.driverRating || 0), 0) / nearbyRides.length).toFixed(1))
         : 0,
       vehicle_types: nearbyRides.reduce((acc: any, ride) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+      match_types: nearbyRides.reduce((acc: any, ride) => {
+        const type = ride.match_type || 'nearby';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
@@ -487,7 +531,7 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       toLng,
       fromProvince,
       toProvince,
-      maxResults = '20',
+      maxResults = '50', // ✅ Aumentado para 50
       minCompatibility = '50',
       radiusKm = '100'
     } = req.query;
@@ -502,14 +546,15 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
     // ✅ CORREÇÃO: Usar normalizador assíncrono
     const normalizedFrom = await normalizeLocation(from);
     const normalizedTo = await normalizeLocation(to);
-    const validatedMaxResults = validateMaxResults(maxResults, 20, 50);
+    const validatedMaxResults = validateMaxResults(maxResults, 50, 50);
     const minCompatNumber = Math.min(Math.max(Number(minCompatibility) || 50, 0), 100);
     const radius = parseFloat(radiusKm as string);
 
     console.log('🎯 [NORMALIZAÇÃO-CORRIGIDA-HYBRID]', {
       original: { from, to },
       normalized: { from: normalizedFrom, to: normalizedTo },
-      radius: radius
+      radius: radius,
+      maxResults: validatedMaxResults
     });
 
     // ✅ CORREÇÃO: Usar busca SMART FINAL diretamente
@@ -519,7 +564,8 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       allRides = await rideService.searchRidesSmartFinal({
         fromCity: normalizedFrom,
         toCity: normalizedTo,
-        radiusKm: radius
+        radiusKm: radius,
+        maxResults: 100 // Buscar mais para filtrar depois
       });
     } catch (smartError) {
       console.warn("❌ Smart final falhou, usando universal como fallback:", smartError);
@@ -531,28 +577,34 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       });
     }
 
+    // ✅✅✅ FILTRAR POR COMPATIBILIDADE USANDO direction_score
     const filteredRides = allRides.filter((ride: any) => 
-      (ride.route_compatibility ?? ride.matchScore ?? 0) >= minCompatNumber
+      (ride.direction_score || ride.route_compatibility || ride.matchScore || 0) >= minCompatNumber
     ).slice(0, validatedMaxResults);
 
     const compatibilityRanges = {
-      high: filteredRides.filter((r: any) => (r.route_compatibility ?? r.matchScore ?? 0) >= 80).length,
+      high: filteredRides.filter((r: any) => (r.direction_score || r.route_compatibility || r.matchScore || 0) >= 80).length,
       medium: filteredRides.filter((r: any) => {
-        const score = r.route_compatibility ?? r.matchScore ?? 0;
+        const score = r.direction_score || r.route_compatibility || r.matchScore || 0;
         return score >= 50 && score < 80;
       }).length,
-      low: filteredRides.filter((r: any) => (r.route_compatibility ?? r.matchScore ?? 0) < 50).length
+      low: filteredRides.filter((r: any) => (r.direction_score || r.route_compatibility || r.matchScore || 0) < 50).length
     };
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas
+    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const driverStats = {
-      drivers_with_ratings: filteredRides.filter(r => r.driverRating && r.driverRating > 0).length,
+      drivers_with_ratings: filteredRides.filter(r => r.driver_rating && r.driver_rating > 0).length,
       average_driver_rating: filteredRides.length > 0 
         ? parseFloat((filteredRides.reduce((sum: number, ride: any) => 
-            sum + (ride.driverRating || 0), 0) / filteredRides.length).toFixed(1))
+            sum + (ride.driver_rating || ride.driverRating || 0), 0) / filteredRides.length).toFixed(1))
         : 0,
       vehicle_types: filteredRides.reduce((acc: any, ride: any) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+      match_types: filteredRides.reduce((acc: any, ride: any) => {
+        const type = ride.match_type || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
@@ -567,7 +619,7 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
           compatibilityRanges,
           averageCompatibility: filteredRides.length > 0 
             ? Math.round(filteredRides.reduce((sum: number, ride: any) => 
-                sum + (ride.route_compatibility ?? ride.matchScore ?? 0), 0) / filteredRides.length)
+                sum + (ride.direction_score || ride.route_compatibility || ride.matchScore || 0), 0) / filteredRides.length)
             : 0,
           ...driverStats
         },
@@ -661,7 +713,8 @@ router.get("/province/search", async (req: Request, res: Response) => {
     console.log('🧠 [PROVINCE-SEARCH] Busca por província inteligente:', {
       fromProvince: normalizedFromProvince,
       toProvince: normalizedToProvince,
-      radius
+      radius,
+      maxResults: validatedMaxResults
     });
 
     const allMatches = await rideService.getRidesUniversal({
@@ -672,17 +725,22 @@ router.get("/province/search", async (req: Request, res: Response) => {
       maxResults: validatedMaxResults
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas
+    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: allMatches.length,
       fromProvince: normalizedFromProvince,
       toProvince: normalizedToProvince,
       status: status,
       average_driver_rating: allMatches.length > 0 
-        ? parseFloat((allMatches.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / allMatches.length).toFixed(1))
+        ? parseFloat((allMatches.reduce((sum, ride) => sum + (ride.driver_rating || ride.driverRating || 0), 0) / allMatches.length).toFixed(1))
         : 0,
       vehicle_types: allMatches.reduce((acc: any, ride) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+      match_types: allMatches.reduce((acc: any, ride) => {
+        const type = ride.match_type || 'province_search';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})
@@ -785,14 +843,19 @@ router.get("/", async (req: Request, res: Response) => {
     
     const paginatedRides = filteredRides.slice(startIndex, endIndex);
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas
+    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: filteredRides.length,
       average_driver_rating: filteredRides.length > 0 
-        ? parseFloat((filteredRides.reduce((sum, ride) => sum + (ride.driverRating || 0), 0) / filteredRides.length).toFixed(1))
+        ? parseFloat((filteredRides.reduce((sum, ride) => sum + (ride.driver_rating || ride.driverRating || 0), 0) / filteredRides.length).toFixed(1))
         : 0,
       vehicle_types: filteredRides.reduce((acc: any, ride) => {
-        const type = ride.vehicleType || 'unknown';
+        const type = ride.vehicle_type || ride.vehicleType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+      match_types: filteredRides.reduce((acc: any, ride) => {
+        const type = ride.match_type || 'general_search';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {})

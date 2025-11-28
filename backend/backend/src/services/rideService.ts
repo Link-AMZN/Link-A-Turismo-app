@@ -1,6 +1,10 @@
 import { db } from "../../db";
-import { rides, type Ride } from "../../shared/schema";
+import { rides, vehicles } from "../../shared/database-schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday } from '../utils/dateFormatter';
+import { v4 as uuidv4 } from 'uuid';
+import { insertRideSchema } from "../../shared/database-schema";
+import { z } from "zod";
 
 // ✅ MAPEAMENTO PARA TIPOS DE VEÍCULO
 const VEHICLE_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
@@ -12,8 +16,42 @@ const VEHICLE_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
   motorcycle: { label: 'Moto', icon: '🏍️' }
 };
 
-// ✅ FUNÇÃO DE NORMALIZAÇÃO PARA FRONTEND
+// ✅ FUNÇÃO AUXILIAR PARA FORMATAR DATA/HORA
+function formatDateTime(date: Date | string): string {
+  if (!date) return '';
+  const d = new Date(date);
+  return `${formatDateOnly(d)} ${formatTimeOnly(d)}`;
+}
+
+// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO CORRIGIDA - PREÇOS SEMPRE COMO NUMBER E SEM CAMPOS INEXISTENTES
 function normalizeDbRideToDto(raw: any) {
+  // ✅ Função para formatar matrícula moçambicana
+  const formatVehiclePlate = (plate: string) => {
+    if (!plate) return null;
+    // Formatar: "MAT-123-AB" → "MAT 123 AB"
+    return plate.replace(/-/g, ' ').toUpperCase();
+  };
+
+  // ✅ CORREÇÃO CRÍTICA: Garantir que preços sejam sempre números
+  const pricePerSeatValue = Number(raw.priceperseat) || 0;
+  const availableSeatsValue = Number(raw.availableseats) || 0;
+  const maxPassengersValue = Number(raw.max_passengers) || 4;
+  const driverRatingValue = raw.driver_rating ? Number(raw.driver_rating) : 
+                           raw.driverRating ? Number(raw.driverRating) : null;
+
+  // ✅ DADOS DO VEÍCULO - CORREÇÃO: Buscar informações completas do veículo
+  const vehicleInfo = raw.vehicle_id ? {
+    id: raw.vehicle_id,
+    make: raw.vehicle_make || raw.vehicleMake || null,
+    model: raw.vehicle_model || raw.vehicleModel || null,
+    color: raw.vehicle_color || raw.vehicleColor || null,
+    plateNumber: formatVehiclePlate(raw.vehicle_plate || raw.vehiclePlate),
+    plateNumberRaw: raw.vehicle_plate || raw.vehiclePlate,
+    type: raw.vehicle_type || raw.vehicleType || null,
+    typeDisplay: VEHICLE_TYPE_DISPLAY[raw.vehicle_type || raw.vehicleType]?.label || 'Veículo',
+    maxPassengers: raw.vehicle_max_passengers || maxPassengersValue
+  } : null;
+
   return {
     // Identificação
     id: raw.ride_id || raw.id,
@@ -21,67 +59,88 @@ function normalizeDbRideToDto(raw: any) {
     
     // Informações do motorista
     driverName: raw.driver_name || raw.driverName || null,
-    driverRating: raw.driver_rating ? Number(raw.driver_rating) : 
-                 raw.driverRating ? Number(raw.driverRating) : null,
-    
-    // Informações do veículo
-    vehicle: `${raw.vehicle_make || ''} ${raw.vehicle_model || ''}`.trim() || 
-             raw.vehicle || null,
-    vehicleType: raw.vehicle_type || raw.vehicleType || null,
-    vehiclePlate: raw.vehicle_plate || raw.vehiclePlate || null,
-    vehicleColor: raw.vehicle_color || raw.vehicleColor || null,
-    maxPassengers: raw.max_passengers || raw.maxPassengers || null,
+    driverRating: driverRatingValue,
     
     // Localização - origem
     fromAddress: raw.from_address || raw.fromAddress || null,
     fromCity: raw.from_city || raw.fromCity || null,
     fromDistrict: raw.from_district || raw.fromDistrict || null,
     fromProvince: raw.from_province || raw.fromProvince || null,
-    fromLat: raw.from_lat ? Number(raw.from_lat) : 
-             raw.fromLat ? Number(raw.fromLat) : null,
-    fromLng: raw.from_lng ? Number(raw.from_lng) : 
-             raw.fromLng ? Number(raw.fromLng) : null,
+    fromLocality: raw.from_locality || raw.fromLocality || null,
+    from_geom: raw.from_geom || null,
     
     // Localização - destino
     toAddress: raw.to_address || raw.toAddress || null,
     toCity: raw.to_city || raw.toCity || null,
     toDistrict: raw.to_district || raw.toDistrict || null,
     toProvince: raw.to_province || raw.toProvince || null,
-    toLat: raw.to_lat ? Number(raw.to_lat) : 
-           raw.toLat ? Number(raw.toLat) : null,
-    toLng: raw.to_lng ? Number(raw.to_lng) : 
-           raw.toLng ? Number(raw.toLng) : null,
+    toLocality: raw.to_locality || raw.toLocality || null,
+    to_geom: raw.to_geom || null,
     
-    // Data e hora
-    departureDate: raw.departuredate ? new Date(raw.departuredate).toISOString() :
-                   raw.departureDate ? new Date(raw.departureDate).toISOString() : null,
-    departureDateFormatted: raw.departuredate ? 
-                           new Date(raw.departuredate).toLocaleDateString('pt-PT') :
-                           raw.departureDate ? 
-                           new Date(raw.departureDate).toLocaleDateString('pt-PT') : null,
-    departureTime: raw.departuredate ? 
-                  new Date(raw.departuredate).toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'}) :
-                  raw.departureDate ? 
-                  new Date(raw.departureDate).toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'}) : null,
+    // ✅ DATAS FORMATADAS CORRETAMENTE (DD/MM/AAAA + 24h)
+    departureDate: raw.departuredate ? new Date(raw.departuredate).toISOString() : null,
+    departureDateFormatted: formatDateOnly(raw.departuredate), // "20/12/2025"
+    departureTimeFormatted: formatTimeOnly(raw.departuredate), // "14:30" (24h)
+    departureDateTimeFormatted: formatDateTime(raw.departuredate), // "20/12/2025 14:30"
+    departureLongDate: formatLongDate(raw.departuredate), // "Sexta-feira, 20 de Dezembro de 2025"
+    departureWeekday: formatWeekday(raw.departuredate), // "Sexta-feira"
+    departureTime: raw.departuretime || raw.departureTime || null,
     
-    // Disponibilidade e preço
-    availableSeats: raw.availableseats || raw.availableSeats || 0,
-    pricePerSeat: raw.priceperseat !== undefined && raw.priceperseat !== null ? 
-                  Number(raw.priceperseat) :
-                  raw.pricePerSeat !== undefined && raw.pricePerSeat !== null ? 
-                  Number(raw.pricePerSeat) : null,
+    // ✅ INFORMAÇÕES COMPLETAS DO VEÍCULO COM MATRÍCULA
+    vehicleId: raw.vehicle_id || raw.vehicleId || null,
+    vehicleInfo: vehicleInfo,
+    vehicle: `${raw.vehicle_make || ''} ${raw.vehicle_model || ''}`.trim() || null,
+    vehicleType: raw.vehicle_type || raw.vehicleType || null,
+    vehiclePlate: formatVehiclePlate(raw.vehicle_plate || raw.vehiclePlate), // "MAT 123 AB"
+    vehiclePlateRaw: raw.vehicle_plate || raw.vehiclePlate, // Original: "MAT-123-AB"
+    vehicleColor: raw.vehicle_color || raw.vehicleColor || null,
+    vehicleMake: raw.vehicle_make || raw.vehicleMake || null,
+    vehicleModel: raw.vehicle_model || raw.vehicleModel || null,
+    maxPassengers: maxPassengersValue,
     
-    // Metadados de busca
-    distanceFromUserKm: raw.distance_from_city_km || raw.distanceFromUserKm || null,
+    // ✅✅✅ CORREÇÃO: Disponibilidade e preço SEMPRE como number
+    availableSeats: availableSeatsValue,
+    pricePerSeat: pricePerSeatValue, // ← AGORA SEMPRE number (nunca null)
+    
+    // Campos adicionais do schema
+    additionalInfo: raw.additionalinfo || raw.additionalInfo || null,
+    distance_real_km: raw.distance_real_km ? Number(raw.distance_real_km) : null,
+    polyline: raw.polyline || null,
+    type: raw.type || 'regular',
+    
+    // Metadados
+    distanceFromUserKm: raw.distance_from_city_km ? Number(raw.distance_from_city_km) : null,
     matchType: raw.match_type || raw.matchType || null,
     status: raw.status || 'available',
-    
-    // Campos de compatibilidade
     searchMetadata: raw.search_metadata || raw.searchMetadata || null,
-    createdAt: raw.createdat ? new Date(raw.createdat).toISOString() :
-               raw.createdAt ? new Date(raw.createdAt).toISOString() : null,
-    updatedAt: raw.updatedat ? new Date(raw.updatedat).toISOString() :
-               raw.updatedAt ? new Date(raw.updatedAt).toISOString() : null
+    
+    // Timestamps
+    createdAt: raw.createdat ? new Date(raw.createdat).toISOString() : null,
+    updatedAt: raw.updatedat ? new Date(raw.updatedat).toISOString() : null,
+
+    // ✅ NOVOS CAMPOS DA FUNÇÃO get_rides_smart_final
+    ride_id: raw.ride_id,
+    driver_id: raw.driver_id,
+    driver_name: raw.driver_name,
+    driver_rating: raw.driver_rating,
+    vehicle_make: raw.vehicle_make,
+    vehicle_model: raw.vehicle_model,
+    vehicle_type: raw.vehicle_type,
+    vehicle_plate: raw.vehicle_plate,
+    vehicle_color: raw.vehicle_color,
+    max_passengers: raw.max_passengers,
+    from_city: raw.from_city,
+    to_city: raw.to_city,
+    from_lat: raw.from_lat,
+    from_lng: raw.from_lng,
+    to_lat: raw.to_lat,
+    to_lng: raw.to_lng,
+    departuredate: raw.departuredate,
+    availableseats: raw.availableseats,
+    priceperseat: raw.priceperseat,
+    distance_from_city_km: raw.distance_from_city_km,
+    distance_to_city_km: raw.distance_to_city_km,
+    direction_score: raw.direction_score
   };
 }
 
@@ -129,9 +188,28 @@ class LocationNormalizerCorrigido {
   }
 }
 
+// ✅ INTERFACE SIMPLIFICADA - USANDO APENAS OS CAMPOS ESSENCIAIS
+interface CreateRideBaseData {
+  driverId: string;
+  fromAddress: string;
+  toAddress: string;
+  departureDate: Date;
+  departureTime: string;
+  availableSeats: number;
+  pricePerSeat: number;
+  driverName?: string;
+  fromCity?: string;
+  toCity?: string;
+  fromProvince?: string;
+  toProvince?: string;
+  vehicleId?: string;
+  vehicleType?: string;
+  additionalInfo?: string;
+}
+
 export class RideService {
   
-  // 🎯 MÉTODO UNIVERSAL CENTRALIZADO - CORRIGIDO
+  // 🎯 MÉTODO UNIVERSAL CENTRALIZADO - CORRIGIDO PARA USAR get_rides_smart_final
   async getRidesUniversal(params: {
     fromLocation?: string;
     toLocation?: string;
@@ -152,7 +230,7 @@ export class RideService {
         toLat,
         toLng,
         radiusKm = 100,
-        maxResults = 20,
+        maxResults = 50, // ✅ Aumentado para 50
       } = params;
 
       // ✅ CORREÇÃO: Usar normalizador assíncrono
@@ -162,12 +240,18 @@ export class RideService {
       console.log('🎯 [NORMALIZAÇÃO-CORRIGIDA]', {
         original: { from: fromLocation, to: toLocation },
         normalized: { from: normalizedFrom, to: normalizedTo },
-        radius: radiusKm
+        radius: radiusKm,
+        maxResults
       });
 
-      // ✅ CORREÇÃO: Usar sql do Drizzle para funções PostgreSQL
+      // ✅✅✅ CORREÇÃO: Usar get_rides_smart_final com todos os parâmetros
       const result = await db.execute(
-        sql`SELECT * FROM get_rides_smart_final(${normalizedFrom || ''}, ${normalizedTo || ''}, ${radiusKm})`
+        sql`SELECT * FROM get_rides_smart_final(
+          ${normalizedFrom || ''}, 
+          ${normalizedTo || ''}, 
+          ${radiusKm},
+          ${maxResults}
+        )`
       );
 
       // ✅ Extração segura dos resultados
@@ -186,11 +270,17 @@ export class RideService {
       
       console.log('✅ [SMART-SERVICE] Resultados processados:', {
         totalEncontrado: rows.length,
-        primeiroResultado: rows[0] || 'Nenhum'
+        primeiroResultado: rows[0] ? {
+          id: rows[0].ride_id,
+          from: rows[0].from_city,
+          to: rows[0].to_city,
+          match_type: rows[0].match_type,
+          direction_score: rows[0].direction_score
+        } : 'Nenhum'
       });
 
       // ✅ APLICAÇÃO DA NORMALIZAÇÃO PARA FRONTEND
-      const normalizedRides = rows.slice(0, maxResults).map(normalizeDbRideToDto);
+      const normalizedRides = rows.map(normalizeDbRideToDto);
 
       console.log('🎯 [NORMALIZAÇÃO-FRONTEND] Rides normalizados:', normalizedRides.length);
       normalizedRides.forEach((ride: any, index: number) => {
@@ -200,7 +290,10 @@ export class RideService {
           toCity: ride.toCity,
           departureDate: ride.departureDate,
           pricePerSeat: ride.pricePerSeat,
-          availableSeats: ride.availableSeats
+          availableSeats: ride.availableSeats,
+          matchType: ride.matchType,
+          directionScore: ride.direction_score,
+          vehicleInfo: ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}` : 'Sem veículo'
         });
       });
       
@@ -226,7 +319,7 @@ export class RideService {
       return await this.getRidesUniversal({
         fromLocation: normalizedFrom,
         toLocation: normalizedTo,
-        maxResults: 10
+        maxResults: 20
       });
     } catch (error) {
       console.error("❌ Erro em findRidesExact:", error);
@@ -255,7 +348,7 @@ export class RideService {
       return await this.getRidesUniversal({
         fromLocation: normalizedFrom,
         toLocation: normalizedTo,
-        maxResults: 20,
+        maxResults: 50,
         radiusKm: 100
       });
     } catch (error) {
@@ -267,7 +360,7 @@ export class RideService {
       return await this.getRidesUniversal({
         fromLocation: normalizedFrom,
         toLocation: normalizedTo,
-        maxResults: 20
+        maxResults: 50
       });
     }
   }
@@ -306,7 +399,7 @@ export class RideService {
         toLat: options?.toLat,
         toLng: options?.toLng,
         radiusKm: options?.radiusKm || 100,
-        maxResults: options?.maxResults || 20
+        maxResults: options?.maxResults || 50
       });
     } catch (error) {
       console.error("❌ Erro em searchRidesHybrid:", error);
@@ -317,7 +410,7 @@ export class RideService {
       return await this.getRidesUniversal({
         fromLocation: normalizedFrom,
         toLocation: normalizedTo,
-        maxResults: options?.maxResults || 20
+        maxResults: options?.maxResults || 50
       });
     }
   }
@@ -404,7 +497,7 @@ export class RideService {
     }
   }
 
-  // 🆕 MÉTODO ESPECÍFICO PARA BUSCA SMART FINAL - CORRIGIDO
+  // ✅✅✅ MÉTODO ESPECÍFICO PARA BUSCA SMART FINAL - CORRIGIDO COM FILTRO DE DIREÇÃO
   async searchRidesSmartFinal(params: {
     fromCity?: string;
     toCity?: string;
@@ -415,24 +508,96 @@ export class RideService {
     date?: string;
     passengers?: number;
     radiusKm?: number;
+    maxResults?: number;
   }): Promise<any[]> {
     try {
-      const { fromCity, toCity, fromLat, fromLng, toLat, toLng, date, passengers = 1, radiusKm = 100 } = params;
+      const { 
+        fromCity, 
+        toCity, 
+        fromLat, 
+        fromLng, 
+        toLat, 
+        toLng, 
+        date, 
+        passengers = 1, 
+        radiusKm = 100,
+        maxResults = 50
+      } = params;
 
-      const normalizedFrom = fromCity ? await LocationNormalizerCorrigido.normalizeLocation(fromCity) : '';
-      const normalizedTo = toCity ? await LocationNormalizerCorrigido.normalizeLocation(toCity) : '';
+      // ✅ VALIDAÇÃO CRÍTICA: Origem e destino obrigatórios
+      if (!fromCity || !toCity) {
+        console.error('❌ [DIRECTION-VALIDATION] Origem e destino são obrigatórios');
+        return [];
+      }
 
-      console.log('🎯 [NORMALIZAÇÃO-CORRIGIDA-SMART-FINAL]', {
-        original: { from: fromCity, to: toCity },
-        normalized: { from: normalizedFrom, to: normalizedTo },
-        radiusKm
+      console.log('🎯 [DIRECTION-SEARCH] Iniciando busca com direção:', {
+        passageiro: `${fromCity} → ${toCity}`,
+        date: date || 'Qualquer data',
+        radiusKm,
+        maxResults
       });
 
-      // ✅ CORREÇÃO: Usar sql do Drizzle
-      const result = await db.execute(
-        sql`SELECT * FROM get_rides_smart_final(${normalizedFrom || ''}, ${normalizedTo || ''}, ${radiusKm})`
-      );
+      // ✅ CORREÇÃO: Filtro de data UTC+2 para Moçambique
+      let dateParams: any[] = [];
       
+      if (date) {
+        const searchDate = new Date(date);
+        
+        // Moçambique (UTC+2): dia começa às 22:00 UTC do dia anterior
+        const startUTC = new Date(searchDate);
+        startUTC.setUTCHours(22, 0, 0, 0);
+        startUTC.setUTCDate(startUTC.getUTCDate() - 1);
+        
+        const endUTC = new Date(searchDate);
+        endUTC.setUTCHours(21, 59, 59, 999);
+        
+        dateParams = [startUTC.toISOString(), endUTC.toISOString()];
+        
+        console.log('🔍 [DATE-FILTER] Filtro UTC+2 aplicado:', {
+          dataBuscada: date,
+          inicioUTC: startUTC.toISOString(),
+          fimUTC: endUTC.toISOString()
+        });
+      }
+
+      // ✅ NORMALIZAÇÃO MELHORADA
+      const normalizedFrom = await LocationNormalizerCorrigido.normalizeLocation(fromCity);
+      const normalizedTo = await LocationNormalizerCorrigido.normalizeLocation(toCity);
+
+      console.log('📍 [NORMALIZATION] Localizações normalizadas:', {
+        original: { from: fromCity, to: toCity },
+        normalized: { from: normalizedFrom, to: normalizedTo }
+      });
+
+      // ✅✅✅ USAR A FUNÇÃO get_rides_smart_final DIRETAMENTE
+      let result: any;
+      
+      try {
+        if (date) {
+          result = await db.execute(
+            sql`SELECT * FROM get_rides_smart_final(
+              ${normalizedFrom}, 
+              ${normalizedTo}, 
+              ${radiusKm},
+              ${maxResults}
+            ) WHERE departuredate >= ${dateParams[0]} AND departuredate <= ${dateParams[1]}`
+          );
+        } else {
+          result = await db.execute(
+            sql`SELECT * FROM get_rides_smart_final(
+              ${normalizedFrom}, 
+              ${normalizedTo}, 
+              ${radiusKm},
+              ${maxResults}
+            )`
+          );
+        }
+      } catch (error) {
+        console.log('⚠️ [FUNCTION-FALLBACK] Função original falhou, usando busca direta');
+        // Fallback para busca direta se a função não existir
+        return await this.searchRidesDirectFallback(normalizedFrom, normalizedTo, radiusKm, maxResults);
+      }
+
       // ✅ Extração segura dos resultados
       let rows: any[] = [];
       
@@ -441,26 +606,84 @@ export class RideService {
       } else if (result && typeof result === 'object' && 'rows' in result) {
         rows = (result as any).rows;
       }
+
+      console.log('🔍 [INITIAL-RESULTS] Resultados iniciais:', {
+        busca: `${normalizedFrom} → ${normalizedTo}`,
+        total: rows.length,
+        resultados: rows.map(row => ({
+          id: row.ride_id,
+          ride: `${row.from_city} → ${row.to_city}`,
+          match_type: row.match_type,
+          direction_score: row.direction_score
+        }))
+      });
+
+      // ✅✅✅ FILTRAGEM MANUAL POR DIREÇÃO (enquanto não temos a função corrigida)
+      const filteredRows = rows.filter(row => {
+        const rideFrom = (row.from_city || '').toLowerCase();
+        const rideTo = (row.to_city || '').toLowerCase();
+        const rideFromProvince = (row.from_province || '').toLowerCase();
+        const rideToProvince = (row.to_province || '').toLowerCase();
+        
+        const searchFrom = normalizedFrom.toLowerCase();
+        const searchTo = normalizedTo.toLowerCase();
+
+        // ❌ REJEITAR SENTIDO OPOSTO
+        const isOppositeDirection = 
+          (rideFrom.includes(searchTo) || rideFromProvince.includes(searchTo)) &&
+          (rideTo.includes(searchFrom) || rideToProvince.includes(searchFrom));
+        
+        if (isOppositeDirection) {
+          console.log('❌ [DIRECTION-FILTER] Removendo ride sentido oposto:', {
+            ride: `${rideFrom} → ${rideTo}`,
+            search: `${searchFrom} → ${searchTo}`
+          });
+          return false;
+        }
+
+        // ✅ ACEITAR: mesma direção ou correspondência parcial
+        const hasFromMatch = rideFrom.includes(searchFrom) || rideFromProvince.includes(searchFrom);
+        const hasToMatch = rideTo.includes(searchTo) || rideToProvince.includes(searchTo);
+        
+        return hasFromMatch || hasToMatch;
+      });
+
+      console.log('🎯 [DIRECTION-FILTERED] Resultados após filtro de direção:', {
+        original: rows.length,
+        filtered: filteredRows.length,
+        removed: rows.length - filteredRows.length
+      });
+
+      const normalizedRides = filteredRows.map(normalizeDbRideToDto);
       
-      // ✅ APLICAÇÃO DA NORMALIZAÇÃO
-      const normalizedRides = rows.map(normalizeDbRideToDto);
-      
-      console.log('🔍 Rides normalizados para frontend:', normalizedRides.length);
-      normalizedRides.forEach((ride: any, index: number) => {
-        console.log(`🎯 Ride ${index + 1}:`, {
+      console.log(`✅ [SEARCH-SUCCESS] Busca concluída: ${normalizedRides.length} rides`, {
+        parametros: { from: normalizedFrom, to: normalizedTo, date },
+        resultados: normalizedRides.map(ride => ({
           id: ride.id,
-          fromCity: ride.fromCity,
-          toCity: ride.toCity,
-          departureDate: ride.departureDate,
-          pricePerSeat: ride.pricePerSeat,
-          availableSeats: ride.availableSeats
-        });
+          ride: `${ride.fromCity} → ${ride.toCity}`,
+          price: ride.pricePerSeat,
+          seats: ride.availableSeats,
+          matchType: ride.matchType || 'manual_filter',
+          directionScore: ride.direction_score
+        }))
       });
       
       return normalizedRides;
+
     } catch (error) {
-      console.error("❌ Erro no searchRidesSmartFinal:", error);
-      throw error;
+      console.error("❌ [SEARCH-ERROR] Erro na busca smart final:", error);
+      
+      // ✅ FALLBACK ROBUSTO
+      try {
+        const normalizedFrom = params.fromCity ? await LocationNormalizerCorrigido.normalizeLocation(params.fromCity) : '';
+        const normalizedTo = params.toCity ? await LocationNormalizerCorrigido.normalizeLocation(params.toCity) : '';
+        
+        console.log('🔄 [FALLBACK] Usando busca direta como fallback');
+        return await this.searchRidesDirectFallback(normalizedFrom, normalizedTo, params.radiusKm || 100, params.maxResults || 50);
+      } catch (fallbackError) {
+        console.error("❌ [FALLBACK-ERROR] Fallback também falhou:", fallbackError);
+        return [];
+      }
     }
   }
 
@@ -468,13 +691,15 @@ export class RideService {
   async searchRidesDirectFallback(
     fromCity: string,
     toCity: string, 
-    radiusKm: number = 100
+    radiusKm: number = 100,
+    maxResults: number = 50
   ): Promise<any[]> {
     try {
       console.log('🔧 [FALLBACK] Usando busca direta como fallback:', {
         fromCity,
         toCity,
-        radiusKm
+        radiusKm,
+        maxResults
       });
 
       // ✅ CORREÇÃO: Usar Drizzle ORM para queries SQL complexas
@@ -489,14 +714,23 @@ export class RideService {
           r."toCity",
           r."fromProvince",
           r."toProvince",
+          r."fromLocality",
+          r."toLocality",
           r."departureDate",
           r."departureTime",
           r."availableSeats",
           r."pricePerSeat",
           r."vehicleType",
+          r."vehicleId",
+          v."make" as vehicle_make,
+          v."model" as vehicle_model,
+          v."color" as vehicle_color,
+          v."plate_number" as vehicle_plate,
+          v."max_passengers" as vehicle_max_passengers,
           r.status
         FROM rides r
         LEFT JOIN users u ON r."driverId" = u.id
+        LEFT JOIN vehicles v ON r."vehicleId" = v.id
         WHERE r.status = 'available'
         AND r."departureDate" >= NOW()
         AND (
@@ -513,7 +747,7 @@ export class RideService {
             ELSE 4
           END,
           r."departureDate"
-        LIMIT 20
+        LIMIT ${maxResults}
       `);
 
       // ✅ Extração segura dos resultados
@@ -539,36 +773,173 @@ export class RideService {
     }
   }
 
-  // 🆕 MÉTODO PARA OBTER RIDE POR ID
+  // 🆕 MÉTODO SIMPLIFICADO PARA USAR A FUNÇÃO INTELIGENTE
+  async searchRidesSmart(
+    from: string = '',
+    to: string = '',
+    radiusKm: number = 100,
+    maxResults: number = 50
+  ): Promise<any[]> {
+    try {
+      console.log('🧠 [SMART-SEARCH] Busca inteligente simplificada:', {
+        from,
+        to,
+        radiusKm,
+        maxResults
+      });
+
+      return await this.searchRidesSmartFinal({
+        fromCity: from,
+        toCity: to,
+        radiusKm,
+        maxResults
+      });
+    } catch (error) {
+      console.error("❌ Erro em searchRidesSmart:", error);
+      return await this.searchRidesDirectFallback(from, to, radiusKm, maxResults);
+    }
+  }
+
+  // ✅✅✅ MÉTODO getRideById CORRIGIDO
   async getRideById(id: string): Promise<any | null> {
     try {
-      const [ride] = await db.select()
-        .from(rides)
-        .where(eq(rides.id, id));
+      console.log('🔍 [RIDE-SERVICE] Buscando ride com ID:', id);
       
-      if (!ride) return null;
+      const result = await db.execute(sql`
+        SELECT 
+          r.id as ride_id,
+          r."driverId" as driver_id,
+          r."driverName",
+          r."fromAddress",
+          r."toAddress", 
+          r."fromCity",
+          r."toCity",
+          r."fromProvince",
+          r."toProvince",
+          r."fromLocality",
+          r."toLocality",
+          r."from_geom",
+          r."to_geom",
+          r."departureDate",
+          r."departureTime",
+          r."availableSeats",
+          r."maxPassengers",
+          r."pricePerSeat",
+          r."vehicleType",
+          r."vehicleId",
+          r."additionalInfo",
+          r."distance_real_km",
+          r."polyline",
+          r.status,
+          r.type,
+          r."createdAt",
+          r."updatedAt",
+          v."make" as vehicle_make,
+          v."model" as vehicle_model,
+          v."color" as vehicle_color,
+          v."plate_number" as vehicle_plate,
+          v."max_passengers" as vehicle_max_passengers
+        FROM rides r
+        LEFT JOIN vehicles v ON r."vehicleId" = v.id
+        WHERE r.id = ${id}
+      `);
 
-      return normalizeDbRideToDto(ride);
+      // ✅ Extração segura dos resultados
+      let rows: any[] = [];
+      
+      if (Array.isArray(result)) {
+        rows = result;
+      } else if (result && typeof result === 'object' && 'rows' in result) {
+        rows = (result as any).rows;
+      }
+      
+      console.log('🔍 [RIDE-SERVICE] Resultado da query:', {
+        idBuscado: id,
+        rowsEncontradas: rows.length,
+        primeiraRow: rows[0] ? { id: rows[0].ride_id, fromCity: rows[0].fromCity, toCity: rows[0].toCity } : 'Nenhuma'
+      });
+      
+      if (rows.length === 0) {
+        console.log('❌ [RIDE-SERVICE] Nenhuma ride encontrada com ID:', id);
+        return null;
+      }
+
+      const normalizedRide = normalizeDbRideToDto(rows[0]);
+      console.log('✅ [RIDE-SERVICE] Ride normalizada:', {
+        id: normalizedRide.id,
+        driverId: normalizedRide.driverId,
+        fromTo: `${normalizedRide.fromCity} → ${normalizedRide.toCity}`
+      });
+
+      return normalizedRide;
 
     } catch (error) {
-      console.error("❌ Erro em getRideById:", error);
+      console.error("❌ [RIDE-SERVICE] Erro em getRideById:", error);
       throw error;
     }
   }
 
-  // 🆕 MÉTODO PARA BUSCAR RIDES POR MOTORISTA
+  // 🆕 MÉTODO PARA BUSCAR RIDES POR MOTORISTA - CORRIGIDO (SEM COMENTÁRIOS SQL)
   async getRidesByDriver(driverId: string, status?: string): Promise<any[]> {
     try {
-      let query = db.select().from(rides);
-      const conditions = [eq(rides.driverId, driverId)];
-      
+      // ✅ CORREÇÃO: Usar SQL direto para JOIN complexo - SEM COMENTÁRIOS
+      let query = sql`
+        SELECT 
+          r.id as ride_id,
+          r."driverId" as driver_id,
+          r."driverName",
+          r."fromAddress",
+          r."toAddress", 
+          r."fromCity",
+          r."toCity",
+          r."fromProvince",
+          r."toProvince",
+          r."fromLocality",
+          r."toLocality",
+          r."from_geom",
+          r."to_geom",
+          r."departureDate",
+          r."departureTime",
+          r."availableSeats",
+          r."maxPassengers",
+          r."pricePerSeat",
+          r."vehicleType",
+          r."vehicleId",
+          r."additionalInfo",
+          r."distance_real_km",
+          r."polyline",
+          r.status,
+          r.type,
+          r."createdAt",
+          r."updatedAt",
+          v."make" as vehicle_make,
+          v."model" as vehicle_model,
+          v."color" as vehicle_color,
+          v."plate_number" as vehicle_plate,
+          v."max_passengers" as vehicle_max_passengers
+        FROM rides r
+        LEFT JOIN vehicles v ON r."vehicleId" = v.id
+        WHERE r."driverId" = ${driverId}
+      `;
+
       if (status) {
-        conditions.push(eq(rides.status, status as any));
+        query = sql`${query} AND r.status = ${status}`;
+      }
+
+      query = sql`${query} ORDER BY r."departureDate" DESC`;
+
+      const result = await db.execute(query);
+      
+      // ✅ Extração segura dos resultados
+      let rows: any[] = [];
+      
+      if (Array.isArray(result)) {
+        rows = result;
+      } else if (result && typeof result === 'object' && 'rows' in result) {
+        rows = (result as any).rows;
       }
       
-      const result = await query.where(and(...conditions));
-      
-      return result.map(ride => normalizeDbRideToDto(ride));
+      return rows.map(ride => normalizeDbRideToDto(ride));
 
     } catch (error) {
       console.error("❌ Erro em getRidesByDriver:", error);
@@ -589,60 +960,152 @@ export class RideService {
     }
   }
 
-  // 🆕 MÉTODO PARA CRIAR RIDE
-  async createRide(rideData: Omit<Ride, 'id' | 'createdAt' | 'updatedAt'>): Promise<any> {
+  // ✅✅✅ MÉTODO createRide CORRIGIDO
+  async createRide(rideData: any): Promise<any> {
     try {
-      const normalizedRideData = {
-        ...rideData,
+      console.log('🚗 [RIDE-SERVICE] Criando ride com dados:', {
+        id: rideData.id, // ✅ VERIFICAR SE O ID ESTÁ SENDO RECEBIDO
+        from: `${rideData.fromCity} → ${rideData.toCity}`,
+        driverId: rideData.driverId
+      });
+
+      // ✅ CORREÇÃO CRÍTICA: Usar o ID fornecido ou gerar um novo
+      const rideId = rideData.id || uuidv4();
+      
+      console.log('🎯 [RIDE-SERVICE] ID que será usado:', rideId);
+
+      const finalData = {
+        id: rideId, // ✅ GARANTIR que usa o ID correto
+        driverId: rideData.driverId,
+        driverName: rideData.driverName || 'Motorista',
+        fromAddress: rideData.fromAddress,
+        toAddress: rideData.toAddress,
+        fromProvince: rideData.fromProvince,
+        toProvince: rideData.toProvince,
+        fromCity: rideData.fromCity,
+        toCity: rideData.toCity,
+        fromDistrict: rideData.fromDistrict || '',
+        toDistrict: rideData.toDistrict || '',
+        fromLocality: rideData.fromLocality || '',
+        toLocality: rideData.toLocality || '',
+        from_geom: rideData.from_geom || null,
+        to_geom: rideData.to_geom || null,
+        departureDate: rideData.departureDate,
+        departureTime: rideData.departureTime,
+        availableSeats: rideData.availableSeats,
+        maxPassengers: rideData.maxPassengers || rideData.availableSeats,
         pricePerSeat: rideData.pricePerSeat.toString(),
-        fromProvince: this.normalizeString(rideData.fromProvince || ''),
-        toProvince: this.normalizeString(rideData.toProvince || ''),
-        fromCity: this.normalizeString(rideData.fromCity || ''),
-        toCity: this.normalizeString(rideData.toCity || ''),
-        fromLocality: this.normalizeString(rideData.fromLocality || ''),
-        toLocality: this.normalizeString(rideData.toLocality || ''),
+        vehicleType: rideData.vehicleType,
+        additionalInfo: rideData.additionalInfo || null,
+        status: rideData.status || 'available',
+        type: rideData.type || 'regular',
+        vehicleId: rideData.vehicleId,
+        distance_real_km: rideData.distance_real_km || null,
+        polyline: rideData.polyline || null,
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
-      const [newRide] = await db.insert(rides)
-        .values(normalizedRideData)
-        .returning();
+      console.log('📦 [RIDE-SERVICE] Dados finais para inserção:', {
+        id: finalData.id,
+        fromTo: `${finalData.fromCity} → ${finalData.toCity}`,
+        driverName: finalData.driverName
+      });
 
-      return normalizeDbRideToDto(newRide);
+      // ✅ CORREÇÃO: Inserir com o ID explícito
+      const result = await db.insert(rides).values(finalData).returning();
+      
+      console.log('✅ [RIDE-SERVICE] Ride criada com sucesso:', {
+        idInserido: result[0].id,
+        idEsperado: rideId,
+        idsIguais: result[0].id === rideId
+      });
+
+      // ✅ VERIFICAÇÃO DIRETA NO BANCO
+      const directCheck = await db.select().from(rides).where(eq(rides.id, rideId));
+      console.log('🔍 [RIDE-SERVICE] Verificação direta no banco:', {
+        idBuscado: rideId,
+        encontrada: directCheck.length > 0,
+        idEncontrado: directCheck[0]?.id || 'NÃO ENCONTRADA'
+      });
+
+      if (directCheck.length === 0) {
+        console.error('❌ [RIDE-SERVICE] Ride criada mas não encontrada no banco!');
+        throw new Error(`Ride criada mas não encontrada: ${rideId}`);
+      }
+
+      // ✅ Buscar a ride completa
+      const fullRide = await this.getRideById(rideId);
+      
+      if (!fullRide) {
+        console.log('⚠️ [RIDE-SERVICE] getRideById retornou null, retornando dados básicos');
+        // ✅ FALLBACK: Retornar dados básicos
+        return {
+          id: rideId,
+          driverId: rideData.driverId,
+          driverName: rideData.driverName || 'Motorista',
+          fromAddress: rideData.fromAddress,
+          toAddress: rideData.toAddress,
+          fromCity: rideData.fromCity,
+          toCity: rideData.toCity,
+          fromProvince: rideData.fromProvince,
+          toProvince: rideData.toProvince,
+          departureDate: rideData.departureDate,
+          departureTime: rideData.departureTime,
+          availableSeats: rideData.availableSeats,
+          pricePerSeat: rideData.pricePerSeat,
+          vehicleType: rideData.vehicleType,
+          status: 'available',
+          vehicleId: rideData.vehicleId,
+          maxPassengers: rideData.maxPassengers || rideData.availableSeats
+        };
+      }
+
+      return fullRide;
 
     } catch (error) {
-      console.error("❌ Erro em createRide:", error);
+      console.error('❌ [RIDE-SERVICE] Erro ao criar ride:', error);
       throw error;
     }
   }
 
-  // 🆕 MÉTODO PARA ATUALIZAR RIDE
-  async updateRide(id: string, rideData: Partial<Omit<Ride, 'id' | 'createdAt' | 'updatedAt'>>): Promise<any | null> {
+  // 🆕 MÉTODO PARA ATUALIZAR RIDE - CORRIGIDO
+  async updateRide(id: string, rideData: Partial<CreateRideBaseData> & {
+    distance_real_km?: number;
+    polyline?: string;
+    [key: string]: any;
+  }): Promise<any | null> {
     try {
       const updateData: any = { 
         ...rideData, 
         updatedAt: new Date() 
       };
       
+      // ✅ CORREÇÃO: Remover campos undefined
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === undefined) {
+          delete updateData[key];
+        }
+      });
+
+      // ✅✅✅ CORREÇÃO CRÍTICA: Converter campos decimal para string
       if (updateData.pricePerSeat !== undefined) {
         updateData.pricePerSeat = updateData.pricePerSeat.toString();
       }
       
+      if (updateData.distance_real_km !== undefined) {
+        updateData.distance_real_km = updateData.distance_real_km.toString();
+      }
+      
+      // ✅ CORREÇÃO: Normalizar campos de localização
       const locationFields = [
         'fromProvince', 'toProvince', 'fromCity', 'toCity', 
-        'fromLocality', 'toLocality'
+        'fromDistrict', 'toDistrict', 'fromLocality', 'toLocality'
       ] as const;
       
       locationFields.forEach(field => {
         if (updateData[field] !== undefined && updateData[field] !== null) {
           updateData[field] = this.normalizeString(updateData[field]);
-        }
-      });
-      
-      Object.keys(updateData).forEach(key => {
-        if (updateData[key] === undefined) {
-          delete updateData[key];
         }
       });
 
@@ -653,7 +1116,10 @@ export class RideService {
 
       if (!updatedRide) return null;
 
-      return normalizeDbRideToDto(updatedRide);
+      console.log('✅ Ride atualizado com sucesso:', { id, updatedFields: Object.keys(updateData) });
+
+      // ✅ CORREÇÃO: Buscar dados completos com informações do veículo
+      return await this.getRideById(id);
 
     } catch (error) {
       console.error("❌ Erro em updateRide:", error);
@@ -681,11 +1147,56 @@ export class RideService {
     if (ids.length === 0) return [];
     
     try {
-      const result = await db.select()
-        .from(rides)
-        .where(inArray(rides.id, ids));
+      // ✅ CORREÇÃO: Usar SQL direto para JOIN complexo - SEM COMENTÁRIOS
+      const result = await db.execute(sql`
+        SELECT 
+          r.id as ride_id,
+          r."driverId" as driver_id,
+          r."driverName",
+          r."fromAddress",
+          r."toAddress", 
+          r."fromCity",
+          r."toCity",
+          r."fromProvince",
+          r."toProvince",
+          r."fromLocality",
+          r."toLocality",
+          r."from_geom",
+          r."to_geom",
+          r."departureDate",
+          r."departureTime",
+          r."availableSeats",
+          r."maxPassengers",
+          r."pricePerSeat",
+          r."vehicleType",
+          r."vehicleId",
+          r."additionalInfo",
+          r."distance_real_km",
+          r."polyline",
+          r.status,
+          r.type,
+          r."createdAt",
+          r."updatedAt",
+          v."make" as vehicle_make,
+          v."model" as vehicle_model,
+          v."color" as vehicle_color,
+          v."plate_number" as vehicle_plate,
+          v."max_passengers" as vehicle_max_passengers
+        FROM rides r
+        LEFT JOIN vehicles v ON r."vehicleId" = v.id
+        WHERE r.id IN (${sql.raw(ids.map(id => `'${id}'`).join(', '))})
+      `);
       
-      return result.map(ride => normalizeDbRideToDto(ride));
+      // ✅ Extração segura dos resultados
+      let rows: any[] = [];
+      
+      if (Array.isArray(result)) {
+        rows = result;
+      } else if (result && typeof result === 'object' && 'rows' in result) {
+        rows = (result as any).rows;
+      }
+      
+      return rows.map(ride => normalizeDbRideToDto(ride));
     } catch (error) {
       console.error("❌ Erro em getRidesByIds:", error);
       return [];

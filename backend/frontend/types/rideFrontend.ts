@@ -1,18 +1,64 @@
 // rideFrontend.ts
-import { Ride } from '../src/api/client/rides';
 
-// ✅ Interface extendida para incluir campos do RideWithMatch
-interface RideWithMatch extends Ride {
-  fromLocation?: string;
-  toLocation?: string;
-  estimatedDuration?: number;
-  vehicleFeatures?: string[];
-  vehiclePhoto?: string;
-  price?: number;
+// ✅✅✅ CORREÇÃO: REMOVER import problemático e criar interface independente
+// ❌ REMOVER: import { Ride } from '../src/api/client/rides';
+
+// ✅✅✅ CORREÇÃO: Interface RideWithMatch COMPLETAMENTE INDEPENDENTE
+export interface RideWithMatch {
+  // ✅ Campos básicos
+  id: string;
+  driverId: string;
+  driverName: string;
+  driverRating: number;
+  fromLocation: string;
+  toLocation: string;
+  fromCity: string;
+  toCity: string;
+  fromAddress: string;
+  toAddress: string;
+  fromProvince?: string;
+  toProvince?: string;
+  departureDate: string;
+  departureTime: string;
+  price: number;
+  pricePerSeat: number;
+  availableSeats: number;
+  maxPassengers: number;
+  vehicle: string;
+  vehicleType: string;
+  status: string;
+  type: string;
+  
+  // ✅✅✅ CORREÇÃO CRÍTICA: CAMPOS DO VEÍCULO
+  vehiclePlate?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  vehiclePlateRaw?: string;
+  
+  // ✅ Campos formatados
+  departureDateFormatted?: string;
+  departureTimeFormatted?: string;
+  departureDateTimeFormatted?: string;
+  departureLongDate?: string;
+  departureWeekday?: string;
+  distanceFromUserKm?: number;
+  
+  // ✅ Campos de matching
+  match_type?: 'exact_match' | 'same_segment' | 'covers_route' | 'nearby' | 'same_direction' | 'smart_match' | 'potential_match' | 'smart_final_direct';
+  route_compatibility?: number;
+  matchScore?: number;
+  dist_from_user_km?: number;
+  distance_from_city_km?: number;
+  distance_to_city_km?: number;
+  
+  // ✅ Campos adicionais
   currentPassengers?: number;
-  departureTime?: string;
-  vehicleType?: string;
-  status?: string;
+  vehicleInfo?: any;
+  description?: string;
+  vehiclePhoto?: string;
+  estimatedDuration?: number;
+  estimatedDistance?: number;
   allowNegotiation?: boolean;
   allowPickupEnRoute?: boolean;
   isVerifiedDriver?: boolean;
@@ -22,8 +68,14 @@ interface RideWithMatch extends Ride {
     rating?: number;
     isVerified?: boolean;
   };
+  from_lat?: number;
+  from_lng?: number;
+  to_lat?: number;
+  to_lng?: number;
+  vehicleFeatures?: string[];
 }
 
+// ✅ Interface para compatibilidade (manter se necessário para outros componentes)
 export interface RideFrontend {
   id: string;
   driverId: string;
@@ -43,7 +95,7 @@ export interface RideFrontend {
   toLng: number;
   departureDate: string;
   availableSeats: number;
-  pricePerSeat: number; // ✅ CORREÇÃO: Agora é number
+  pricePerSeat: number;
   distanceFromCityKm: number;
   distanceToCityKm: number;
   
@@ -52,15 +104,15 @@ export interface RideFrontend {
   routeCompatibility?: number;
   matchDescription?: string;
 
-  // ✅✅✅ CAMPOS ADICIONAIS PARA RideWithMatch
-  fromLocation?: string | null; // ✅ CORREÇÃO: Pode ser null
-  toLocation?: string | null;   // ✅ CORREÇÃO: Pode ser null
+  // ✅✅✅ CAMPOS ADICIONAIS
+  fromLocation?: string | null;
+  toLocation?: string | null;
   estimatedDuration?: number;
   vehicleFeatures?: string[];
   vehiclePhoto?: string;
   price?: number;
   currentPassengers?: number;
-  departureTime?: string | null; // ✅ CORREÇÃO: Pode ser null
+  departureTime?: string | null;
   status?: string;
   allowNegotiation?: boolean;
   allowPickupEnRoute?: boolean;
@@ -75,110 +127,136 @@ export interface RideFrontend {
   };
 }
 
-export function mapRideToFrontend(ride: Ride | RideWithMatch): RideFrontend {
-  // ✅ Converter campos numéricos com segurança e fallbacks apropriados
-  const driverRating = Number(
-    ride.driver_rating ?? 
-    ride.driver_rating ?? 
-    4.5
-  );
-  
-  const maxPassengers = Number(
-    ride.max_passengers ?? 
-    ride.max_passengers ?? 
-    4
-  );
-  
-  const availableSeats = Number(
-    ride.availableseats ?? 
-    ride.availableseats ?? 
-    0
-  );
-  
-  const fromLat = Number(ride.from_lat ?? 0);
-  const fromLng = Number(ride.from_lng ?? 0);
-  const toLat = Number(ride.to_lat ?? 0);
-  const toLng = Number(ride.to_lng ?? 0);
-  const distanceFromCityKm = Number(ride.distance_from_city_km ?? 0);
-  const distanceToCityKm = Number(ride.distance_to_city_km ?? 0);
-  
-  // ✅ Preço como número (CORREÇÃO CRÍTICA)
-  const pricePerSeat = Number(
-    ride.priceperseat ?? 
-    ride.priceperseat ?? 
-    0
-  );
-  
-  // ✅ Extrair campos do RideWithMatch se disponíveis
-  const rideWithMatch = ride as RideWithMatch;
-  
+// ✅✅✅ CORREÇÃO: Função de mapeamento simplificada para RideWithMatch
+export function mapToRideWithMatch(ride: any): RideWithMatch {
+  console.log('🔄 [MAPEAMENTO-RideWithMatch] Processando ride:', {
+    id: ride.id,
+    vehiclePlate: ride.vehiclePlate,
+    vehicleMake: ride.vehicleMake,
+    vehicleModel: ride.vehicleModel,
+    vehicleColor: ride.vehicleColor
+  });
+
   return {
-    // ✅ Campos principais do PostgreSQL
-    id: ride.ride_id || ride.id || '',
-    driverId: ride.driver_id || ride.driver_id || '',
-    driverName: ride.driver_name || 'Motorista',
-    driverRating: driverRating,
-    vehicleMake: ride.vehicle_make || '',
-    vehicleModel: ride.vehicle_model || 'Veículo',
+    // ✅ Campos básicos
+    id: ride.id || ride.ride_id || '',
+    driverId: ride.driverId || ride.driver_id || '',
+    driverName: ride.driverName || ride.driver_name || 'Motorista',
+    driverRating: Number(ride.driverRating ?? ride.driver_rating ?? 4.5),
+    fromLocation: ride.fromLocation || ride.from_address || ride.from_city || '',
+    toLocation: ride.toLocation || ride.to_address || ride.to_city || '',
+    fromCity: ride.fromCity || ride.from_city || '',
+    toCity: ride.toCity || ride.to_city || '',
+    fromAddress: ride.fromAddress || ride.from_address || '',
+    toAddress: ride.toAddress || ride.to_address || '',
+    fromProvince: ride.fromProvince || ride.from_province,
+    toProvince: ride.toProvince || ride.to_province,
+    departureDate: ride.departureDate || ride.departuredate || '',
+    departureTime: ride.departureTime || '',
+    price: Number(ride.price ?? ride.pricePerSeat ?? ride.priceperseat ?? 0),
+    pricePerSeat: Number(ride.pricePerSeat ?? ride.priceperseat ?? 0),
+    availableSeats: Number(ride.availableSeats ?? ride.availableseats ?? 0),
+    maxPassengers: Number(ride.maxPassengers ?? ride.max_passengers ?? 4),
+    vehicle: ride.vehicle || 'Veículo não disponível',
+    vehicleType: ride.vehicleType || ride.vehicle_type || 'economy',
+    status: ride.status || 'available',
+    type: ride.type || 'one-way',
     
-    // ✅ CORREÇÃO: vehicleType com fallback 'unknown'
-    vehicleType: ride.vehicle_type ?? rideWithMatch.vehicleType ?? 'unknown',
+    // ✅✅✅ CORREÇÃO CRÍTICA: CAMPOS DO VEÍCULO
+    vehiclePlate: ride.vehiclePlate,
+    vehicleMake: ride.vehicleMake,
+    vehicleModel: ride.vehicleModel,
+    vehicleColor: ride.vehicleColor,
+    vehiclePlateRaw: ride.vehiclePlateRaw,
     
-    vehiclePlate: ride.vehicle_plate || 'Não informada',
-    vehicleColor: ride.vehicle_color || 'Não informada',
-    maxPassengers: maxPassengers,
-    fromCity: ride.from_city || '',
-    toCity: ride.to_city || '',
-    fromLat: fromLat,
-    fromLng: fromLng,
-    toLat: toLat,
-    toLng: toLng,
-    departureDate: ride.departuredate || ride.departuredate || '',
-    availableSeats: availableSeats,
-    
-    // ✅ CORREÇÃO: pricePerSeat agora é number
-    pricePerSeat: pricePerSeat,
-    
-    distanceFromCityKm: distanceFromCityKm,
-    distanceToCityKm: distanceToCityKm,
+    // ✅ Campos formatados
+    departureDateFormatted: ride.departureDateFormatted,
+    departureTimeFormatted: ride.departureTimeFormatted,
+    departureDateTimeFormatted: ride.departureDateTimeFormatted,
+    departureLongDate: ride.departureLongDate,
+    departureWeekday: ride.departureWeekday,
+    distanceFromUserKm: ride.distanceFromUserKm,
     
     // ✅ Campos de matching
-    matchType: ride.match_type,
-    routeCompatibility: ride.route_compatibility,
-    matchDescription: ride.match_description,
-
-    // ✅✅✅ CAMPOS ADICIONAIS - CORREÇÕES APLICADAS
-    // ✅ CORREÇÃO: Usar null em vez de fallback para cidade
-    fromLocation: rideWithMatch.fromLocation ?? null,
-    toLocation: rideWithMatch.toLocation ?? null,
+    match_type: ride.match_type || ride.matchType,
+    route_compatibility: ride.route_compatibility || ride.routeCompatibility,
+    matchScore: ride.matchScore,
+    dist_from_user_km: ride.dist_from_user_km || ride.distanceFromUserKm,
+    distance_from_city_km: ride.distance_from_city_km || ride.distanceFromCityKm,
+    distance_to_city_km: ride.distance_to_city_km || ride.distanceToCityKm,
     
-    estimatedDuration: rideWithMatch.estimatedDuration,
-    vehicleFeatures: rideWithMatch.vehicleFeatures,
-    vehiclePhoto: rideWithMatch.vehiclePhoto,
-    
-    // ✅ CORREÇÃO: Preço com fallback do pricePerSeat
-    price: rideWithMatch.price ?? pricePerSeat,
-    
-    currentPassengers: rideWithMatch.currentPassengers ?? 0,
-    
-    // ✅ CORREÇÃO: departureTime com fallback apropriado
-    departureTime: rideWithMatch.departureTime ?? ride.departuredate ?? null,
-    
-    status: rideWithMatch.status ?? 'available',
-    allowNegotiation: rideWithMatch.allowNegotiation ?? true,
-    allowPickupEnRoute: rideWithMatch.allowPickupEnRoute ?? true,
-    isVerifiedDriver: rideWithMatch.isVerifiedDriver,
-    
-    // ✅ Informações do driver para compatibilidade
-    driver: rideWithMatch.driver || (ride.driver_name ? {
-      firstName: ride.driver_name.split(' ')[0] || 'Motorista',
-      lastName: ride.driver_name.split(' ').slice(1).join(' ') || '',
-      rating: driverRating,
-      isVerified: rideWithMatch.isVerifiedDriver ?? false
-    } : undefined)
+    // ✅ Campos adicionais
+    currentPassengers: ride.currentPassengers,
+    vehicleInfo: ride.vehicleInfo,
+    description: ride.description,
+    vehiclePhoto: ride.vehiclePhoto,
+    estimatedDuration: ride.estimatedDuration,
+    estimatedDistance: ride.estimatedDistance,
+    allowNegotiation: ride.allowNegotiation,
+    allowPickupEnRoute: ride.allowPickupEnRoute,
+    isVerifiedDriver: ride.isVerifiedDriver,
+    driver: ride.driver,
+    from_lat: ride.from_lat || ride.fromLat,
+    from_lng: ride.from_lng || ride.fromLng,
+    to_lat: ride.to_lat || ride.toLat,
+    to_lng: ride.to_lng || ride.toLng,
+    vehicleFeatures: ride.vehicleFeatures,
   };
 }
 
-export function mapRidesToFrontend(rides: (Ride | RideWithMatch)[]): RideFrontend[] {
+// ✅ Função para mapear múltiplos rides
+export function mapRidesToRideWithMatch(rides: any[]): RideWithMatch[] {
+  return rides.map(mapToRideWithMatch);
+}
+
+// ✅✅✅ CORREÇÃO: Função de mapeamento para RideFrontend (manter compatibilidade)
+export function mapRideToFrontend(ride: any): RideFrontend {
+  const rideWithMatch = mapToRideWithMatch(ride);
+  
+  return {
+    id: rideWithMatch.id,
+    driverId: rideWithMatch.driverId,
+    driverName: rideWithMatch.driverName,
+    driverRating: rideWithMatch.driverRating,
+    vehicleMake: rideWithMatch.vehicleMake || '',
+    vehicleModel: rideWithMatch.vehicleModel || 'Veículo',
+    vehicleType: rideWithMatch.vehicleType,
+    vehiclePlate: rideWithMatch.vehiclePlate || 'Não informada',
+    vehicleColor: rideWithMatch.vehicleColor || 'Não informada',
+    maxPassengers: rideWithMatch.maxPassengers,
+    fromCity: rideWithMatch.fromCity,
+    toCity: rideWithMatch.toCity,
+    fromLat: rideWithMatch.from_lat || 0,
+    fromLng: rideWithMatch.from_lng || 0,
+    toLat: rideWithMatch.to_lat || 0,
+    toLng: rideWithMatch.to_lng || 0,
+    departureDate: rideWithMatch.departureDate,
+    availableSeats: rideWithMatch.availableSeats,
+    pricePerSeat: rideWithMatch.pricePerSeat,
+    distanceFromCityKm: rideWithMatch.distance_from_city_km || 0,
+    distanceToCityKm: rideWithMatch.distance_to_city_km || 0,
+    
+    matchType: rideWithMatch.match_type,
+    routeCompatibility: rideWithMatch.route_compatibility,
+    matchDescription: ride.match_description,
+
+    fromLocation: rideWithMatch.fromLocation || null,
+    toLocation: rideWithMatch.toLocation || null,
+    estimatedDuration: rideWithMatch.estimatedDuration,
+    vehicleFeatures: rideWithMatch.vehicleFeatures,
+    vehiclePhoto: rideWithMatch.vehiclePhoto,
+    price: rideWithMatch.price,
+    currentPassengers: rideWithMatch.currentPassengers || 0,
+    departureTime: rideWithMatch.departureTime || null,
+    status: rideWithMatch.status,
+    allowNegotiation: rideWithMatch.allowNegotiation,
+    allowPickupEnRoute: rideWithMatch.allowPickupEnRoute,
+    isVerifiedDriver: rideWithMatch.isVerifiedDriver,
+    
+    driver: rideWithMatch.driver
+  };
+}
+
+export function mapRidesToFrontend(rides: any[]): RideFrontend[] {
   return rides.map(mapRideToFrontend);
 }

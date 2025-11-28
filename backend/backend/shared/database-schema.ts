@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, index, uuid, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -46,12 +46,53 @@ export const users = pgTable("users", {
   badgeEarnedDate: timestamp("badgeEarnedDate"),
 });
 
-export const rides = pgTable("rides", {
+// ✅ ADICIONADO: Tabela de veículos
+export const vehicles = pgTable("vehicles", {
   id: varchar("id").primaryKey(),
+  driver_id: varchar("driver_id").references(() => users.id).notNull(),
+  plate_number: varchar("plate_number").notNull(),
+  plate_number_raw: varchar("plate_number_raw").notNull(),
+  make: varchar("make").notNull(),
+  model: varchar("model").notNull(),
+  color: varchar("color").notNull(),
+  year: integer("year"),
+  vehicle_type: varchar("vehicle_type").notNull(),
+  max_passengers: integer("max_passengers").notNull(),
+  features: jsonb("features").default([]),
+  photo_url: text("photo_url"),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// ✅✅✅ CORREÇÃO CRÍTICA: Tabela rides COMPLETA com APENAS campos que EXISTEM no banco real
+export const rides = pgTable("rides", {
+  id: uuid("id").defaultRandom().primaryKey(),
   driverId: varchar("driverId").references(() => users.id).notNull(),
   driverName: text("driverName"),
+  
+  // ✅✅✅ CORREÇÃO: APENAS CAMPOS QUE EXISTEM NO BANCO REAL
   fromAddress: varchar("fromAddress", { length: 255 }).notNull(),
   toAddress: varchar("toAddress", { length: 255 }).notNull(),
+  fromProvince: varchar("fromProvince", { length: 100 }),
+  toProvince: varchar("toProvince", { length: 100 }),
+  fromCity: varchar("fromCity", { length: 100 }),           // ✅ EXISTE NO BANCO
+  toCity: varchar("toCity", { length: 100 }),               // ✅ EXISTE NO BANCO
+  fromDistrict: varchar("fromDistrict", { length: 100 }),   // ✅ EXISTE NO BANCO
+  toDistrict: varchar("toDistrict", { length: 100 }),       // ✅ EXISTE NO BANCO
+  fromLocality: varchar("fromLocality", { length: 100 }),   // ✅ EXISTE NO BANCO
+  toLocality: varchar("toLocality", { length: 100 }),       // ✅ EXISTE NO BANCO
+  
+  // ❌❌❌ REMOVIDO: Campos que NÃO EXISTEM no banco real
+  // fromLat: doublePrecision("fromLat"),   // ❌ NÃO EXISTE
+  // fromLng: doublePrecision("fromLng"),   // ❌ NÃO EXISTE
+  // toLat: doublePrecision("toLat"),       // ❌ NÃO EXISTE
+  // toLng: doublePrecision("toLng"),       // ❌ NÃO EXISTE
+  
+  // ✅✅✅ MANTIDO: Campos de geolocalização que EXISTEM no banco
+  from_geom: text("from_geom"),  // Geography type como text para compatibilidade
+  to_geom: text("to_geom"),      // Geography type como text para compatibilidade
+  
   departureDate: timestamp("departureDate").notNull(),
   departureTime: text("departureTime").notNull(),
   availableSeats: integer("availableSeats").notNull(),
@@ -59,11 +100,27 @@ export const rides = pgTable("rides", {
   pricePerSeat: decimal("pricePerSeat", { precision: 10, scale: 2 }).notNull(),
   vehicleType: varchar("vehicleType", { length: 50 }),
   additionalInfo: text("additionalInfo"),
-  status: varchar("status", { length: 20 }).default("active"),
+  status: varchar("status", { length: 20 }).default("available"),
   type: varchar("type", { length: 20 }).default("regular"),
+  
+  // ✅ ADICIONADO: Referência para veículo
+  vehicleId: varchar("vehicleId").references(() => vehicles.id),
+  
+  // ✅✅✅ MANTIDO: Campos adicionais que EXISTEM no banco
+  distance_real_km: decimal("distance_real_km", { precision: 8, scale: 2 }),
+  polyline: text("polyline"),
+  
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
-});
+}, (table) => ({
+  // Índices para melhor performance nas buscas
+  fromCityIdx: index("rides_from_city_idx").on(table.fromCity),
+  toCityIdx: index("rides_to_city_idx").on(table.toCity),
+  fromProvinceIdx: index("rides_from_province_idx").on(table.fromProvince),
+  toProvinceIdx: index("rides_to_province_idx").on(table.toProvince),
+  departureDateIdx: index("rides_departure_date_idx").on(table.departureDate),
+  statusIdx: index("rides_status_idx").on(table.status),
+}));
 
 export const accommodations = pgTable("accommodations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -533,24 +590,52 @@ export const upsertUserSchema = createInsertSchema(users).pick({
 });
 export const insertBookingSchema = createInsertSchema(bookings);
 
-// Schema de inserção para rides com validações customizadas - CORRIGIDO
+// ✅ ADICIONADO: Schema para veículos
+export const insertVehicleSchema = createInsertSchema(vehicles);
+
+// ✅✅✅ CORREÇÃO CRÍTICA: Schema de inserção para rides com APENAS campos que EXISTEM no banco
 export const insertRideSchema = z.object({
   driverId: z.string(),
-  driverName: z.string().optional(),
+  driverName: z.string().nullable().optional(),
   fromAddress: z.string().min(1),
   toAddress: z.string().min(1),
+  fromProvince: z.string().nullable().optional(),
+  toProvince: z.string().nullable().optional(),
+  fromCity: z.string().nullable().optional(),
+  toCity: z.string().nullable().optional(),
+  fromDistrict: z.string().nullable().optional(),
+  toDistrict: z.string().nullable().optional(),
+  fromLocality: z.string().nullable().optional(),
+  toLocality: z.string().nullable().optional(),
+  
+  // ❌❌❌ REMOVIDO: Campos que NÃO EXISTEM no banco
+  // fromLat: z.number().nullable().optional(),
+  // fromLng: z.number().nullable().optional(),
+  // toLat: z.number().nullable().optional(),
+  // toLng: z.number().nullable().optional(),
+  
+  // ✅✅✅ MANTIDO: Campos que EXISTEM no banco
+  from_geom: z.string().nullable().optional(),
+  to_geom: z.string().nullable().optional(),
+  
   departureDate: z.date(),
   departureTime: z.string().min(1),
   availableSeats: z.number().int().min(1),
   maxPassengers: z.number().int().min(1).optional(),
-  pricePerSeat: z.number().positive(), // Alterado para number
-  vehicleType: z.string().optional(),
-  additionalInfo: z.string().optional(),
+  pricePerSeat: z.string().or(z.number()).transform(val => typeof val === 'number' ? val.toString() : val), // ✅ ACEITA number E string
+  vehicleType: z.string().nullable().optional(),
+  additionalInfo: z.string().nullable().optional(),
   status: z.string().optional(),
   type: z.string().optional(),
+  vehicleId: z.string().nullable().optional(),
+  distance_real_km: z.string().or(z.number()).nullable().optional().transform(val => val ? (typeof val === 'number' ? val.toString() : val) : null), // ✅ ACEITA number E string
+  polyline: z.string().nullable().optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
+
+// ✅ Schema para atualização (todos os campos opcionais)
+export const updateRideSchema = insertRideSchema.partial();
 
 export const insertAccommodationSchema = createInsertSchema(accommodations);
 export const insertPartnershipProposalSchema = createInsertSchema(partnershipProposals);
@@ -559,3 +644,9 @@ export const insertHotelFinancialReportSchema = createInsertSchema(hotelFinancia
 export const insertPartnershipApplicationSchema = createInsertSchema(partnershipApplications);
 
 export type NewSystemSetting = typeof systemSettings.$inferInsert;
+// ✅ ADICIONADO: Tipo para veículos
+export type Vehicle = typeof vehicles.$inferSelect;
+export type NewVehicle = typeof vehicles.$inferInsert;
+// ✅✅✅ ADICIONADO: Tipo para rides
+export type Ride = typeof rides.$inferSelect;
+export type NewRide = typeof rides.$inferInsert;

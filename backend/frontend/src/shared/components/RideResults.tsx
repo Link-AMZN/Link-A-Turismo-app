@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { format, isSameDay, parseISO, differenceInDays } from 'date-fns';
 import Map from "./Map";
 
 // ✅ Todos os imports necessários
@@ -17,48 +18,71 @@ import { useToast } from "@/shared/hooks/use-toast";
 
 // ✅ Importar a função normalizeRide do serviço API
 import { normalizeRide, formatPrice } from "@/services/api";
+import { formatLongDate } from "../../utils/dateFormatter";
 
-// ✅✅✅ INTERFACE RIDE COMPLETAMENTE CORRIGIDA - SEM DUPLICAÇÕES
+// ✅✅✅ INTERFACE RIDE COMPLETAMENTE CORRIGIDA - COMPATÍVEL COM get_rides_smart_final
 interface Ride {
+  // ✅ Campos obrigatórios da função get_rides_smart_final
+  ride_id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_rating: number;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_type: string;
+  vehicle_plate: string;
+  vehicle_color: string;
+  max_passengers: number;
+  from_city: string;
+  to_city: string;
+  from_lat: number;
+  from_lng: number;
+  to_lat: number;
+  to_lng: number;
+  departuredate: string;
+  availableseats: number;
+  priceperseat: number;
+  distance_from_city_km: number;
+  distance_to_city_km: number;
+  
+  // ✅ Campos de matching inteligente
+  match_type?: string;
+  direction_score?: number;
+  
+  // ✅ Campos opcionais
+  from_province?: string;
+  to_province?: string;
+  
+  // ✅✅✅ ALIAS para compatibilidade com frontend existente
   id: string;
   driverId: string;
-  
-  // ✅✅✅ CORREÇÃO: Campos CRÍTICOS (sem duplicações)
   driverName: string;
   driverRating: number;
-  fromCity: string;
-  toCity: string;
-  
-  // Campos de localização
   fromLocation: string;
   toLocation: string;
   fromAddress: string;
   toAddress: string;
+  fromCity: string;
+  toCity: string;
   fromProvince?: string;
   toProvince?: string;
-  
-  // Data e hora
   departureDate: string;
   departureTime: string;
-  
-  // Preços e capacidade
   price: number;
   pricePerSeat: number;
   availableSeats: number;
   maxPassengers: number;
   currentPassengers: number;
-  
-  // Veículo
   vehicle: string;
   vehicleType: string;
-  
-  // Status
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'active' | 'available';
-  
-  // Tipo
+  vehicleMake: string;
+  vehicleModel: string;
+  vehiclePlate: string;
+  vehicleColor: string;
+  status: string;
   type: string;
   
-  // ✅✅✅ Dados completos do veículo
+  // ✅ Campos adicionais para compatibilidade
   vehicleInfo?: {
     make: string;
     model: string;
@@ -70,7 +94,6 @@ interface Ride {
     maxPassengers: number;
   };
   
-  // Campos opcionais
   description?: string;
   vehiclePhoto?: string;
   estimatedDuration?: number;
@@ -79,28 +102,25 @@ interface Ride {
   allowPickupEnRoute?: boolean;
   isVerifiedDriver?: boolean;
   availableIn?: number;
-  
-  // Campos de matching
-  match_type?: string;
   route_compatibility?: number;
   match_description?: string;
   vehicleFeatures?: string[];
-  
-  // Driver info
   driver?: {
     firstName?: string;
     lastName?: string;
     rating?: number;
     isVerified?: boolean;
   };
-  
-  // ✅✅✅ Dados de localização geográfica
-  from_lat?: number;
-  from_lng?: number;
-  to_lat?: number;
-  to_lng?: number;
   distanceFromCityKm?: number;
   distanceToCityKm?: number;
+}
+
+// ✅ INTERFACE PARA RIDE COM FLAGS DE DATA
+interface RideWithDateFlags extends Ride {
+  _isExactDate?: boolean;
+  _dateDifferenceDays?: number;
+  _formattedDate?: string;
+  _isBeforeSearch?: boolean;
 }
 
 // ✅ INTERFACE ATUALIZADA com a prop rides
@@ -114,29 +134,421 @@ interface RideResultsProps {
   onRideSelect?: (ride: Ride) => void;
 }
 
-// ✅✅✅ FUNÇÕES HELPER SIMPLIFICADAS - CORRIGIDAS
-const getDisplayLocation = (ride: any, type: 'from' | 'to') => {
-  const location = type === 'from' ? ride.fromCity : ride.toCity;
-  return location && location !== 'Cidade não disponível' ? location : 'Localização não disponível';
+// ✅✅✅ FUNÇÃO: Adicionar flags de data aos rides
+const enhanceRidesWithDateInfo = (rides: Ride[], searchDate: string): RideWithDateFlags[] => {
+  if (!searchDate) return rides as RideWithDateFlags[];
+  
+  const searchDateObj = parseISO(searchDate);
+  
+  return rides.map(ride => {
+    const rideDate = parseISO(ride.departuredate);
+    const isExactDate = isSameDay(rideDate, searchDateObj);
+    const dateDifferenceDays = Math.abs(differenceInDays(rideDate, searchDateObj));
+    const isBeforeSearch = rideDate < searchDateObj;
+    
+    return {
+      ...ride,
+      _isExactDate: isExactDate,
+      _dateDifferenceDays: dateDifferenceDays,
+      _formattedDate: format(rideDate, 'dd/MM/yyyy, HH:mm'),
+      _isBeforeSearch: isBeforeSearch
+    };
+  });
 };
 
-const getDisplayDate = (ride: any) => {
-  return ride.departureDateFormatted && ride.departureDateFormatted !== 'Data não disponível' 
-    ? ride.departureDateFormatted 
-    : 'Data não disponível';
+// ✅ COMPONENTE: Banner de aviso para datas diferentes
+const DateWarningBanner = ({ searchDate, hasExactDateRides }: { 
+  searchDate: string; 
+  hasExactDateRides: boolean;
+}) => {
+  if (hasExactDateRides) return null;
+  
+  const searchDateObj = parseISO(searchDate);
+  const formattedSearchDate = format(searchDateObj, 'dd/MM/yyyy');
+  
+  return (
+    <div className="date-warning-banner" style={{
+      background: 'linear-gradient(135deg, #fff3cd, #ffeaa7)',
+      border: '2px solid #ffd54f',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px'
+    }}>
+      <div style={{ fontSize: '20px' }}>⚠️</div>
+      <div>
+        <strong style={{ color: '#856404', display: 'block', marginBottom: '4px' }}>
+          Rides em datas diferentes
+        </strong>
+        <p style={{ color: '#856404', margin: 0, fontSize: '14px' }}>
+          Não encontramos rides na data {formattedSearchDate}, 
+          mas temos essas opções em outras datas próximas:
+        </p>
+      </div>
+    </div>
+  );
 };
 
+// ✅✅✅ COMPONENTE RIDECARD CORRIGIDO - COM DESTAQUE DE DATAS
+const RideCard = ({ 
+  ride, 
+  onBookRide, 
+  onNegotiatePrice, 
+  onEnRoutePickup,
+  searchDate 
+}: { 
+  ride: RideWithDateFlags;
+  onBookRide?: (ride: any) => void;
+  onNegotiatePrice?: (ride: any) => void;
+  onEnRoutePickup?: (ride: any) => void;
+  searchDate?: string;
+}) => {
+  
+  // ✅ DESTAQUE DE DATA - Estilos condicionais
+  const getDateStyles = () => {
+    if (!ride._isExactDate && searchDate) {
+      return {
+        background: '#fff3e0',
+        color: '#e65100',
+        border: '2px solid #ff9800',
+        fontWeight: '600'
+      };
+    }
+    
+    return {
+      background: '#e8f5e8',
+      color: '#2e7d32',
+      border: '2px solid #4caf50',
+      fontWeight: '500'
+    };
+  };
+
+  const dateStyles = getDateStyles();
+
+  // ✅ DEBUG: Verificar dados do veículo
+  console.log('🚗 [RIDE-CARD-DEBUG] Dados do veículo:', {
+    id: ride.id,
+    vehiclePlate: ride.vehicle_plate || ride.vehiclePlate,
+    vehicleMake: ride.vehicle_make || ride.vehicleMake,
+    vehicleModel: ride.vehicle_model || ride.vehicleModel,
+    vehicleColor: ride.vehicle_color || ride.vehicleColor,
+    match_type: ride.match_type,
+    direction_score: ride.direction_score,
+    isExactDate: ride._isExactDate,
+    dateDifference: ride._dateDifferenceDays
+  });
+
+  // ✅ Função para formatar preço
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('pt-MZ', {
+      style: 'currency',
+      currency: 'MZN',
+      minimumFractionDigits: 2
+    }).format(price);
+  };
+
+  // ✅ Função para obter informações do veículo
+  const getVehicleInfo = () => {
+    const plate = ride.vehicle_plate || ride.vehiclePlate;
+    if (plate) {
+      return `🚗 ${plate}${ride.vehicle_type ? ` • ${ride.vehicle_type}` : ''}`;
+    }
+    return ride.vehicle || '🚗 Veículo não disponível';
+  };
+
+  // ✅ Função para obter detalhes do veículo
+  const getVehicleDetails = () => {
+    const details = [];
+    
+    const make = ride.vehicle_make || ride.vehicleMake;
+    const model = ride.vehicle_model || ride.vehicleModel;
+    if (make && model) {
+      details.push(`${make} ${model}`);
+    }
+    
+    const color = ride.vehicle_color || ride.vehicleColor;
+    if (color) {
+      details.push(color);
+    }
+    
+    const maxPassengers = ride.max_passengers || ride.maxPassengers;
+    if (maxPassengers) {
+      details.push(`Até ${maxPassengers} passageiros`);
+    }
+    
+    return details.join(' • ');
+  };
+
+  // ✅ Função para obter badge de matching
+  const getMatchBadge = () => {
+    if (!ride.match_type) return null;
+
+    const matchConfig: { [key: string]: { label: string; color: string } } = {
+      'exact_match': { label: '🎯 Exato', color: '#10b981' },
+      'exact_province': { label: '🏛️ Mesma Província', color: '#3b82f6' },
+      'from_correct_province_to': { label: '📍 Origem Correta', color: '#0d9488' },
+      'to_correct_province_from': { label: '🏁 Destino Correto', color: '#6366f1' },
+      'partial_from': { label: '🧭 Origem Similar', color: '#f97316' },
+      'partial_to': { label: '🧭 Destino Similar', color: '#f59e0b' },
+      'nearby': { label: '📍 Próximo', color: '#8b5cf6' },
+      'smart_match': { label: '🧠 Inteligente', color: '#6366f1' },
+      'smart_final_direct': { label: '🧠 Inteligente', color: '#6366f1' }
+    };
+
+    const config = matchConfig[ride.match_type] || { label: ride.match_type, color: '#6b7280' };
+
+    return (
+      <span style={{
+        backgroundColor: `${config.color}20`,
+        color: config.color,
+        border: `1px solid ${config.color}40`,
+        padding: '2px 8px',
+        borderRadius: '12px',
+        fontSize: '11px',
+        fontWeight: '600',
+        marginLeft: '8px'
+      }}>
+        {config.label} {ride.direction_score && `(${ride.direction_score}pts)`}
+      </span>
+    );
+  };
+
+  return (
+    <div className="ride-card" style={{
+      border: ride._isExactDate ? '1px solid #e0e0e0' : '1px solid #ff9800',
+      padding: '16px',
+      margin: '12px 0',
+      borderRadius: '12px',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      backgroundColor: ride._isExactDate ? 'white' : '#fffdf6',
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.transform = 'translateY(-2px)';
+      e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+    }}>
+      
+      {/* ✅ SEÇÃO DE LOCALIZAÇÃO */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#333', display: 'flex', alignItems: 'center' }}>
+          🚩 {ride.from_city || ride.fromCity || ride.fromLocation || 'Origem não disponível'} 
+          <span style={{ margin: '0 8px', color: '#666' }}>→</span>
+          🎯 {ride.to_city || ride.toCity || ride.toLocation || 'Destino não disponível'}
+          {getMatchBadge()}
+        </div>
+        
+        {/* Províncias se disponíveis */}
+        {(ride.from_province || ride.to_province || ride.fromProvince || ride.toProvince) && (
+          <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
+            {ride.from_province || ride.fromProvince ? `📍 ${ride.from_province || ride.fromProvince}` : ''}
+            {ride.from_province && ride.to_province && ' → '}
+            {ride.to_province || ride.toProvince ? `📍 ${ride.to_province || ride.toProvince}` : ''}
+          </div>
+        )}
+
+        {/* Distâncias se disponíveis */}
+        {(ride.distance_from_city_km || ride.distanceFromCityKm) && (
+          <div style={{ fontSize: '12px', color: '#8b5cf6', marginTop: '2px' }}>
+            📍 {ride.distance_from_city_km?.toFixed(1) || ride.distanceFromCityKm?.toFixed(1)}km da origem pesquisada
+          </div>
+        )}
+      </div>
+
+      {/* ✅✅✅ SEÇÃO DE DATA/HORA - MODIFICADA PARA DESTAQUE */}
+      <div style={{ 
+        marginBottom: '12px', 
+        padding: '10px 12px',
+        borderRadius: '8px',
+        ...dateStyles,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '15px'
+      }}>
+        <span className="date-icon">📅</span>
+        <span className="date-text">
+          {ride._formattedDate || (ride.departuredate ? new Date(ride.departuredate).toLocaleDateString('pt-MZ', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : 'Data não disponível')}
+          {!ride._isExactDate && searchDate && (
+            <span style={{
+              fontSize: '12px',
+              fontStyle: 'italic',
+              marginLeft: '8px',
+              color: '#bf360c'
+            }}>
+              ({ride._dateDifferenceDays === 1 ? '1 dia' : `${ride._dateDifferenceDays} dias`} de diferença)
+            </span>
+          )}
+        </span>
+      </div>
+
+      {/* ✅ SEÇÃO DO VEÍCULO COM MATRÍCULA */}
+      <div style={{ 
+        marginBottom: '12px', 
+        padding: '10px',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '8px',
+        border: '1px solid #e9ecef'
+      }}>
+        {/* Matrícula DESTACADA */}
+        <div style={{ 
+          fontWeight: 'bold', 
+          color: '#2c5aa0', 
+          fontSize: '16px',
+          marginBottom: '6px'
+        }}>
+          {getVehicleInfo()}
+        </div>
+        
+        {/* Detalhes do veículo */}
+        <div style={{ fontSize: '13px', color: '#666' }}>
+          {getVehicleDetails()}
+        </div>
+      </div>
+
+      {/* ✅ SEÇÃO DE PREÇO E LUGARES */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '12px'
+      }}>
+        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2c5aa0' }}>
+          💰 {ride.priceperseat ? formatPrice(ride.priceperseat) : 'Preço não disponível'}
+        </div>
+        
+        <div style={{ fontSize: '14px', color: '#666' }}>
+          🪑 {ride.availableseats || ride.availableSeats || 0} {ride.availableseats === 1 ? 'lugar' : 'lugares'} disponível
+        </div>
+      </div>
+
+      {/* ✅ SEÇÃO DO MOTORISTA */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '12px',
+        padding: '8px',
+        backgroundColor: '#f5f5f5',
+        borderRadius: '6px'
+      }}>
+        <div style={{ color: '#333', fontSize: '14px' }}>
+          👤 {ride.driver_name || ride.driverName || 'Motorista não disponível'}
+        </div>
+        
+        <div style={{ color: '#666', fontSize: '14px' }}>
+          ⭐ {(ride.driver_rating || ride.driverRating || 4.5).toFixed(1)}
+        </div>
+      </div>
+
+      {/* ✅ BOTÕES DE AÇÃO */}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={() => onBookRide?.(ride)}
+          style={{
+            flex: 1,
+            backgroundColor: '#2c5aa0',
+            color: 'white',
+            border: 'none',
+            padding: '10px 16px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            transition: 'background-color 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#1e4a8a';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#2c5aa0';
+          }}
+        >
+          Reservar Agora
+        </button>
+
+        {onNegotiatePrice && (
+          <button
+            onClick={() => onNegotiatePrice(ride)}
+            style={{
+              backgroundColor: 'transparent',
+              color: '#2c5aa0',
+              border: '1px solid #2c5aa0',
+              padding: '10px 16px',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#f0f8ff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            Negociar
+          </button>
+        )}
+      </div>
+
+      {onEnRoutePickup && (
+        <button
+          onClick={() => onEnRoutePickup(ride)}
+          style={{
+            width: '100%',
+            backgroundColor: 'transparent',
+            color: '#666',
+            border: '1px solid #ddd',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            marginTop: '8px',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f9f9f9';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          🚗 Pedir recolha no caminho
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ✅✅✅ FUNÇÃO: Formatar preço em MZN
 const getDisplayPrice = (ride: any) => {
-  if (ride.pricePerSeat === null || ride.pricePerSeat === undefined) {
+  const price = ride.priceperseat || ride.pricePerSeat;
+  if (price === null || price === undefined) {
     return 'Preço não disponível';
   }
-  
-  // Formatar como MZN
   return new Intl.NumberFormat('pt-MZ', {
     style: 'currency',
     currency: 'MZN',
     minimumFractionDigits: 2
-  }).format(ride.pricePerSeat);
+  }).format(price);
+};
+
+// ✅ FUNÇÕES HELPER SIMPLIFICADAS - CORRIGIDAS
+const getDisplayLocation = (ride: any, type: 'from' | 'to') => {
+  const location = type === 'from' ? (ride.from_city || ride.fromCity) : (ride.to_city || ride.toCity);
+  return location && location !== 'Cidade não disponível' ? location : 'Localização não disponível';
 };
 
 // 🎯 COMPONENTE DE DEBUG - MELHORADO PARA VERIFICAR OS DADOS
@@ -163,15 +575,16 @@ const DebugComponent = ({ rides }: { rides: any[] }) => {
         }}>
           <strong>Ride {index + 1}:</strong>
           <div>ID: {ride.id}</div>
-          <div>Driver: "{ride.driverName}" | Rating: {ride.driverRating}</div>
-          <div>Price: {ride.price} | PricePerSeat: {ride.pricePerSeat}</div>
-          <div>From: {ride.fromLocation} → To: {ride.toLocation}</div>
-          <div>Departure: {ride.departureDate} | Time: {ride.departureTime}</div>
-          <div>Vehicle: {ride.vehicleInfo ? `${ride.vehicleInfo.make} ${ride.vehicleInfo.model} - ${ride.vehicleInfo.color} (${ride.vehicleInfo.plate})` : 'N/A'}</div>
-          <div>Seats: {ride.availableSeats}</div>
-          <div>Match Type: {ride.match_type} | Compatibility: {ride.route_compatibility}%</div>
-          <div>Vehicle Type: {ride.vehicleType}</div>
-          <div>Distance From City: {ride.distanceFromCityKm} km | Distance To City: {ride.distanceToCityKm} km</div>
+          <div>Driver: "{ride.driver_name}" | Rating: {ride.driver_rating}</div>
+          <div>Price: {ride.priceperseat} | PricePerSeat: {ride.priceperseat}</div>
+          <div>From: {ride.from_city} → To: {ride.to_city}</div>
+          <div>Departure: {ride.departuredate}</div>
+          <div>Vehicle: {ride.vehicle_make} {ride.vehicle_model} - {ride.vehicle_color} ({ride.vehicle_plate})</div>
+          <div>Seats: {ride.availableseats}</div>
+          <div>Match Type: {ride.match_type} | Direction Score: {ride.direction_score}</div>
+          <div>Vehicle Type: {ride.vehicle_type}</div>
+          <div>Distance From City: {ride.distance_from_city_km} km | Distance To City: {ride.distance_to_city_km} km</div>
+          <div>Exact Date: {ride._isExactDate ? 'SIM' : 'NÃO'} | Difference: {ride._dateDifferenceDays} days</div>
         </div>
       ))}
     </div>
@@ -193,214 +606,48 @@ const getMatchBadge = (ride: Ride) => {
   if (!ride.match_type) return null;
 
   const matchConfig: { [key: string]: { label: string; color: string } } = {
-    'smart_match': { label: '🧠 Inteligente', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    'smart_final_direct': { label: '🧠 Inteligente', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    'exact_match': { label: '🎯 Match Exato', color: 'bg-green-100 text-green-800 border-green-200' },
-    'same_segment': { label: '📍 Mesmo Trecho', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-    'same_origin': { label: '🚩 Mesma Origem', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    'same_destination': { label: '🏁 Mesmo Destino', color: 'bg-orange-100 text-orange-800 border-orange-200' },
-    'same_direction': { label: '🧭 Mesma Direção', color: 'bg-teal-100 text-teal-800 border-teal-200' }
+    'exact_match': { label: '🎯 Exato', color: 'bg-green-100 text-green-800 border-green-200' },
+    'exact_province': { label: '🏛️ Mesma Província', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    'from_correct_province_to': { label: '📍 Origem Correta', color: 'bg-teal-100 text-teal-800 border-teal-200' },
+    'to_correct_province_from': { label: '🏁 Destino Correto', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+    'partial_from': { label: '🧭 Origem Similar', color: 'bg-orange-100 text-orange-800 border-orange-200' },
+    'partial_to': { label: '🧭 Destino Similar', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+    'nearby': { label: '📍 Próximo', color: 'bg-purple-100 text-purple-800 border-purple-200' },
+    'smart_match': { label: '🧠 Inteligente', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+    'smart_final_direct': { label: '🧠 Inteligente', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' }
   };
 
   const config = matchConfig[ride.match_type] || { label: ride.match_type, color: 'bg-gray-100 text-gray-800 border-gray-200' };
 
   return (
     <Badge className={`${config.color} border text-xs font-medium`}>
-      {config.label} {ride.route_compatibility && `(${ride.route_compatibility}%)`}
+      {config.label} {ride.direction_score && `(${ride.direction_score}pts)`}
     </Badge>
   );
 };
 
 // 🆕 Função para obter nome do motorista - COMPLETAMENTE CORRIGIDA
 const getDriverName = (ride: Ride): string => {
-  // ✅✅✅ CORREÇÃO: Priorizar driverName do PostgreSQL, depois dados do driver
-  if (ride.driverName && ride.driverName !== 'Motorista') {
-    return ride.driverName;
-  }
-  
-  return ride.driver
-    ? `${ride.driver.firstName ?? ''} ${ride.driver.lastName ?? ''}`.trim() || 'Motorista'
-    : 'Motorista';
+  return ride.driver_name || ride.driverName || 'Motorista';
 };
 
 // 🆕 Função para obter rating do motorista - COMPLETAMENTE CORRIGIDA
 const getDriverRating = (ride: Ride): number => {
-  // ✅✅✅ CORREÇÃO: Priorizar driverRating do PostgreSQL
-  if (ride.driverRating && ride.driverRating > 0) {
-    return ride.driverRating;
-  }
-  
-  return ride.driver?.rating ?? 4.5;
+  return ride.driver_rating || ride.driverRating || 4.5;
 };
 
 // 🆕 Função para obter informações do veículo - COMPLETAMENTE CORRIGIDA
 const getVehicleInfo = (ride: Ride) => {
-  // ✅✅✅ CORREÇÃO: Se temos vehicleInfo completo do PostgreSQL, usar ele
-  if (ride.vehicleInfo) {
-    return {
-      display: `${ride.vehicleInfo.make} ${ride.vehicleInfo.model}`,
-      typeDisplay: ride.vehicleInfo.typeDisplay || VEHICLE_TYPE_DISPLAY[ride.vehicleInfo.type]?.label || 'Económico',
-      typeIcon: ride.vehicleInfo.typeIcon || VEHICLE_TYPE_DISPLAY[ride.vehicleInfo.type]?.icon || '🚗',
-      plate: ride.vehicleInfo.plate || 'Não informada',
-      color: ride.vehicleInfo.color || 'Não informada',
-      maxPassengers: ride.vehicleInfo.maxPassengers || 4,
-      make: ride.vehicleInfo.make,
-      model: ride.vehicleInfo.model
-    };
-  }
-  
-  // ✅ Fallback para dados antigos
-  const typeInfo = VEHICLE_TYPE_DISPLAY[ride.vehicleType || ride.type || 'economy'] || VEHICLE_TYPE_DISPLAY.economy;
-  
   return {
-    display: ride.vehicleType || ride.type || 'Veículo',
-    typeDisplay: typeInfo.label,
-    typeIcon: typeInfo.icon,
-    plate: 'Não informada',
-    color: 'Não informada',
-    maxPassengers: ride.maxPassengers || 4,
-    make: '',
-    model: 'Veículo'
+    display: `${ride.vehicle_make || ''} ${ride.vehicle_model || ''}`.trim() || 'Veículo',
+    typeDisplay: VEHICLE_TYPE_DISPLAY[ride.vehicle_type]?.label || 'Económico',
+    typeIcon: VEHICLE_TYPE_DISPLAY[ride.vehicle_type]?.icon || '🚗',
+    plate: ride.vehicle_plate || 'Não informada',
+    color: ride.vehicle_color || 'Não informada',
+    maxPassengers: ride.max_passengers || 4,
+    make: ride.vehicle_make || '',
+    model: ride.vehicle_model || ''
   };
-};
-
-// 🆕 Função para formatar data/hora - CORRIGIDA
-const formatDateTime = (ride: Ride) => {
-  try {
-    const departureDate = ride.departureDate ? new Date(ride.departureDate) : new Date();
-    const formattedDate = departureDate.toLocaleDateString('pt-MZ', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-    
-    // ✅✅✅ CORREÇÃO: Usar departureTime real do PostgreSQL
-    const formattedTime = ride.departureTime && ride.departureTime !== '08:00' 
-      ? ride.departureTime 
-      : departureDate.toLocaleTimeString('pt-MZ', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-    
-    return { formattedDate, formattedTime };
-  } catch (error) {
-    console.error('Erro ao formatar data:', error);
-    return { formattedDate: 'Data inválida', formattedTime: '--:--' };
-  }
-};
-
-// ✅✅✅ COMPONENTE RIDECARD CORRIGIDO - COM FUNÇÕES HELPER SIMPLIFICADAS
-const RideCard = ({ ride, onBookRide, onNegotiatePrice, onEnRoutePickup }: { 
-  ride: Ride; 
-  onBookRide: (ride: Ride) => void;
-  onNegotiatePrice: (ride: Ride) => void;
-  onEnRoutePickup: (ride: Ride) => void;
-}) => {
-  const normalizedRide = normalizeRide(ride);
-  
-  return (
-    <div className="ride-card" style={{ 
-      border: '1px solid #e0e0e0', 
-      padding: '16px', 
-      margin: '12px 0', 
-      borderRadius: '12px',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-      backgroundColor: 'white'
-    }}>
-      {/* Localização */}
-      <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#333' }}>
-        🚩 {getDisplayLocation(normalizedRide, 'from')} 
-        <span style={{ margin: '0 8px', color: '#666' }}>→</span>
-        🎯 {getDisplayLocation(normalizedRide, 'to')}
-      </div>
-      
-      {/* Data e Hora */}
-      <div style={{ marginBottom: '8px', color: '#666', fontSize: '14px' }}>
-        <span style={{ marginRight: '12px' }}>📅 {getDisplayDate(normalizedRide)}</span>
-        {normalizedRide.departureTime && normalizedRide.departureTime !== 'Hora não disponível' && (
-          <span>⏰ {normalizedRide.departureTime}</span>
-        )}
-      </div>
-      
-      {/* Preço e Lugares */}
-      <div style={{ marginBottom: '8px', fontSize: '16px', fontWeight: 'bold', color: '#2c5aa0' }}>
-        💰 {getDisplayPrice(normalizedRide)}
-        {normalizedRide.availableSeats > 0 && (
-          <span style={{ marginLeft: '12px', fontSize: '14px', color: '#666', fontWeight: 'normal' }}>
-            • 🪑 {normalizedRide.availableSeats} {normalizedRide.availableSeats === 1 ? 'lugar' : 'lugares'}
-          </span>
-        )}
-      </div>
-      
-      {/* Motorista e Veículo */}
-      <div style={{ color: '#333', fontSize: '14px' }}>
-        <span>👤 {normalizedRide.driverName}</span>
-        {normalizedRide.driverRating && (
-          <span style={{ marginLeft: '8px' }}>⭐ {normalizedRide.driverRating.toFixed(1)}</span>
-        )}
-        {normalizedRide.vehicle && (
-          <span style={{ marginLeft: '8px' }}>• 🚗 {normalizedRide.vehicle}</span>
-        )}
-      </div>
-
-      {/* Botões de Ação */}
-      <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-        <button 
-          onClick={() => onBookRide(ride)}
-          style={{
-            flex: 1,
-            backgroundColor: '#dc2626',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
-          disabled={!normalizedRide.availableSeats || normalizedRide.availableSeats <= 0}
-        >
-          📅 {(!normalizedRide.availableSeats || normalizedRide.availableSeats <= 0) ? 'Lotado' : 'Reservar Agora'}
-        </button>
-        
-        {ride.allowNegotiation && (
-          <button 
-            onClick={() => onNegotiatePrice(ride)}
-            style={{
-              flex: 1,
-              backgroundColor: 'transparent',
-              color: '#374151',
-              border: '1px solid #d1d5db',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            🤝 Negociar
-          </button>
-        )}
-      </div>
-
-      {ride.allowPickupEnRoute && (
-        <button 
-          onClick={() => onEnRoutePickup(ride)}
-          style={{
-            width: '100%',
-            backgroundColor: 'transparent',
-            color: '#374151',
-            border: '1px solid #d1d5db',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            marginTop: '8px'
-          }}
-        >
-          📍 Pickup em Rota
-        </button>
-      )}
-    </div>
-  );
 };
 
 // ✅ Interface para resposta da API
@@ -460,131 +707,101 @@ export default function RideResults({
       
       console.log('🔍 [DEBUG] Rides data to process:', ridesData);
       
-      // ✅✅✅ CORREÇÃO CRÍTICA: Processar resposta com TODOS os novos campos do PostgreSQL
+      // ✅✅✅ CORREÇÃO CRÍTICA: Processar resposta com TODOS os campos do get_rides_smart_final
       const processedRides = ridesData.map((ride: any) => {
         console.log('🚗 [DEBUG] Processando ride individual:', ride);
 
-        // ✅✅✅ CORREÇÃO CRÍTICA: Extrair dados do vehicleInfo do PostgreSQL
-        const vehicleInfo = ride.vehicleInfo ? {
-          make: ride.vehicleInfo.make || ride.vehicle_make || '',
-          model: ride.vehicleInfo.model || ride.vehicle_model || 'Veículo',
-          type: ride.vehicleInfo.type || ride.vehicle_type || 'economy',
-          typeDisplay: ride.vehicleInfo.typeDisplay || VEHICLE_TYPE_DISPLAY[ride.vehicle_type || 'economy']?.label || 'Económico',
-          typeIcon: ride.vehicleInfo.typeIcon || VEHICLE_TYPE_DISPLAY[ride.vehicle_type || 'economy']?.icon || '🚗',
-          plate: ride.vehicleInfo.plate || ride.vehicle_plate || 'Não informada',
-          color: ride.vehicleInfo.color || ride.vehicle_color || 'Não informada',
-          maxPassengers: ride.vehicleInfo.maxPassengers || ride.max_passengers || 4
-        } : {
-          // ✅✅✅ SE vehicleInfo não existe, usar dados diretos do PostgreSQL
-          make: ride.vehicle_make || '',
-          model: ride.vehicle_model || 'Veículo',
-          type: ride.vehicle_type || 'economy',
-          typeDisplay: VEHICLE_TYPE_DISPLAY[ride.vehicle_type || 'economy']?.label || 'Económico',
-          typeIcon: VEHICLE_TYPE_DISPLAY[ride.vehicle_type || 'economy']?.icon || '🚗',
-          plate: ride.vehicle_plate || 'Não informada',
-          color: ride.vehicle_color || 'Não informada',
-          maxPassengers: ride.max_passengers || 4
-        };
-
-        // ✅✅✅ CORREÇÃO CRÍTICA: Converter preço considerando TODAS as fontes possíveis
-        const pricePerSeatNum = Number(
-          ride.pricePerSeat ?? 
-          ride.price_per_seat ?? 
-          ride.priceperseat ?? 
-          ride.price ?? 
-          0
-        );
-        
-        const driverRatingNum = Number(ride.driverRating ?? ride.driver_rating ?? ride.driver?.rating ?? 4.5);
-        const availableSeatsNum = Number(ride.availableSeats ?? ride.availableseats ?? 0);
-        const maxPassengersNum = Number(ride.maxPassengers ?? ride.max_passengers ?? vehicleInfo.maxPassengers ?? 4);
-        
-        // ✅✅✅ CORREÇÃO: Formatar data e hora
-        const departureDate = ride.departureDate || ride.departuredate;
-        const departureTime = ride.departureTime || '08:00';
-        
+        // ✅✅✅ CORREÇÃO: Criar ride compatível com a nova interface
         const processedRide: Ride = {
-          id: ride.id?.toString() || ride.ride_id?.toString() || Math.random().toString(),
-          driverId: ride.driverId || ride.driver_id,
+          // ✅ Campos ORIGINAIS do PostgreSQL (get_rides_smart_final)
+          ride_id: ride.ride_id || ride.id || Math.random().toString(),
+          driver_id: ride.driver_id || ride.driverId || '',
+          driver_name: ride.driver_name || ride.driverName || 'Motorista',
+          driver_rating: Number(ride.driver_rating ?? ride.driverRating ?? 4.5),
+          vehicle_make: ride.vehicle_make || ride.vehicleMake || '',
+          vehicle_model: ride.vehicle_model || ride.vehicleModel || '',
+          vehicle_type: ride.vehicle_type || ride.vehicleType || 'economy',
+          vehicle_plate: ride.vehicle_plate || ride.vehiclePlate || '',
+          vehicle_color: ride.vehicle_color || ride.vehicleColor || '',
+          max_passengers: Number(ride.max_passengers ?? ride.maxPassengers ?? 4),
+          from_city: ride.from_city || ride.fromCity || '',
+          to_city: ride.to_city || ride.toCity || '',
+          from_lat: Number(ride.from_lat ?? ride.fromLat ?? 0),
+          from_lng: Number(ride.from_lng ?? ride.fromLng ?? 0),
+          to_lat: Number(ride.to_lat ?? ride.toLat ?? 0),
+          to_lng: Number(ride.to_lng ?? ride.toLng ?? 0),
+          departuredate: ride.departuredate || ride.departureDate || new Date().toISOString(),
+          availableseats: Number(ride.availableseats ?? ride.availableSeats ?? 0),
+          priceperseat: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+          distance_from_city_km: Number(ride.distance_from_city_km ?? ride.distanceFromCityKm ?? 0),
+          distance_to_city_km: Number(ride.distance_to_city_km ?? ride.distanceToCityKm ?? 0),
           
-          // ✅✅✅ CORREÇÃO: Campos CRÍTICOS adicionados (SEM DUPLICAÇÕES)
+          // ✅ Campos de matching inteligente
+          match_type: ride.match_type || 'traditional',
+          direction_score: Number(ride.direction_score ?? 0),
+          
+          // ✅ Campos opcionais
+          from_province: ride.from_province || ride.fromProvince,
+          to_province: ride.to_province || ride.toProvince,
+          
+          // ✅✅✅ ALIAS para compatibilidade com frontend existente
+          id: ride.ride_id || ride.id || Math.random().toString(),
+          driverId: ride.driver_id || ride.driverId || '',
           driverName: ride.driver_name || ride.driverName || 'Motorista',
-          driverRating: driverRatingNum,
-          fromCity: ride.fromCity || ride.from_city || ride.fromLocation || ride.from_address || 'Partida',
-          toCity: ride.toCity || ride.to_city || ride.toLocation || ride.to_address || 'Destino',
-          fromLocation: ride.fromLocation || ride.from_address || ride.from_city || '',
-          toLocation: ride.toLocation || ride.to_address || ride.to_city || '',
-          fromAddress: ride.fromAddress || ride.from_address || ride.fromLocation || '',
-          toAddress: ride.toAddress || ride.to_address || ride.toLocation || '',
-          fromProvince: ride.fromProvince || ride.from_province,
-          toProvince: ride.toProvince || ride.to_province,
-          vehicle: ride.vehicle || ride.vehicleInfo || '',
-          
-          // ✅✅✅ NOVOS CAMPOS: Dados completos do veículo do PostgreSQL
-          vehicleInfo: vehicleInfo,
-          
-          // Data e hora - ✅✅✅ CORREÇÃO APLICADA
-          departureDate: departureDate || new Date().toISOString(),
-          departureTime: departureTime,
-          status: ride.status || 'available',
-          
-          // Preços e capacidade - ✅✅✅ CORREÇÃO APLICADA
-          price: pricePerSeatNum,
-          pricePerSeat: pricePerSeatNum,
-          maxPassengers: maxPassengersNum,
+          driverRating: Number(ride.driver_rating ?? ride.driverRating ?? 4.5),
+          fromLocation: ride.from_city || ride.fromCity || '',
+          toLocation: ride.to_city || ride.toCity || '',
+          fromAddress: ride.from_city || ride.fromCity || '',
+          toAddress: ride.to_city || ride.toCity || '',
+          fromCity: ride.from_city || ride.fromCity || '',
+          toCity: ride.to_city || ride.toCity || '',
+          fromProvince: ride.from_province || ride.fromProvince,
+          toProvince: ride.to_province || ride.toProvince,
+          departureDate: ride.departuredate || ride.departureDate || new Date().toISOString(),
+          departureTime: ride.departureTime || '08:00',
+          price: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+          pricePerSeat: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+          availableSeats: Number(ride.availableseats ?? ride.availableSeats ?? 0),
+          maxPassengers: Number(ride.max_passengers ?? ride.maxPassengers ?? 4),
           currentPassengers: ride.currentPassengers || 0,
-          availableSeats: availableSeatsNum,
+          vehicle: ride.vehicle_type || ride.vehicleType || 'Veículo',
+          vehicleType: ride.vehicle_type || ride.vehicleType || 'economy',
+          vehicleMake: ride.vehicle_make || ride.vehicleMake || '',
+          vehicleModel: ride.vehicle_model || ride.vehicleModel || '',
+          vehiclePlate: ride.vehicle_plate || ride.vehiclePlate || '',
+          vehicleColor: ride.vehicle_color || ride.vehicleColor || '',
+          status: ride.status || 'available',
+          type: ride.type || ride.vehicle_type || 'economy',
           
-          // Tipo de veículo
-          type: ride.type || ride.vehicleType || ride.vehicle_type || 'economy',
-          vehicleType: ride.vehicleType || ride.vehicle_type || 'economy',
+          // ✅ Campos adicionais para compatibilidade
+          vehicleInfo: {
+            make: ride.vehicle_make || ride.vehicleMake || '',
+            model: ride.vehicle_model || ride.vehicleModel || '',
+            type: ride.vehicle_type || ride.vehicleType || 'economy',
+            typeDisplay: VEHICLE_TYPE_DISPLAY[ride.vehicle_type]?.label || 'Económico',
+            typeIcon: VEHICLE_TYPE_DISPLAY[ride.vehicle_type]?.icon || '🚗',
+            plate: ride.vehicle_plate || ride.vehiclePlate || '',
+            color: ride.vehicle_color || ride.vehicleColor || '',
+            maxPassengers: Number(ride.max_passengers ?? ride.maxPassengers ?? 4)
+          },
           
-          // Campos de matching
-          match_type: ride.match_type || 'smart_match',
-          route_compatibility: ride.route_compatibility || 85,
-          match_description: ride.match_description || `Encontrado por busca inteligente (${ride.route_compatibility || 85}% compatível)`,
-          
-          // ✅✅✅ NOVOS CAMPOS: Dados geográficos do PostgreSQL - CORRIGIDOS
-          from_lat: ride.from_lat,
-          from_lng: ride.from_lng,
-          to_lat: ride.to_lat,
-          to_lng: ride.to_lng,
-          distanceFromCityKm: ride.distance_from_city_km,
-          distanceToCityKm: ride.distance_to_city_km,
-          
-          // Campos opcionais
-          description: ride.description,
-          estimatedDuration: ride.estimatedDuration,
-          estimatedDistance: ride.estimatedDistance,
-          allowNegotiation: ride.allowNegotiation ?? true,
-          allowPickupEnRoute: ride.allowPickupEnRoute ?? true,
-          isVerifiedDriver: ride.isVerifiedDriver,
-          
-          // Compatibilidade com estrutura antiga
-          driver: ride.driver ? {
-            firstName: ride.driver.firstName || ride.driver_name?.split(' ')[0] || 'Motorista',
-            lastName: ride.driver.lastName || ride.driver_name?.split(' ').slice(1).join(' ') || '',
-            rating: driverRatingNum,
-            isVerified: ride.driver.isVerified || ride.isVerifiedDriver
-          } : ride.driver_name ? {
-            firstName: ride.driver_name.split(' ')[0] || 'Motorista',
-            lastName: ride.driver_name.split(' ').slice(1).join(' ') || '',
-            rating: driverRatingNum,
-            isVerified: ride.isVerifiedDriver
-          } : undefined
+          route_compatibility: Number(ride.direction_score ?? ride.route_compatibility ?? 0),
+          distanceFromCityKm: Number(ride.distance_from_city_km ?? ride.distanceFromCityKm ?? 0),
+          distanceToCityKm: Number(ride.distance_to_city_km ?? ride.distanceToCityKm ?? 0)
         };
 
         console.log('🚗 [DEBUG] Ride processado:', {
           id: processedRide.id,
-          driverName: processedRide.driverName,
-          driverRating: processedRide.driverRating,
+          driverName: processedRide.driver_name,
+          driverRating: processedRide.driver_rating,
           vehicleInfo: processedRide.vehicleInfo,
-          price: processedRide.pricePerSeat,
-          availableSeats: processedRide.availableSeats,
-          fromLocation: processedRide.fromLocation,
-          toLocation: processedRide.toLocation,
-          distanceFromCityKm: processedRide.distanceFromCityKm,
-          distanceToCityKm: processedRide.distanceToCityKm
+          price: processedRide.priceperseat,
+          availableSeats: processedRide.availableseats,
+          fromLocation: processedRide.from_city,
+          toLocation: processedRide.to_city,
+          distanceFromCityKm: processedRide.distance_from_city_km,
+          match_type: processedRide.match_type,
+          direction_score: processedRide.direction_score
         });
         
         return processedRide;
@@ -599,9 +816,14 @@ export default function RideResults({
   // ✅ CORREÇÃO: Usar rides externos se disponíveis, senão usar os internos
   const ridesToShow = externalRides.length > 0 ? externalRides : internalRides ?? [];
 
-  console.log('🔍 [DEBUG] Rides data:', ridesToShow);
+  // ✅✅✅ ENHANCE RIDES COM INFO DE DATA
+  const enhancedRides = enhanceRidesWithDateInfo(ridesToShow, searchParams.when);
+  const hasExactDateRides = enhancedRides.some(ride => ride._isExactDate);
+
+  console.log('🔍 [DEBUG] Rides data:', enhancedRides);
   console.log('🔍 [DEBUG] Loading state:', isLoading);
   console.log('🔍 [DEBUG] External rides provided:', externalRides.length > 0);
+  console.log('🔍 [DEBUG] Exact date rides:', hasExactDateRides);
 
   // ✅ Função para lidar com sucesso de pagamento
   const handlePaymentSuccess = () => {
@@ -665,8 +887,14 @@ export default function RideResults({
 
   return (
     <>
+      {/* ✅ ADICIONAR BANNER DE AVISO PARA DATAS DIFERENTES */}
+      <DateWarningBanner 
+        searchDate={searchParams.when} 
+        hasExactDateRides={hasExactDateRides}
+      />
+      
       {/* 🔍 COMPONENTE DE DEBUG - ADICIONADO PARA VERIFICAR OS DADOS */}
-      <DebugComponent rides={ridesToShow} />
+      <DebugComponent rides={enhancedRides} />
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Mapa */}
@@ -675,53 +903,75 @@ export default function RideResults({
             type="ride"
             from={searchParams.from}
             to={searchParams.to}
-            markers={ridesToShow.map(ride => ({
+            markers={enhancedRides.map(ride => ({
               lat: ride.from_lat || -25.9692,
               lng: ride.from_lng || 32.5732,
-              popup: `${getVehicleInfo(ride).typeDisplay} - ${formatPrice(ride.pricePerSeat)} - ${getDriverName(ride)}`,
+              popup: `${getVehicleInfo(ride).typeDisplay} - ${getDisplayPrice(ride)} - ${getDriverName(ride)}`,
             }))}
           />
         </div>
 
         {/* Lista de Viagens */}
         <div className="space-y-4">
-          <h3 className="text-xl font-semibold text-gray-900">Viagens Disponíveis</h3>
+          <h3 className="text-xl font-semibold text-gray-900">
+            Viagens Disponíveis
+            {!hasExactDateRides && enhancedRides.length > 0 && (
+              <span style={{
+                fontSize: '14px',
+                color: '#e65100',
+                marginLeft: '8px',
+                fontStyle: 'italic'
+              }}>
+                (em datas próximas)
+              </span>
+            )}
+          </h3>
           
-          {/* Estatísticas de Matching - CORRIGIDA */}
-          {ridesToShow.some(ride => ride.route_compatibility) && (
+          {/* Estatísticas de Matching - ATUALIZADA COM INFO DE DATAS */}
+          {enhancedRides.some(ride => ride.match_type) && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <h4 className="text-sm font-medium text-blue-900 mb-2 flex items-center">
                 <span className="text-blue-600 mr-2">⚡</span>
-                Compatibilidade das Viagens
+                Busca Inteligente - Resultados
+                {!hasExactDateRides && enhancedRides.length > 0 && (
+                  <span style={{
+                    fontSize: '12px',
+                    color: '#e65100',
+                    marginLeft: '8px',
+                    fontStyle: 'italic'
+                  }}>
+                    • Mostrando rides em datas próximas
+                  </span>
+                )}
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                 <div className="text-center">
                   <div className="text-blue-700 font-bold">
-                    {ridesToShow.filter(r => r.match_type === 'exact_match').length}
+                    {enhancedRides.filter(r => r._isExactDate).length}
                   </div>
-                  <div className="text-blue-600">Exatas</div>
+                  <div className="text-blue-600">Na data</div>
                 </div>
                 <div className="text-center">
                   <div className="text-blue-700 font-bold">
-                    {ridesToShow.filter(r => r.match_type === 'smart_match' || r.match_type === 'smart_final_direct').length}
+                    {enhancedRides.filter(r => !r._isExactDate).length}
                   </div>
-                  <div className="text-blue-600">Inteligentes</div>
+                  <div className="text-blue-600">Datas próximas</div>
                 </div>
                 <div className="text-center">
                   <div className="text-blue-700 font-bold">
-                    {ridesToShow.filter(r => r.route_compatibility && r.route_compatibility >= 80).length}
+                    {enhancedRides.filter(r => r.direction_score && r.direction_score >= 80).length}
                   </div>
-                  <div className="text-blue-600">Alta Comp.</div>
+                  <div className="text-blue-600">Alta Pont.</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-blue-700 font-bold">{ridesToShow.length}</div>
+                  <div className="text-blue-700 font-bold">{enhancedRides.length}</div>
                   <div className="text-blue-600">Total</div>
                 </div>
               </div>
             </div>
           )}
           
-          {ridesToShow.length === 0 ? (
+          {enhancedRides.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-gray-400 text-2xl">🚗</span>
@@ -729,13 +979,15 @@ export default function RideResults({
               <p className="text-gray-500">Nenhuma viagem encontrada</p>
             </div>
           ) : (
-            ridesToShow.map((ride) => (
+            // ✅ RENDERIZAR RIDES ENHANCED COM DESTAQUE DE DATAS
+            enhancedRides.map((ride) => (
               <RideCard
                 key={ride.id}
                 ride={ride}
                 onBookRide={handleBookRide}
                 onNegotiatePrice={handleNegotiatePrice}
                 onEnRoutePickup={handleEnRoutePickup}
+                searchDate={searchParams.when} // ✅ PASSAR A DATA DE BUSCA
               />
             ))
           )}

@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
-// 🎯 INTERFACE PARA O RESULTADO DO SMART MATCHING (CORRIGIDA)
+// 🎯 INTERFACE PARA O RESULTADO DO SMART MATCHING (ATUALIZADA)
 export interface RideWithMatching {
   ride: any;
   compatibilityScore: number;
@@ -24,6 +24,30 @@ export interface RideWithMatching {
   departureDate?: Date;
   vehicleType?: string;
   status?: string;
+  
+  // ✅ NOVOS CAMPOS DA FUNÇÃO get_rides_smart_final
+  ride_id?: string;
+  driver_id?: string;
+  driver_name?: string;
+  driver_rating?: number;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_type?: string;
+  vehicle_plate?: string;
+  vehicle_color?: string;
+  max_passengers?: number;
+  from_city?: string;
+  to_city?: string;
+  from_lat?: number;
+  from_lng?: number;
+  to_lat?: number;
+  to_lng?: number;
+  departuredate?: string;
+  availableseats?: number;
+  priceperseat?: number;
+  distance_from_city_km?: number;
+  distance_to_city_km?: number;
+  direction_score?: number;
 }
 
 // 🎯 INTERFACE COMPATÍVEL PARA RIDES
@@ -309,73 +333,125 @@ export class SmartRideMatchingService {
     }
   }
 
-  // 🆕 MÉTODO OTIMIZADO: Usa função PostgreSQL get_rides_smart_final
+  // 🆕 MÉTODO OTIMIZADO: Usa função PostgreSQL get_rides_smart_final (CORRIGIDO)
   static async findRidesWithPostgresFunction(
     passengerFrom: string,
     passengerTo: string,
-    maxDistance: number = 50,
-    limit: number = 20
+    maxDistance: number = 100, // ✅ Padrão aumentado para 100km
+    limit: number = 50         // ✅ Padrão aumentado para 50 resultados
   ): Promise<RideWithMatching[]> {
     try {
-      const [fromProvince, toProvince] = await Promise.all([
-        this.detectProvinceSmart(passengerFrom),
-        this.detectProvinceSmart(passengerTo)
-      ]);
-
-      console.log('🎯 [POSTGRES-FUNCTION] Buscando com função PostgreSQL:', {
+      console.log('🎯 [POSTGRES-FUNCTION] Buscando com função PostgreSQL otimizada:', {
         passengerFrom,
         passengerTo,
-        fromProvince,
-        toProvince,
         maxDistance,
         limit
       });
 
-      // ✅ CORREÇÃO: Usar função get_rides_smart_final que já existe
+      // ✅ CORREÇÃO: Usar função get_rides_smart_final com parâmetros corretos
       const query = sql`
         SELECT * FROM get_rides_smart_final(
-          ${passengerFrom},
-          ${passengerTo},
-          ${maxDistance}
-        ) LIMIT ${limit}
+          ${passengerFrom || ''},      -- search_from
+          ${passengerTo || ''},        -- search_to  
+          ${maxDistance},              -- radius_km
+          ${limit}                     -- max_results
+        )
       `;
 
       const result = await db.execute(query);
       const rides = this.extractRows(result);
 
-      console.log('✅ [POSTGRES-FUNCTION] Resultados da função:', rides.length);
+      console.log('✅ [POSTGRES-FUNCTION] Resultados da função inteligente:', rides.length);
 
-      return rides.map((ride: any) => ({
-        ride: ride,
-        compatibilityScore: ride.distance_from_city_km ? 
-          Math.max(0, 100 - (ride.distance_from_city_km * 2)) : 50,
-        matchType: ride.match_type || 'proximity_match',
-        matchDescription: ride.match_type ? 
-          `Match ${ride.match_type}: ${ride.from_city} → ${ride.to_city}` :
-          `Rota próxima: ${ride.from_city} → ${ride.to_city}`,
-        isExactMatch: (ride.match_type || '') === 'exact_match',
-        routeCompatibility: ride.distance_from_city_km ? 
-          Math.max(0, 1 - (ride.distance_from_city_km * 0.02)) : 0.5,
-        detectedFromProvince: fromProvince,
-        detectedToProvince: toProvince,
-        passengerFromProvince: fromProvince,
-        passengerToProvince: toProvince,
-        id: ride.ride_id,
-        fromAddress: ride.from_city,
-        toAddress: ride.to_city,
-        fromProvince: fromProvince,
-        toProvince: toProvince,
-        pricePerSeat: ride.priceperseat,
-        availableSeats: ride.availableseats,
-        departureDate: ride.departuredate,
-        vehicleType: 'carro', // default
-        status: 'available'
-      }));
+      // ✅ CORREÇÃO: Mapeamento correto dos campos da nova função
+      return rides.map((ride: any) => {
+        const compatibilityScore = ride.direction_score || 
+          (ride.distance_from_city_km ? 
+            Math.max(0, 100 - (ride.distance_from_city_km * 2)) : 50);
+        
+        const routeCompatibility = ride.direction_score ? 
+          (ride.direction_score / 100) : 
+          (ride.distance_from_city_km ? 
+            Math.max(0, 1 - (ride.distance_from_city_km * 0.02)) : 0.5);
+
+        return {
+          // ✅ Dados originais do ride
+          ride: ride,
+          compatibilityScore: compatibilityScore,
+          matchType: ride.match_type || 'proximity_match',
+          matchDescription: this.getMatchDescription(ride),
+          isExactMatch: (ride.match_type || '') === 'exact_match',
+          routeCompatibility: routeCompatibility,
+          
+          // ✅ Informações de detecção de província
+          detectedFromProvince: ride.from_province || '',
+          detectedToProvince: ride.to_province || '',
+          passengerFromProvince: '', // Será preenchido depois se necessário
+          passengerToProvince: '',   // Será preenchido depois se necessário
+          
+          // ✅ Campos compatíveis com interface existente
+          id: ride.ride_id,
+          fromAddress: ride.from_city,
+          toAddress: ride.to_city,
+          fromProvince: ride.from_province,
+          toProvince: ride.to_province,
+          pricePerSeat: ride.priceperseat,
+          availableSeats: ride.availableseats,
+          departureDate: ride.departuredate,
+          vehicleType: ride.vehicle_type,
+          status: 'available',
+          
+          // ✅ Novos campos da função inteligente
+          ride_id: ride.ride_id,
+          driver_id: ride.driver_id,
+          driver_name: ride.driver_name,
+          driver_rating: ride.driver_rating,
+          vehicle_make: ride.vehicle_make,
+          vehicle_model: ride.vehicle_model,
+          vehicle_type: ride.vehicle_type,
+          vehicle_plate: ride.vehicle_plate,
+          vehicle_color: ride.vehicle_color,
+          max_passengers: ride.max_passengers,
+          from_city: ride.from_city,
+          to_city: ride.to_city,
+          from_lat: ride.from_lat,
+          from_lng: ride.from_lng,
+          to_lat: ride.to_lat,
+          to_lng: ride.to_lng,
+          departuredate: ride.departuredate,
+          availableseats: ride.availableseats,
+          priceperseat: ride.priceperseat,
+          distance_from_city_km: ride.distance_from_city_km,
+          distance_to_city_km: ride.distance_to_city_km,
+          direction_score: ride.direction_score
+        };
+      });
 
     } catch (error) {
       console.error('❌ [POSTGRES-FUNCTION] Erro na função PostgreSQL:', error);
+      // Fallback para método geográfico
       return await this.findRidesWithGeographicLogic(passengerFrom, passengerTo, limit);
     }
+  }
+
+  // ✅ NOVO MÉTODO: Descrição de match melhorada
+  private static getMatchDescription(ride: any): string {
+    const matchTypes: Record<string, string> = {
+      'exact_match': 'Correspondência exata',
+      'exact_province': 'Mesma província', 
+      'from_correct_province_to': 'Origem correta + destino na província',
+      'to_correct_province_from': 'Destino correto + origem na província',
+      'partial_from': 'Apenas origem correspondente',
+      'partial_to': 'Apenas destino correspondente',
+      'nearby': 'Perto da localização',
+      'all_rides': 'Todas as boleias',
+      'other': 'Outras correspondências'
+    };
+
+    const matchLabel = matchTypes[ride.match_type] || ride.match_type;
+    const score = ride.direction_score || 0;
+    
+    return `${matchLabel} • ${score}pts • ${ride.from_city} → ${ride.to_city}`;
   }
 
   // 🛡️ MÉTODO FALLBACK
@@ -639,31 +715,54 @@ export class SmartRideMatchingService {
     console.log('🧹 [CACHE] Cache de províncias limpo');
   }
 
+  // ✅ ATUALIZAR método de conversão para incluir novos campos
   static convertToRideWithDetails(matchingRides: RideWithMatching[]): any[] {
     return matchingRides.map(matchingRide => {
-      const rideDetails = {
-        ...matchingRide.ride,
+      const baseRide = matchingRide.ride || {};
+      
+      return {
+        // ✅ Campos originais
+        ...baseRide,
         matchScore: matchingRide.compatibilityScore,
         matchType: matchingRide.matchType,
         matchDescription: matchingRide.matchDescription,
         route_compatibility: matchingRide.routeCompatibility,
-        id: matchingRide.ride?.id || matchingRide.id,
-        fromAddress: matchingRide.ride?.fromAddress || matchingRide.fromAddress,
-        toAddress: matchingRide.ride?.toAddress || matchingRide.toAddress,
-        fromProvince: matchingRide.ride?.fromProvince || matchingRide.fromProvince,
-        toProvince: matchingRide.ride?.toProvince || matchingRide.toProvince,
-        pricePerSeat: matchingRide.ride?.pricePerSeat || matchingRide.pricePerSeat,
-        availableSeats: matchingRide.ride?.availableSeats || matchingRide.availableSeats,
-        departureDate: matchingRide.ride?.departureDate || matchingRide.departureDate,
-        vehicleType: matchingRide.ride?.vehicleType || matchingRide.vehicleType,
-        status: matchingRide.ride?.status || matchingRide.status || 'available'
+        id: baseRide.id || matchingRide.id || matchingRide.ride_id,
+        fromAddress: baseRide.fromAddress || matchingRide.fromAddress || matchingRide.from_city,
+        toAddress: baseRide.toAddress || matchingRide.toAddress || matchingRide.to_city,
+        fromProvince: baseRide.fromProvince || matchingRide.fromProvince,
+        toProvince: baseRide.toProvince || matchingRide.toProvince,
+        pricePerSeat: baseRide.pricePerSeat || matchingRide.pricePerSeat || matchingRide.priceperseat,
+        availableSeats: baseRide.availableSeats || matchingRide.availableSeats || matchingRide.availableseats,
+        departureDate: baseRide.departureDate || matchingRide.departureDate || matchingRide.departuredate,
+        vehicleType: baseRide.vehicleType || matchingRide.vehicleType || matchingRide.vehicle_type,
+        status: baseRide.status || matchingRide.status || 'available',
+        
+        // ✅ Novos campos da função inteligente
+        ride_id: matchingRide.ride_id,
+        driver_id: matchingRide.driver_id,
+        driver_name: matchingRide.driver_name,
+        driver_rating: matchingRide.driver_rating,
+        vehicle_make: matchingRide.vehicle_make,
+        vehicle_model: matchingRide.vehicle_model,
+        vehicle_type: matchingRide.vehicle_type,
+        vehicle_plate: matchingRide.vehicle_plate,
+        vehicle_color: matchingRide.vehicle_color,
+        max_passengers: matchingRide.max_passengers,
+        from_city: matchingRide.from_city,
+        to_city: matchingRide.to_city,
+        from_lat: matchingRide.from_lat,
+        from_lng: matchingRide.from_lng,
+        to_lat: matchingRide.to_lat,
+        to_lng: matchingRide.to_lng,
+        distance_from_city_km: matchingRide.distance_from_city_km,
+        distance_to_city_km: matchingRide.distance_to_city_km,
+        direction_score: matchingRide.direction_score
       };
-
-      return rideDetails;
     });
   }
 
-  // 🆕 MÉTODO PRINCIPAL PARA PRODUÇÃO
+  // 🆕 MÉTODO PRINCIPAL PARA PRODUÇÃO (ATUALIZADO)
   static async findMatchingRides(
     passengerFrom: string,
     passengerTo: string,
@@ -671,19 +770,21 @@ export class SmartRideMatchingService {
       usePostgresFunction?: boolean;
       maxDistance?: number;
       limit?: number;
+      radiusKm?: number; // ✅ Novo parâmetro
     } = {}
   ): Promise<RideWithMatching[]> {
     const {
       usePostgresFunction = true,
-      maxDistance = 50,
-      limit = 20
+      maxDistance = 100, // ✅ Padrão aumentado
+      limit = 50,        // ✅ Padrão aumentado
+      radiusKm = 100     // ✅ Novo parâmetro com padrão
     } = options;
 
-    console.log('🚀 [FIND-MATCHING-RIDES] Iniciando busca:', {
+    console.log('🚀 [FIND-MATCHING-RIDES] Iniciando busca inteligente:', {
       passengerFrom,
       passengerTo,
       usePostgresFunction,
-      maxDistance,
+      maxDistance: radiusKm, // ✅ Usar radiusKm
       limit
     });
 
@@ -691,7 +792,7 @@ export class SmartRideMatchingService {
       return await this.findRidesWithPostgresFunction(
         passengerFrom,
         passengerTo,
-        maxDistance,
+        radiusKm, // ✅ Usar radiusKm aqui
         limit
       );
     } else {
@@ -701,5 +802,20 @@ export class SmartRideMatchingService {
         limit
       );
     }
+  }
+
+  // 🆕 MÉTODO: Busca simplificada para controllers
+  static async searchRidesSmart(
+    from: string = '',
+    to: string = '',
+    radiusKm: number = 100,
+    maxResults: number = 50
+  ): Promise<RideWithMatching[]> {
+    return await this.findRidesWithPostgresFunction(
+      from,
+      to,
+      radiusKm,
+      maxResults
+    );
   }
 }

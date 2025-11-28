@@ -28,6 +28,90 @@ const createBookingSchema = z.object({
 
 // ===== BOOKINGS API =====
 
+// ✅ ROTA COMPATÍVEL TEMPORÁRIA (APENAS PARA RIDES) - RESOLVE O ERRO 404
+router.post("/", verifyFirebaseToken, async (req: any, res) => {
+  try {
+    console.log('📦 [BOOKING-COMPAT] Dados recebidos para reserva:', req.body);
+    
+    // ✅ VALIDAÇÃO SIMPLES: Aceitar apenas rides
+    const { rideId, passengers, pickupLocation, notes } = req.body;
+
+    if (!rideId || !passengers) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Dados incompletos para reserva de ride: rideId e passengers são obrigatórios' 
+      });
+    }
+
+    const userId = (req.user as AuthenticatedUser)?.uid;
+    if (!userId) {
+      return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+
+    // ✅ BUSCAR RIDE ESPECÍFICO
+    const [ride] = await db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, rideId));
+
+    if (!ride) {
+      return res.status(404).json({ error: 'Viagem não encontrada' });
+    }
+
+    // ✅ VERIFICAR ASSENTOS DISPONÍVEIS
+    if ((ride.availableSeats || 0) < passengers) {
+      return res.status(400).json({ 
+        error: `Apenas ${ride.availableSeats} assentos disponíveis` 
+      });
+    }
+
+    // ✅ CALCULAR PREÇO
+    const pricePerSeat = parseFloat(ride.pricePerSeat);
+    const totalAmount = pricePerSeat * passengers;
+
+    // ✅ CRIAR BOOKING APENAS PARA RIDE
+    const [newBooking] = await db
+      .insert(bookings)
+      .values({
+        passengerId: userId,
+        rideId: rideId,
+        accommodationId: null, // ✅ EXPLICITAMENTE NULL
+        status: 'confirmed',
+        totalPrice: totalAmount.toString(),
+        guestName: req.body.guestInfo?.name || 'Cliente',
+        guestEmail: req.body.guestInfo?.email || '',
+        guestPhone: req.body.guestInfo?.phone || '',
+        passengers: passengers,
+        seatsBooked: passengers,
+        type: 'ride', // ✅ FIXO COMO RIDE
+      })
+      .returning();
+
+    // ✅ ATUALIZAR ASSENTOS DO RIDE
+    await db
+      .update(rides)
+      .set({
+        availableSeats: (ride.availableSeats || 0) - passengers
+      })
+      .where(eq(rides.id, rideId));
+
+    console.log('✅ [BOOKING-COMPAT] Reserva de ride criada com sucesso:', newBooking.id);
+
+    res.status(201).json({
+      success: true,
+      booking: newBooking,
+      message: 'Reserva de viagem confirmada com sucesso!'
+    });
+
+  } catch (error) {
+    console.error('❌ [BOOKING-COMPAT] Erro ao criar reserva de ride:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erro ao criar reserva de viagem'
+    });
+  }
+});
+
 // Criar reserva
 router.post('/create', verifyFirebaseToken, async (req: any, res) => {
   try {

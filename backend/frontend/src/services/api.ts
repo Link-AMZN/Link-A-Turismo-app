@@ -1,5 +1,6 @@
 import { auth } from '@/shared/lib/firebaseConfig';
 import { Booking, RideBookingRequest, HotelBookingRequest } from '@/shared/types/booking';
+import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
 
 /**
  * Interfaces para tipagem
@@ -90,44 +91,106 @@ interface ChatMessage {
   isHotel: boolean;
 }
 
-// ✅ INTERFACE RIDE CORRIGIDA - pricePerSeat como number | undefined
+// ✅✅✅ INTERFACE RIDE COMPLETAMENTE CORRIGIDA - COMPATÍVEL COM get_rides_smart_final
 export interface Ride {
+  // ✅ Campos ORIGINAIS do PostgreSQL (get_rides_smart_final)
+  ride_id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_rating: number;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_type: string;
+  vehicle_plate: string;
+  vehicle_color: string;
+  max_passengers: number;
+  from_city: string;
+  to_city: string;
+  from_lat: number;
+  from_lng: number;
+  to_lat: number;
+  to_lng: number;
+  departuredate: string;
+  availableseats: number;
+  priceperseat: number;
+  distance_from_city_km: number;
+  distance_to_city_km: number;
+  
+  // ✅ Campos de matching inteligente
+  match_type?: string;
+  direction_score?: number;
+  
+  // ✅ Campos opcionais
+  from_province?: string;
+  to_province?: string;
+  
+  // ✅✅✅ ALIAS para compatibilidade com frontend existente
   id: string;
   driverId: string;
+  driverName: string;
+  driverRating: number;
   fromLocation: string;
   toLocation: string;
-  fromAddress?: string;
-  toAddress?: string;
+  fromAddress: string;
+  toAddress: string;
+  fromCity: string;
+  toCity: string;
   fromProvince?: string;
   toProvince?: string;
   departureDate: string;
   departureTime: string;
   price: number;
-  pricePerSeat?: number; // ✅ CORRIGIDO: number | undefined
+  pricePerSeat: number;
   availableSeats: number;
   maxPassengers: number;
-  
-  // ✅ Campos principais do backend
-  vehicle?: string;
-  vehicleType?: string;
-  
-  // ✅ Dados do motorista do backend
-  driverName?: string;
-  driverRating?: number;
-  
-  // ✅ Campos de cidade do backend
-  fromCity?: string;
-  toCity?: string;
-  
-  // ✅ Dados formatados do backend
-  departureDateFormatted?: string;
-  
+  currentPassengers: number;
+  vehicle: string;
+  vehicleType: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehiclePlate: string;
+  vehicleColor: string;
   status: string;
-  type?: string;
+  type: string;
   
-  // ✅ Campos de matching
-  matchType?: string;
-  matchScore?: number;
+  // ✅ Campos adicionais para compatibilidade
+  vehicleInfo?: {
+    make: string;
+    model: string;
+    type: string;
+    typeDisplay: string;
+    typeIcon: string;
+    plate: string;
+    color: string;
+    maxPassengers: number;
+  };
+  
+  description?: string;
+  vehiclePhoto?: string;
+  estimatedDuration?: number;
+  estimatedDistance?: number;
+  allowNegotiation?: boolean;
+  allowPickupEnRoute?: boolean;
+  isVerifiedDriver?: boolean;
+  availableIn?: number;
+  route_compatibility?: number;
+  match_description?: string;
+  vehicleFeatures?: string[];
+  driver?: {
+    firstName?: string;
+    lastName?: string;
+    rating?: number;
+    isVerified?: boolean;
+  };
+  distanceFromCityKm?: number;
+  distanceToCityKm?: number;
+  
+  // ✅ Campos formatados
+  departureDateFormatted?: string;
+  departureTimeFormatted?: string;
+  departureDateTimeFormatted?: string;
+  departureLongDate?: string;
+  departureWeekday?: string;
 }
 
 export interface RideSearchParams {
@@ -143,7 +206,7 @@ export interface RideSearchParams {
   radiusKm?: number;
 }
 
-// ✅ INTERFACE PARA MATCHSTATS SIMPLIFICADA
+// ✅ INTERFACE PARA MATCHSTATS ATUALIZADA
 export interface MatchStats {
   exact_match?: number;
   same_segment?: number;
@@ -155,6 +218,9 @@ export interface MatchStats {
   drivers_with_ratings?: number;
   average_driver_rating?: number;
   vehicle_types?: Record<string, number>;
+  match_types?: Record<string, number>;
+  total_smart_matches?: number;
+  average_direction_score?: number;
 }
 
 export interface RideSearchResponse {
@@ -170,6 +236,7 @@ export interface RideSearchResponse {
     appliedFilters?: any;
     radiusKm?: number;
     searchMethod?: string;
+    functionUsed?: string;
   };
   total?: number;
   data?: {
@@ -181,83 +248,107 @@ export interface RideSearchResponse {
   smart_search?: boolean;
 }
 
-// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO CORRIGIDA - pricePerSeat como number | undefined
+// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO COMPLETAMENTE CORRIGIDA - COMPATÍVEL COM get_rides_smart_final
 export function normalizeRide(apiRide: any): Ride {
-  // Debug para ver o que chega do backend
-  console.log('🎯 Dado RAW recebido do backend:', {
-    id: apiRide.id,
-    driverName: apiRide.driverName,
-    fromCity: apiRide.fromCity,
-    toCity: apiRide.toCity,
-    pricePerSeat: apiRide.pricePerSeat,
-    departureDate: apiRide.departureDate,
-    availableSeats: apiRide.availableSeats
+  console.log('🔄 [NORMALIZAÇÃO] Processando ride:', {
+    ride_id: apiRide.ride_id,
+    driver_name: apiRide.driver_name,
+    match_type: apiRide.match_type,
+    direction_score: apiRide.direction_score
   });
-  
-  // ✅ CORREÇÃO: pricePerSeat como number | undefined (não null)
-  const pricePerSeatValue = apiRide.pricePerSeat !== undefined && apiRide.pricePerSeat !== null ? 
-                           Number(apiRide.pricePerSeat) : undefined;
 
+  // ✅✅✅ CORREÇÃO CRÍTICA: Extrair dados do PostgreSQL e criar aliases
   const normalized: Ride = {
-    // Identificação
-    id: apiRide.id || '',
-    driverId: apiRide.driverId || '',
+    // ✅ Campos ORIGINAIS do PostgreSQL (get_rides_smart_final)
+    ride_id: apiRide.ride_id || apiRide.id || '',
+    driver_id: apiRide.driver_id || apiRide.driverId || '',
+    driver_name: apiRide.driver_name || apiRide.driverName || 'Motorista',
+    driver_rating: Number(apiRide.driver_rating ?? apiRide.driverRating ?? 4.5),
+    vehicle_make: apiRide.vehicle_make || apiRide.vehicleMake || '',
+    vehicle_model: apiRide.vehicle_model || apiRide.vehicleModel || '',
+    vehicle_type: apiRide.vehicle_type || apiRide.vehicleType || 'economy',
+    vehicle_plate: apiRide.vehicle_plate || apiRide.vehiclePlate || '',
+    vehicle_color: apiRide.vehicle_color || apiRide.vehicleColor || '',
+    max_passengers: Number(apiRide.max_passengers ?? apiRide.maxPassengers ?? 4),
+    from_city: apiRide.from_city || apiRide.fromCity || '',
+    to_city: apiRide.to_city || apiRide.toCity || '',
+    from_lat: Number(apiRide.from_lat ?? apiRide.fromLat ?? 0),
+    from_lng: Number(apiRide.from_lng ?? apiRide.fromLng ?? 0),
+    to_lat: Number(apiRide.to_lat ?? apiRide.toLat ?? 0),
+    to_lng: Number(apiRide.to_lng ?? apiRide.toLng ?? 0),
+    departuredate: apiRide.departuredate || apiRide.departureDate || new Date().toISOString(),
+    availableseats: Number(apiRide.availableseats ?? apiRide.availableSeats ?? 0),
+    priceperseat: Number(apiRide.priceperseat ?? apiRide.pricePerSeat ?? 0),
+    distance_from_city_km: Number(apiRide.distance_from_city_km ?? apiRide.distanceFromCityKm ?? 0),
+    distance_to_city_km: Number(apiRide.distance_to_city_km ?? apiRide.distanceToCityKm ?? 0),
     
-    // Motorista
-    driverName: apiRide.driverName || 'Motorista não disponível',
-    driverRating: apiRide.driverRating ? Number(apiRide.driverRating) : undefined,
+    // ✅ Campos de matching inteligente
+    match_type: apiRide.match_type || 'traditional',
+    direction_score: Number(apiRide.direction_score ?? 0),
     
-    // Localização ORIGEM
-    fromAddress: apiRide.fromAddress || apiRide.fromCity || 'Localização não disponível',
-    fromCity: apiRide.fromCity || 'Cidade não disponível',
-    fromLocation: apiRide.fromLocation || apiRide.fromAddress || apiRide.fromCity || '',
+    // ✅ Campos opcionais
+    from_province: apiRide.from_province || apiRide.fromProvince,
+    to_province: apiRide.to_province || apiRide.toProvince,
     
-    // Localização DESTINO  
-    toAddress: apiRide.toAddress || apiRide.toCity || 'Localização não disponível',
-    toCity: apiRide.toCity || 'Cidade não disponível',
-    toLocation: apiRide.toLocation || apiRide.toAddress || apiRide.toCity || '',
-    
-    // Províncias
-    fromProvince: apiRide.fromProvince || undefined,
-    toProvince: apiRide.toProvince || undefined,
-    
-    // Data e hora
-    departureDate: apiRide.departureDate || '',
-    departureDateFormatted: apiRide.departureDateFormatted || 
-                           (apiRide.departureDate ? 
-                            new Date(apiRide.departureDate).toLocaleDateString('pt-PT') : 
-                            'Data não disponível'),
-    departureTime: apiRide.departureTime || 
-                  (apiRide.departureDate ? 
-                   new Date(apiRide.departureDate).toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'}) : 
-                   'Hora não disponível'),
-    
-    // ✅ CORREÇÃO: Preço (JÁ EM MZN - sem conversão) - pricePerSeat como number | undefined
-    price: pricePerSeatValue || 0,
-    pricePerSeat: pricePerSeatValue,
-    availableSeats: apiRide.availableSeats || 0,
-    maxPassengers: apiRide.maxPassengers || apiRide.availableSeats || 4,
-    
-    // Veículo
-    vehicle: apiRide.vehicle || 'Veículo não disponível',
-    vehicleType: apiRide.vehicleType || undefined,
-    
-    // Status e metadados
+    // ✅✅✅ ALIAS para compatibilidade com frontend existente
+    id: apiRide.ride_id || apiRide.id || '',
+    driverId: apiRide.driver_id || apiRide.driverId || '',
+    driverName: apiRide.driver_name || apiRide.driverName || 'Motorista',
+    driverRating: Number(apiRide.driver_rating ?? apiRide.driverRating ?? 4.5),
+    fromLocation: apiRide.from_city || apiRide.fromCity || '',
+    toLocation: apiRide.to_city || apiRide.toCity || '',
+    fromAddress: apiRide.from_city || apiRide.fromCity || '',
+    toAddress: apiRide.to_city || apiRide.toCity || '',
+    fromCity: apiRide.from_city || apiRide.fromCity || '',
+    toCity: apiRide.to_city || apiRide.toCity || '',
+    fromProvince: apiRide.from_province || apiRide.fromProvince,
+    toProvince: apiRide.to_province || apiRide.toProvince,
+    departureDate: apiRide.departuredate || apiRide.departureDate || new Date().toISOString(),
+    departureTime: apiRide.departureTime || '08:00',
+    price: Number(apiRide.priceperseat ?? apiRide.pricePerSeat ?? 0),
+    pricePerSeat: Number(apiRide.priceperseat ?? apiRide.pricePerSeat ?? 0),
+    availableSeats: Number(apiRide.availableseats ?? apiRide.availableSeats ?? 0),
+    maxPassengers: Number(apiRide.max_passengers ?? apiRide.maxPassengers ?? 4),
+    currentPassengers: apiRide.currentPassengers || 0,
+    vehicle: apiRide.vehicle_type || apiRide.vehicleType || 'Veículo',
+    vehicleType: apiRide.vehicle_type || apiRide.vehicleType || 'economy',
+    vehicleMake: apiRide.vehicle_make || apiRide.vehicleMake || '',
+    vehicleModel: apiRide.vehicle_model || apiRide.vehicleModel || '',
+    vehiclePlate: apiRide.vehicle_plate || apiRide.vehiclePlate || '',
+    vehicleColor: apiRide.vehicle_color || apiRide.vehicleColor || '',
     status: apiRide.status || 'available',
-    matchType: apiRide.matchType || undefined,
-    matchScore: apiRide.matchScore || undefined,
-    type: apiRide.type || 'one-way'
+    type: apiRide.type || apiRide.vehicle_type || 'economy',
+    
+    // ✅ Campos adicionais para compatibilidade
+    vehicleInfo: {
+      make: apiRide.vehicle_make || apiRide.vehicleMake || '',
+      model: apiRide.vehicle_model || apiRide.vehicleModel || '',
+      type: apiRide.vehicle_type || apiRide.vehicleType || 'economy',
+      typeDisplay: 'Económico', // Placeholder
+      typeIcon: '🚗', // Placeholder
+      plate: apiRide.vehicle_plate || apiRide.vehiclePlate || '',
+      color: apiRide.vehicle_color || apiRide.vehicleColor || '',
+      maxPassengers: Number(apiRide.max_passengers ?? apiRide.maxPassengers ?? 4)
+    },
+    
+    route_compatibility: Number(apiRide.direction_score ?? apiRide.route_compatibility ?? 0),
+    distanceFromCityKm: Number(apiRide.distance_from_city_km ?? apiRide.distanceFromCityKm ?? 0),
+    distanceToCityKm: Number(apiRide.distance_to_city_km ?? apiRide.distanceToCityKm ?? 0),
+    
+    // ✅ Campos formatados
+    departureDateFormatted: formatDateOnly(apiRide.departuredate || apiRide.departureDate),
+    departureTimeFormatted: formatTimeOnly(apiRide.departuredate || apiRide.departureDate),
+    departureDateTimeFormatted: formatDateTime(apiRide.departuredate || apiRide.departureDate),
+    departureLongDate: formatLongDate(apiRide.departuredate || apiRide.departureDate),
+    departureWeekday: formatWeekday(apiRide.departuredate || apiRide.departureDate)
   };
   
-  console.log('🔄 Dado NORMALIZADO para UI:', {
+  console.log('✅ [NORMALIZAÇÃO] Ride normalizado:', {
     id: normalized.id,
-    driverName: normalized.driverName,
-    fromCity: normalized.fromCity,
-    toCity: normalized.toCity,
-    price: normalized.pricePerSeat,
-    date: normalized.departureDateFormatted,
-    time: normalized.departureTime,
-    seats: normalized.availableSeats
+    driver_name: normalized.driver_name,
+    priceperseat: normalized.priceperseat,
+    match_type: normalized.match_type,
+    direction_score: normalized.direction_score
   });
   
   return normalized;
@@ -281,32 +372,78 @@ export function createDefaultMatchStats(): MatchStats {
     drivers_with_ratings: 0,
     average_driver_rating: 0,
     vehicle_types: {},
+    match_types: {},
+    total_smart_matches: 0,
+    average_direction_score: 0,
     total: 0
   };
 }
 
 // ✅ FUNÇÃO AUXILIAR: Obter nome do motorista
 export function getDriverName(ride: Ride): string {
-  return ride.driverName || 'Motorista não disponível';
+  return ride.driver_name || ride.driverName || 'Motorista não disponível';
 }
 
 // ✅ FUNÇÃO AUXILIAR: Obter rating do motorista
 export function getDriverRating(ride: Ride): number {
-  return ride.driverRating || 4.5;
+  return ride.driver_rating || ride.driverRating || 4.5;
 }
 
-// ✅ FUNÇÃO AUXILIAR: Formatar preço em MZN
-export function formatPrice(price: number): string {
+// ✅✅✅ CORREÇÃO: formatPrice aceita qualquer tipo mas converte para number
+export function formatPrice(price: number | string | null | undefined): string {
+  // ✅ Converter para número com fallback para 0
+  const priceNumber = Number(price) || 0;
+  
   return new Intl.NumberFormat('pt-MZ', {
     style: 'currency',
     currency: 'MZN',
     minimumFractionDigits: 2
-  }).format(price);
+  }).format(priceNumber);
+}
+
+// ✅ FUNÇÃO AUXILIAR: Obter informações completas do veículo
+export function getVehicleInfo(ride: Ride): string {
+  const parts = [];
+  
+  if (ride.vehicle_plate || ride.vehiclePlate) {
+    parts.push(`🚗 ${ride.vehicle_plate || ride.vehiclePlate}`);
+  }
+  
+  if (ride.vehicle_type || ride.vehicleType) {
+    parts.push(ride.vehicle_type || ride.vehicleType);
+  } else if (ride.vehicle) {
+    parts.push(ride.vehicle);
+  }
+  
+  return parts.length > 0 ? parts.join(' • ') : 'Veículo não disponível';
+}
+
+// ✅ FUNÇÃO AUXILIAR: Obter detalhes do veículo
+export function getVehicleDetails(ride: Ride): string {
+  const details = [];
+  
+  const make = ride.vehicle_make || ride.vehicleMake;
+  const model = ride.vehicle_model || ride.vehicleModel;
+  if (make && model) {
+    details.push(`${make} ${model}`);
+  }
+  
+  const color = ride.vehicle_color || ride.vehicleColor;
+  if (color) {
+    details.push(color);
+  }
+  
+  const maxPassengers = ride.max_passengers || ride.maxPassengers;
+  if (maxPassengers) {
+    details.push(`Até ${maxPassengers} passageiros`);
+  }
+  
+  return details.join(' • ');
 }
 
 /**
  * Serviço central de API para todas as apps
- * Gerencia autenticação Firebase e comunicação com Railway backend
+ * ATUALIZADO para compatibilidade com get_rides_smart_final
  */
 class ApiService {
   private baseURL: string;
@@ -358,89 +495,139 @@ class ApiService {
     }
   }
 
-  // ===== RIDES API SIMPLIFICADA =====
-  async searchRides(params: RideSearchParams): Promise<RideSearchResponse> {
+  // ✅✅✅ NOVO: Método para chamadas RPC (PostgreSQL Functions)
+  private async rpcRequest<T>(
+    functionName: string,
+    parameters: Record<string, any> = {}
+  ): Promise<T> {
+    const headers = await this.getAuthHeaders();
+    const url = `${this.baseURL}/api/rpc`;
+    
+    const payload = {
+      function: functionName,
+      parameters: parameters
+    };
+    
+    console.log(`🧠 RPC Call ${functionName}:`, parameters);
+    
     try {
-      // ✅ PRIMEIRO TENTA BUSCA INTELIGENTE SE smartSearch=true
-      if (params.smartSearch !== false) {
-        try {
-          const searchParams = new URLSearchParams();
-          if (params.from) searchParams.append('from', params.from);
-          if (params.to) searchParams.append('to', params.to);
-          if (params.passengers) searchParams.append('passengers', params.passengers.toString());
-          if (params.date) searchParams.append('date', params.date);
-          
-          const radiusKm = params.radiusKm || params.maxDistance || 100;
-          searchParams.append('radiusKm', radiusKm.toString());
-          
-          console.log(`🧠 FRONTEND: Buscando rides inteligentes: ${params.from} → ${params.to} (raio: ${radiusKm}km)`);
-          
-          const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
-          
-          // ✅ NORMALIZAR RESPOSTA DO BACKEND
-          if (response.success) {
-            const rides = response.results || response.data?.rides || response.rides || [];
-            
-            const searchParamsResponse = {
-              from: params.from || '',
-              to: params.to || '',
-              date: params.date,
-              passengers: params.passengers,
-              smartSearch: true,
-              radiusKm: radiusKm,
-              searchMethod: response.metadata?.searchMethod || 'smart_final',
-              appliedFilters: params
-            };
-
-            return {
-              success: true,
-              rides: normalizeRides(rides),
-              matchStats: response.data?.stats || createDefaultMatchStats(),
-              searchParams: searchParamsResponse,
-              total: response.total || rides.length || 0,
-              data: response.data,
-              smart_search: true
-            };
-          }
-        } catch (smartError) {
-          console.warn('❌ FRONTEND: Busca inteligente falhou, usando busca tradicional:', smartError);
-        }
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`${response.status}: ${errorText || 'RPC request failed'}`);
       }
       
-      // ✅ FALLBACK PARA BUSCA TRADICIONAL
-      const searchParams = new URLSearchParams();
-      if (params.from) searchParams.append('from', params.from);
-      if (params.to) searchParams.append('to', params.to);
-      if (params.date) searchParams.append('date', params.date);
-      if (params.passengers) searchParams.append('passengers', params.passengers.toString());
+      const result = await response.json() as T;
+      console.log(`✅ RPC Response: ${functionName}`, result);
+      return result;
+    } catch (error) {
+      console.error(`❌ RPC Error: ${functionName}`, error);
+      throw error;
+    }
+  }
 
-      console.log(`🔍 FRONTEND: Buscando rides tradicionais: ${params.from} → ${params.to}`);
+  // ===== RIDES API COMPLETAMENTE ATUALIZADA =====
+  async searchRides(params: RideSearchParams): Promise<RideSearchResponse> {
+    try {
+      console.log('🔍 [API] Buscando rides com parâmetros:', params);
       
-      const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
+      // ✅✅✅ CORREÇÃO CRÍTICA: Usar RPC call para get_rides_smart_final
+      const rpcParams = {
+        search_from: params.from || '',
+        search_to: params.to || '',
+        radius_km: params.radiusKm || params.maxDistance || 100,
+        max_results: 50 // Default da função
+      };
       
-      const rides = response.results || response.data?.rides || response.rides || [];
+      console.log('🧠 [API] Chamando get_rides_smart_final via RPC:', rpcParams);
+      
+      const rpcResponse = await this.rpcRequest<any[]>('get_rides_smart_final', rpcParams);
+      
+      // ✅ Processar resposta RPC
+      const ridesData = Array.isArray(rpcResponse) ? rpcResponse : [];
+      
+      console.log(`✅ [API] RPC retornou ${ridesData.length} rides`);
+      
+      // ✅ Calcular estatísticas de matching
+      const matchStats: MatchStats = {
+        total: ridesData.length,
+        match_types: ridesData.reduce((acc, ride) => {
+          const matchType = ride.match_type || 'traditional';
+          acc[matchType] = (acc[matchType] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        total_smart_matches: ridesData.filter(ride => ride.match_type && ride.match_type !== 'traditional').length,
+        average_direction_score: ridesData.length > 0 ? 
+          ridesData.reduce((sum, ride) => sum + (ride.direction_score || 0), 0) / ridesData.length : 0,
+        average_driver_rating: ridesData.length > 0 ?
+          ridesData.reduce((sum, ride) => sum + (ride.driver_rating || 0), 0) / ridesData.length : 0
+      };
       
       const searchParamsResponse = {
         from: params.from || '',
         to: params.to || '',
         date: params.date,
         passengers: params.passengers,
-        smartSearch: false,
+        smartSearch: true,
+        radiusKm: rpcParams.radius_km,
+        searchMethod: 'get_rides_smart_final',
+        functionUsed: 'get_rides_smart_final',
         appliedFilters: params
       };
 
       return {
         success: true,
-        rides: normalizeRides(rides),
-        matchStats: response.matchStats || response.data?.stats || createDefaultMatchStats(),
+        rides: normalizeRides(ridesData),
+        matchStats: matchStats,
         searchParams: searchParamsResponse,
-        total: response.total || rides.length || 0,
-        smart_search: response.smart_search || false
+        total: ridesData.length,
+        smart_search: true
       };
       
     } catch (error) {
-      console.error('❌ FRONTEND: Erro na busca de rides:', error);
-      throw error;
+      console.error('❌ [API] Erro na busca de rides via RPC:', error);
+      
+      // ✅ Fallback para busca tradicional se RPC falhar
+      try {
+        const searchParams = new URLSearchParams();
+        if (params.from) searchParams.append('from', params.from);
+        if (params.to) searchParams.append('to', params.to);
+        if (params.date) searchParams.append('date', params.date);
+        if (params.passengers) searchParams.append('passengers', params.passengers.toString());
+
+        console.log(`🔍 [API] Fallback para busca tradicional: ${params.from} → ${params.to}`);
+        
+        const response = await this.request<any>('GET', `/api/rides/search?${searchParams.toString()}`);
+        
+        const rides = response.results || response.data?.rides || response.rides || [];
+        
+        const searchParamsResponse = {
+          from: params.from || '',
+          to: params.to || '',
+          date: params.date,
+          passengers: params.passengers,
+          smartSearch: false,
+          appliedFilters: params
+        };
+
+        return {
+          success: true,
+          rides: normalizeRides(rides),
+          matchStats: response.matchStats || response.data?.stats || createDefaultMatchStats(),
+          searchParams: searchParamsResponse,
+          total: response.total || rides.length || 0,
+          smart_search: response.smart_search || false
+        };
+      } catch (fallbackError) {
+        console.error('❌ [API] Fallback também falhou:', fallbackError);
+        throw error; // Lançar erro original
+      }
     }
   }
 
@@ -452,44 +639,17 @@ class ApiService {
     passengers?: number;
     radiusKm?: number;
   }): Promise<RideSearchResponse> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('from', params.from);
-    searchParams.append('to', params.to);
-    if (params.date) searchParams.append('date', params.date);
-    if (params.passengers) searchParams.append('passengers', params.passengers.toString());
-    const radiusKm = params.radiusKm || 100;
-    searchParams.append('radiusKm', radiusKm.toString());
-
-    console.log(`🧠 FRONTEND: Busca SMART específica: ${params.from} → ${params.to} (${radiusKm}km)`);
-
-    const response = await this.request<any>('GET', `/api/rides/smart/search?${searchParams.toString()}`);
+    console.log('🧠 [API] Busca SMART específica:', params);
     
-    if (response.success) {
-      const rides = response.results || response.data?.rides || [];
-      
-      const searchParamsResponse = {
-        from: params.from,
-        to: params.to,
-        date: params.date,
-        passengers: params.passengers,
-        smartSearch: true,
-        radiusKm: radiusKm,
-        searchMethod: response.metadata?.searchMethod || 'smart_final',
-        appliedFilters: params
-      };
-
-      return {
-        success: true,
-        rides: normalizeRides(rides),
-        matchStats: response.data?.stats || createDefaultMatchStats(),
-        searchParams: searchParamsResponse,
-        total: response.total || rides.length || 0,
-        data: response.data,
-        smart_search: true
-      };
-    }
-
-    throw new Error('Busca inteligente falhou');
+    // ✅ Reutilizar a função principal
+    return this.searchRides({
+      from: params.from,
+      to: params.to,
+      date: params.date,
+      passengers: params.passengers,
+      radiusKm: params.radiusKm,
+      smartSearch: true
+    });
   }
 
   // ✅ BUSCA UNIVERSAL INTELIGENTE
@@ -503,42 +663,15 @@ class ApiService {
     radiusKm?: number;
     maxResults?: number;
   }): Promise<RideSearchResponse> {
-    const searchParams = new URLSearchParams();
-    if (params.from) searchParams.append('from', params.from);
-    if (params.to) searchParams.append('to', params.to);
-    if (params.lat) searchParams.append('lat', params.lat.toString());
-    if (params.lng) searchParams.append('lng', params.lng.toString());
-    if (params.toLat) searchParams.append('toLat', params.toLat.toString());
-    if (params.toLng) searchParams.append('toLng', params.toLng.toString());
-    const radiusKm = params.radiusKm || 100;
-    searchParams.append('radiusKm', radiusKm.toString());
-    if (params.maxResults) searchParams.append('maxResults', params.maxResults.toString());
-
-    console.log(`🌍 FRONTEND: Busca universal inteligente`, params);
-
-    const response = await this.request<any>('GET', `/api/rides/search/universal?${searchParams.toString()}`);
+    console.log('🌍 [API] Busca universal inteligente', params);
     
-    if (response.success && response.data) {
-      const searchParamsResponse = {
-        from: params.from || '',
-        to: params.to || '',
-        smartSearch: true,
-        radiusKm: radiusKm,
-        appliedFilters: params
-      };
-
-      return {
-        success: true,
-        rides: normalizeRides(response.data.rides),
-        matchStats: response.data.stats || createDefaultMatchStats(),
-        searchParams: searchParamsResponse,
-        total: response.data.rides?.length || 0,
-        data: response.data,
-        smart_search: response.data.smart_search || true
-      };
-    }
-
-    throw new Error('Busca universal falhou');
+    // ✅ Reutilizar a função principal
+    return this.searchRides({
+      from: params.from,
+      to: params.to,
+      radiusKm: params.radiusKm,
+      smartSearch: true
+    });
   }
 
   async createRide(rideData: {
@@ -572,29 +705,16 @@ class ApiService {
 
   // 🆕 BUSCAR RIDES PRÓXIMOS
   async getNearbyRides(location: string, radius: number = 50, passengers: number = 1): Promise<RideSearchResponse> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('location', location);
-    searchParams.append('radius', radius.toString());
-    searchParams.append('passengers', passengers.toString());
-
-    const response = await this.request<any>('GET', `/api/rides/nearby?${searchParams.toString()}`);
+    console.log('📍 [API] Buscando rides próximos:', { location, radius, passengers });
     
-    const searchParamsResponse = {
+    // ✅ Usar busca inteligente com mesma localização
+    return this.searchRides({
       from: location,
       to: location,
-      passengers,
-      smartSearch: false,
-      appliedFilters: { location, radius, passengers }
-    };
-
-    return {
-      success: true,
-      rides: normalizeRides(response.data?.rides || response.rides),
-      matchStats: response.data?.stats || createDefaultMatchStats(),
-      searchParams: searchParamsResponse,
-      total: response.data?.total || response.total || 0,
-      smart_search: response.data?.smart_search || false
-    };
+      radiusKm: radius,
+      passengers: passengers,
+      smartSearch: true
+    });
   }
 
   // 🆕 SOLICITAR RESERVA DE VIAGEM
@@ -611,6 +731,25 @@ class ApiService {
       notes,
       type: 'ride'
     });
+  }
+
+  // 🆕 OBTER ESTATÍSTICAS DE MATCHING
+  async getRideMatchStats(from: string, to: string): Promise<{ success: boolean; data: { stats: MatchStats } }> {
+    console.log('📊 [API] Buscando estatísticas de matching:', { from, to });
+    
+    // ✅ Fazer uma busca para calcular estatísticas
+    const searchResponse = await this.searchRides({
+      from: from,
+      to: to,
+      smartSearch: true
+    });
+    
+    return {
+      success: true,
+      data: {
+        stats: searchResponse.matchStats || createDefaultMatchStats()
+      }
+    };
   }
 
   // ===== BOOKINGS API =====

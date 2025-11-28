@@ -117,6 +117,44 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
 }
 
+// ===== VEHICLE TYPES ===== ✅ ADICIONADO
+
+export interface Vehicle {
+  id: string;
+  driver_id: string;
+  plate_number: string;
+  plate_number_raw: string;
+  make: string;
+  model: string;
+  color: string;
+  year?: number;
+  vehicle_type: string;
+  max_passengers: number;
+  features: string[];
+  photo_url?: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface VehicleFormData {
+  plateNumber: string;
+  make: string;
+  model: string;
+  color: string;
+  year?: number;
+  vehicleType: string;
+  maxPassengers: number;
+  features?: string[];
+  photoUrl?: string;
+}
+
+export interface VehicleTypeOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
 // ===== USER TYPES =====
 
 export interface UserProfile extends BaseEntity {
@@ -324,6 +362,30 @@ export interface CreateRideData {
   additionalInfo?: string;
 }
 
+// ✅ ADICIONADO: CreateRideRequest com vehicleId obrigatório
+export interface CreateRideRequest {
+  fromLocation: {
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  toLocation: {
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  departureDate: string;
+  departureTime: string;
+  pricePerSeat: number;
+  maxPassengers: number;
+  vehicleId: string; // ✅ OBRIGATÓRIO
+  description?: string;
+  allowNegotiation?: boolean;
+  allowPickupEnRoute?: boolean;
+}
+
 // ===== ACCOMMODATION TYPES =====
 
 export interface Accommodation extends BaseEntity {
@@ -383,6 +445,19 @@ export const updateUserSchema = z.object({
 export const messageDataSchema = z.object({
   message: z.string().min(1).max(1000),
   messageType: z.enum(MESSAGE_TYPES).default('text'),
+});
+
+// ✅ ADICIONADO: Schema para Vehicle
+export const vehicleSchema = z.object({
+  plateNumber: z.string().min(1, 'Matrícula é obrigatória'),
+  make: z.string().min(1, 'Marca é obrigatória'),
+  model: z.string().min(1, 'Modelo é obrigatório'),
+  color: z.string().min(1, 'Cor é obrigatória'),
+  year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
+  vehicleType: z.string().min(1, 'Tipo de veículo é obrigatório'),
+  maxPassengers: z.number().min(1, 'Mínimo 1 passageiro').max(20, 'Máximo 20 passageiros'),
+  features: z.array(z.string()).default([]),
+  photoUrl: z.string().url().optional().or(z.literal('')),
 });
 
 // ✅ ATUALIZADO: Schema para Ride agora inclui 'available'
@@ -457,6 +532,7 @@ export type UpdateRideInput = z.infer<typeof updateRideSchema>;
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
 export type CreateAccommodationInput = z.infer<typeof createAccommodationSchema>;
+export type VehicleFormDataInput = z.infer<typeof vehicleSchema>; // ✅ ADICIONADO
 
 // ===== HELPER FUNCTIONS =====
 
@@ -505,6 +581,21 @@ export function requireAuthenticatedUser(req: Request): AuthenticatedUser {
   return user;
 }
 
+// ✅ ADICIONADO: Funções para validação de veículos
+export function isValidVehicleType(vehicleType: string): boolean {
+  const validTypes = ['economy', 'comfort', 'luxury', 'family', 'premium', 'van', 'suv'];
+  return validTypes.includes(vehicleType);
+}
+
+export function formatLicensePlate(plate: string): string | null {
+  const cleanPlate = plate.replace(/[-\s]/g, '').toUpperCase();
+  const plateRegex = /^[A-Z]{3}[0-9]{3}[A-Z]{2}$/;
+  
+  if (!plateRegex.test(cleanPlate)) return null;
+  
+  return `${cleanPlate.substring(0, 3)} ${cleanPlate.substring(3, 6)} ${cleanPlate.substring(6, 8)}`;
+}
+
 // ✅ ATUALIZADO: Funções de validação para enums agora incluem 'available'
 export function isValidBookingStatus(status: string): status is BookingStatus {
   return BOOKING_STATUSES.includes(status as BookingStatus);
@@ -531,4 +622,14 @@ export function ensureNumber(value: any): number {
 export function ensurePositiveNumber(value: any, defaultValue: number = 0): number {
   const num = ensureNumber(value);
   return num >= 0 ? num : defaultValue;
+}
+
+// ✅ ADICIONADO: Funções para veículos
+export function getVehicleDisplayName(vehicle: Vehicle): string {
+  return `${vehicle.make} ${vehicle.model} (${vehicle.color}) - ${vehicle.plate_number}`;
+}
+
+export function getVehicleCapacityText(maxPassengers: number): string {
+  if (maxPassengers === 1) return '1 passageiro';
+  return `${maxPassengers} passageiros`;
 }

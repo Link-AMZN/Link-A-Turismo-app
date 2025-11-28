@@ -42,7 +42,7 @@ interface RideWithDetails {
   matchDescription?: string;
 }
 
-// 🚀 ENHANCED RIDE SEARCH WITH SMART MATCHING - APENAS DADOS REAIS
+// 🚀 ENHANCED RIDE SEARCH WITH SMART MATCHING - ATUALIZADO PARA USAR FUNÇÃO INTELIGENTE
 router.get("/rides", async (req, res) => {
   try {
     const { 
@@ -55,7 +55,9 @@ router.get("/rides", async (req, res) => {
       seats,
       allowNegotiation,
       driverId,
-      smartSearch = 'true'
+      smartSearch = 'true',
+      radiusKm = '100',
+      maxResults = '50'
     } = req.query;
 
     if (!from || !to) {
@@ -67,69 +69,102 @@ router.get("/rides", async (req, res) => {
 
     let rides: RideWithDetails[] = [];
     
-    // 🚀 BUSCA INTELIGENTE ATIVADA
+    // 🚀 BUSCA INTELIGENTE ATIVADA - USANDO FUNÇÃO get_rides_smart_final
     if (smartSearch === 'true') {
       try {
         console.log(`🔍 BUSCA INTELIGENTE: ${from} → ${to}`);
         
-        // ✅ Buscar rides reais do banco de dados
-        const searchCriteria = {
-          fromLocation: from as string,
-          toLocation: to as string,
-          departureDate: departureDate ? new Date(departureDate as string) : undefined,
-          minSeats: seats ? parseInt(seats as string) : undefined,
-          maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined
-        };
+        // ✅✅✅ CORREÇÃO: Usar a função inteligente atualizada do rideService
+        const smartRides = await SmartRideMatchingService.searchRidesSmart(
+          from as string,
+          to as string,
+          Number(radiusKm),
+          Number(maxResults)
+        );
         
-        // ✅ Buscar rides reais do storage
-        const dbRides = await storage.ride.searchRides(searchCriteria);
-        
-        // 🎯 CONVERTER PARA RIDE WITH DETAILS
-        const ridesWithDetails: RideWithDetails[] = dbRides.map((ride: any) => ({
-          id: ride.id,
-          driverId: ride.driverId,
-          driverName: ride.driver?.firstName + ' ' + ride.driver?.lastName,
-          fromLocation: ride.fromLocation,
-          toLocation: ride.toLocation,
-          fromAddress: ride.fromLocation, // Usar fromLocation como fallback
-          toAddress: ride.toLocation, // Usar toLocation como fallback
-          fromProvince: ride.fromProvince,
-          toProvince: ride.toProvince,
-          price: ride.pricePerSeat || ride.price || 0,
-          pricePerSeat: ride.pricePerSeat,
-          availableSeats: ride.availableSeats || 0,
-          maxPassengers: ride.maxPassengers || 4,
-          departureDate: ride.departureDate ? new Date(ride.departureDate) : new Date(),
-          estimatedDuration: ride.estimatedDuration,
-          estimatedDistance: ride.estimatedDistance,
-          vehicleType: ride.vehicleType,
-          vehicleInfo: ride.vehicleInfo,
-          vehicleFeatures: ride.vehicleFeatures || [],
-          driverRating: ride.driver?.rating,
-          allowNegotiation: ride.allowNegotiation || false,
-          isVerifiedDriver: ride.driver?.isVerified || false,
-          status: ride.status || 'active'
-        }));
-        
-        // 🎯 APLICAR MATCHING INTELIGENTE USANDO O SERVIÇO OFICIAL
-        // ✅ Apenas se houver rides reais para processar
-        if (ridesWithDetails.length > 0) {
-          const matchingResult: RideWithMatching[] = await SmartRideMatchingService.sortRidesByCompatibility(
-            ridesWithDetails,
-            from as string,
-            to as string
-          );
+        // ✅ Converter para o formato RideWithDetails
+        rides = smartRides.map((matchingRide: RideWithMatching) => {
+          const ride = matchingRide.ride || matchingRide;
           
-          // ✅ Converter para o formato final
-          rides = SmartRideMatchingService.convertToRideWithDetails(matchingResult);
-        }
+          return {
+            id: matchingRide.id || ride.id || ride.ride_id,
+            driverId: matchingRide.driver_id || ride.driverId || ride.driver_id,
+            driverName: matchingRide.driver_name || ride.driverName || ride.driver_name || 'Motorista',
+            fromLocation: matchingRide.from_city || ride.fromCity || ride.from_city || from as string,
+            toLocation: matchingRide.to_city || ride.toCity || ride.to_city || to as string,
+            fromAddress: matchingRide.from_city || ride.fromCity || ride.from_city || from as string,
+            toAddress: matchingRide.to_city || ride.toCity || ride.to_city || to as string,
+            fromProvince: matchingRide.fromProvince || ride.fromProvince,
+            toProvince: matchingRide.toProvince || ride.toProvince,
+            price: matchingRide.priceperseat || ride.pricePerSeat || ride.priceperseat || 0,
+            pricePerSeat: matchingRide.priceperseat || ride.pricePerSeat || ride.priceperseat,
+            availableSeats: matchingRide.availableseats || ride.availableSeats || ride.availableseats || 0,
+            maxPassengers: matchingRide.max_passengers || ride.maxPassengers || ride.max_passengers || 4,
+            departureDate: matchingRide.departuredate ? new Date(matchingRide.departuredate) : 
+                         ride.departureDate ? new Date(ride.departureDate) : new Date(),
+            estimatedDuration: ride.estimatedDuration,
+            estimatedDistance: ride.estimatedDistance,
+            vehicleType: matchingRide.vehicle_type || ride.vehicleType || ride.vehicle_type,
+            vehicleInfo: ride.vehicleInfo,
+            vehicleFeatures: ride.vehicleFeatures || [],
+            driverRating: matchingRide.driver_rating || ride.driverRating || ride.driver_rating,
+            allowNegotiation: ride.allowNegotiation || false,
+            isVerifiedDriver: ride.isVerifiedDriver || false,
+            status: ride.status || 'available',
+            matchScore: matchingRide.compatibilityScore || matchingRide.direction_score,
+            matchType: matchingRide.matchType,
+            matchDescription: matchingRide.matchDescription
+          };
+        });
 
-        console.log(`✅ Encontrados ${rides.length} rides compatíveis`);
+        console.log(`✅ Encontrados ${rides.length} rides compatíveis via função inteligente`);
 
       } catch (error) {
         console.error("❌ Erro na busca inteligente:", error);
-        // ❌ NÃO USAR MOCKS - retornar array vazio em caso de erro
-        rides = [];
+        // ✅ FALLBACK: Tentar busca tradicional
+        try {
+          console.log("🔄 Tentando fallback para busca tradicional...");
+          const searchCriteria = {
+            fromLocation: from as string,
+            toLocation: to as string,
+            departureDate: departureDate ? new Date(departureDate as string) : undefined,
+            minSeats: seats ? parseInt(seats as string) : undefined,
+            maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined
+          };
+          
+          const dbRides = await storage.ride.searchRides(searchCriteria);
+          
+          rides = dbRides.map((ride: any) => ({
+            id: ride.id,
+            driverId: ride.driverId,
+            driverName: ride.driver?.firstName + ' ' + ride.driver?.lastName,
+            fromLocation: ride.fromLocation,
+            toLocation: ride.toLocation,
+            fromAddress: ride.fromLocation,
+            toAddress: ride.toLocation,
+            fromProvince: ride.fromProvince,
+            toProvince: ride.toProvince,
+            price: ride.pricePerSeat || ride.price || 0,
+            pricePerSeat: ride.pricePerSeat,
+            availableSeats: ride.availableSeats || 0,
+            maxPassengers: ride.maxPassengers || 4,
+            departureDate: ride.departureDate ? new Date(ride.departureDate) : new Date(),
+            estimatedDuration: ride.estimatedDuration,
+            estimatedDistance: ride.estimatedDistance,
+            vehicleType: ride.vehicleType,
+            vehicleInfo: ride.vehicleInfo,
+            vehicleFeatures: ride.vehicleFeatures || [],
+            driverRating: ride.driver?.rating,
+            allowNegotiation: ride.allowNegotiation || false,
+            isVerifiedDriver: ride.driver?.isVerified || false,
+            status: ride.status || 'active'
+          }));
+          
+          console.log(`✅ Fallback: ${rides.length} rides encontrados`);
+        } catch (fallbackError) {
+          console.error("❌ Erro no fallback também:", fallbackError);
+          rides = [];
+        }
       }
     } else {
       // ❌ BUSCA TRADICIONAL DESATIVADA - apenas busca inteligente
@@ -166,13 +201,15 @@ router.get("/rides", async (req, res) => {
       filteredRides = filteredRides.filter(ride => ride.driverId === driverId);
     }
 
-    // 📊 ESTATÍSTICAS DE MATCHING
+    // 📊 ESTATÍSTICAS DE MATCHING ATUALIZADAS
     const matchStats = {
-      exact: filteredRides.filter((r: RideWithDetails) => r.matchType === 'exact_match').length,
-      same_segment: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_segment').length,
-      same_direction: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_direction').length,
-      same_origin: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_origin').length,
-      same_destination: filteredRides.filter((r: RideWithDetails) => r.matchType === 'same_destination').length,
+      exact_match: filteredRides.filter((r: RideWithDetails) => r.matchType === 'exact_match').length,
+      exact_province: filteredRides.filter((r: RideWithDetails) => r.matchType === 'exact_province').length,
+      from_correct_province_to: filteredRides.filter((r: RideWithDetails) => r.matchType === 'from_correct_province_to').length,
+      to_correct_province_from: filteredRides.filter((r: RideWithDetails) => r.matchType === 'to_correct_province_from').length,
+      partial_from: filteredRides.filter((r: RideWithDetails) => r.matchType === 'partial_from').length,
+      partial_to: filteredRides.filter((r: RideWithDetails) => r.matchType === 'partial_to').length,
+      nearby: filteredRides.filter((r: RideWithDetails) => r.matchType === 'nearby').length,
       total: filteredRides.length
     };
 
@@ -185,6 +222,8 @@ router.get("/rides", async (req, res) => {
         to,
         departureDate,
         smartSearch: smartSearch === 'true',
+        radiusKm: Number(radiusKm),
+        maxResults: Number(maxResults),
         appliedFilters: {
           minPrice: minPrice ? Number(minPrice) : null,
           maxPrice: maxPrice ? Number(maxPrice) : null,
@@ -194,7 +233,8 @@ router.get("/rides", async (req, res) => {
           driverId: driverId || null
         }
       },
-      total: filteredRides.length
+      total: filteredRides.length,
+      smart_function_used: smartSearch === 'true'
     });
   } catch (error) {
     console.error("Error searching rides:", error);
@@ -626,18 +666,35 @@ router.get("/all", async (req, res) => {
       total: 0
     };
 
-    // Search rides (mock implementation)
+    // ✅✅✅ CORREÇÃO: Search rides usando função inteligente
     if (!type || type === 'rides') {
       try {
-        const allRides = await storage.ride.searchRides({});
-        // ✅ CORREÇÃO: Usar fromLocation e toLocation em vez de fromAddress e toAddress
-        results.rides = allRides.filter((ride: any) => 
-          ride.fromLocation?.toLowerCase().includes(searchTerm) ||
-          ride.toLocation?.toLowerCase().includes(searchTerm) ||
-          (ride.driver?.firstName + ' ' + ride.driver?.lastName)?.toLowerCase().includes(searchTerm)
-        ).slice(0, 5);
+        console.log(`🔍 UNIVERSAL SEARCH: Buscando rides para "${searchTerm}"`);
+        
+        // Usar a função inteligente para buscar rides
+        const smartRides = await SmartRideMatchingService.searchRidesSmart(
+          searchTerm,
+          '',
+          100, // radiusKm
+          10   // maxResults para pesquisa universal
+        );
+        
+        results.rides = smartRides.slice(0, 5).map((ride: any) => ({
+          id: ride.id || ride.ride_id,
+          title: `${ride.from_city || ride.fromCity} → ${ride.to_city || ride.toCity}`,
+          type: "ride",
+          price: ride.priceperseat || ride.pricePerSeat || 0,
+          description: `Viagem de ${ride.from_city || ride.fromCity} para ${ride.to_city || ride.toCity}`,
+          driver: ride.driver_name || ride.driverName,
+          vehicle: ride.vehicle_type || ride.vehicleType,
+          departureDate: ride.departuredate || ride.departureDate,
+          matchType: ride.match_type,
+          directionScore: ride.direction_score
+        }));
+        
+        console.log(`✅ UNIVERSAL SEARCH: ${results.rides.length} rides encontrados via função inteligente`);
       } catch (error) {
-        console.error("Erro ao buscar rides:", error);
+        console.error("❌ UNIVERSAL SEARCH: Erro ao buscar rides:", error);
         results.rides = [];
       }
     }
@@ -688,7 +745,8 @@ router.get("/all", async (req, res) => {
       success: true,
       query: searchTerm,
       results,
-      searchType: type || 'all'
+      searchType: type || 'all',
+      smart_search_used: true
     });
   } catch (error) {
     console.error("Error in universal search:", error);

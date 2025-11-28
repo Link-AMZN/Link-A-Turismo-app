@@ -1,0 +1,2 @@
+ride_id;driver_id;driver_name;driver_rating;vehicle_make;vehicle_model;vehicle_type;vehicle_plate;vehicle_color;max_passengers;from_city;to_city;from_lat;from_lng;to_lat;to_lng;departuredate;availableseats;priceperseat;distance_from_city_km;distance_to_city_km
+(0 rows)

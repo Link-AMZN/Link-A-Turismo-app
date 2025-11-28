@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { Button } from "@/shared/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
-import { Menu, UserCircle, LogOut, Settings, Car, Plus, MessageCircle, TrendingUp } from "lucide-react";
+import { Menu, UserCircle, LogOut, Settings, Car, Plus, MessageCircle, TrendingUp, Wrench } from "lucide-react";
 
 export default function DriversHeader() {
   const { user, signOut } = useAuth();
@@ -15,6 +15,18 @@ export default function DriversHeader() {
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     }
+  };
+
+  // ✅ CORREÇÃO: Função para obter o nome de exibição seguro
+  const getDisplayName = () => {
+    if (!user) return '';
+    
+    // Tenta diferentes propriedades possíveis
+    return (user as any).displayName || 
+           (user as any).name || 
+           user.email?.split('@')[0] || 
+           user.email || 
+           'Utilizador';
   };
 
   return (
@@ -65,6 +77,17 @@ export default function DriversHeader() {
               Minhas Ofertas
             </Button>
           </Link>
+          {/* ✅ ADICIONAR LINK PARA VEÍCULOS */}
+          <Link href="/drivers/vehicles">
+            <Button 
+              variant={location.startsWith("/drivers/vehicles") ? "default" : "ghost"} 
+              size="sm"
+              className="h-9"
+            >
+              <Wrench className="h-4 w-4 mr-2" />
+              Meus Veículos
+            </Button>
+          </Link>
           <Link href="/drivers/partnerships">
             <Button 
               variant={location.startsWith("/drivers/partnerships") ? "default" : "ghost"} 
@@ -94,7 +117,8 @@ export default function DriversHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="flex items-center space-x-2">
                   <UserCircle className="h-5 w-5" />
-                  <span className="hidden sm:inline text-sm">{user.displayName || user.email}</span>
+                  {/* ✅ CORREÇÃO: Usar função segura para display name */}
+                  <span className="hidden sm:inline text-sm">{getDisplayName()}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

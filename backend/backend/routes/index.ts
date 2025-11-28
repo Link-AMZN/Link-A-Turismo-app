@@ -28,6 +28,9 @@ import providerDashboardRoutes from './provider/dashboard';
 import rideController from '../src/modules/rides/rideController';
 import driverController from '../src/modules/drivers/driverController';
 
+// ===== ✅✅✅ NOVAS ROTAS DE VEÍCULOS =====
+import vehicleRoutes from './provider/vehicles';
+
 // ===== ROTAS DE PARCERIAS =====
 import { partnershipRoutes } from '../src/modules/partnerships/partnershipRoutes';
 import { driverPartnershipRoutes } from '../src/modules/drivers/partnershipRoutes';
@@ -45,9 +48,12 @@ import paymentRoutes from '../paymentRoutes';
 import profileRoutes from '../profileRoutes';
 import searchRoutes from '../searchRoutes';
 
+// ===== ✅✅✅ NOVA ROTA RPC =====
+import rpcRoutes from './rpc';
+
 // ===== IMPORTE DO DRIZZLE COM CAMINHOS CORRETOS =====
 import { db } from '../db';
-import { users } from '../shared/schema';
+import { users } from '../shared/database-schema';
 import { eq, sql } from 'drizzle-orm';
 
 // ✅ CORREÇÃO: Importar Firebase Admin para debug
@@ -240,6 +246,10 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   // ===== ROTAS DE LOCALIDADES =====
   app.use('/api/locations', locationsRouter);
   console.log('📍 Rotas de localidades registradas com sucesso');
+
+  // ===== ✅✅✅ ROTA RPC ADICIONADA =====
+  app.use('/api/rpc', rpcRoutes);
+  console.log('🧠 Rotas RPC registradas com sucesso');
 
   // ===== TESTE DO POSTGIS MELHORADO =====
   app.get('/api/test-postgis', async (req, res) => {
@@ -528,6 +538,10 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/drizzle', drizzleApiRoutes);
   console.log('🗃️ API Drizzle principal configurada');
 
+  // ===== ✅✅✅ ROTAS DE VEÍCULOS =====
+  app.use('/api/vehicles', vehicleRoutes);
+  console.log('🚗 Rotas de veículos registradas com sucesso');
+
   // ===== SISTEMAS FUNCIONAIS (Firebase Auth) =====
   app.use('/api/auth', authRoutes);
   app.use('/api/bookings', bookingsRoutes);
@@ -635,10 +649,12 @@ export async function registerRoutes(app: express.Express): Promise<void> {
           auth: 'operational',
           hotels: 'operational',
           rides: 'operational',
+          vehicles: 'operational', // ✅ NOVO: Serviço de veículos
           partnerships: 'operational',
           events: 'operational',
           chat: 'operational',
-          search_intelligent: 'operational'
+          search_intelligent: 'operational',
+          rpc: 'operational' // ✅ NOVO: Serviço RPC
         },
         version: '1.0.0'
       });
@@ -676,10 +692,12 @@ export async function registerRoutes(app: express.Express): Promise<void> {
         '/api/locations/suggest',
         '/api/test-postgis',
         '/api/rides',
+        '/api/vehicles', // ✅ NOVA: Rotas de veículos
         '/api/events',
         '/api/users',
         '/api/admin/system',
         '/api/partnerships',
+        '/api/rpc', // ✅ NOVA: Rotas RPC
         '/api/debug/firebase-auth' // ✅ NOVA ROTA DE DEBUG
       ];
     }
@@ -711,6 +729,8 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   console.log('🏥 Health: http://localhost:8000/api/health');
   console.log('🗺️  PostGIS: http://localhost:8000/api/test-postgis');
   console.log('📍 Sugestões: http://localhost:8000/api/locations/suggest?query=map');
+  console.log('🚗 Veículos: http://localhost:8000/api/vehicles'); // ✅ NOVA
+  console.log('🧠 RPC: http://localhost:8000/api/rpc/test'); // ✅ NOVA
   console.log('🔍 Debug Auth: http://localhost:8000/api/debug/firebase-auth');
   console.log('✅ Todas as APIs configuradas e funcionando!');
 }

@@ -1,0 +1,6 @@
+ride_id;driver_id;driver_name;driver_rating;vehicle_make;vehicle_model;vehicle_type;vehicle_plate;vehicle_color;max_passengers;from_city;to_city;from_lat;from_lng;to_lat;to_lng;departuredate;availableseats;priceperseat;distance_from_city_km;distance_to_city_km
+6bc5ddba-0e91-4687-9670-31c8a3994b3c;bB88VrzVx8dbUUpXV7qSrGA5eiy2;Edson Daniel;4.5;Toyota;RAV4;comfort;MAT-789-EF;Prata;5;maputo;praia do tofo;-25.966213;32.56745;-23.85;35.55;2025-12-20 13:00:00;2;350.00;0;0
+dbf39e8c-0d50-4a1b-9cde-e0300d0caf52;6YIGplX4LBP0UhBsNBESUwAKPXk2;Motorista;4.5;Hyundai;i10;economy;MAT-456-CD;Branco;4;coop;inhambane;-25.9539117;32.5894672;-23.865;35.3833;2025-12-15 00:00:00;4;1400.00;0.62934126798;0
+76b80cc5-9b76-43f5-8a72-7f43b8c3acc1;bB88VrzVx8dbUUpXV7qSrGA5eiy2;Motorista;4.5;Mercedes;Benz C-Class;luxury;MAT-202-IJ;Preto;4;coop;inhambane;-25.9539117;32.5894672;-23.865;35.3833;2025-12-20 14:30:00;4;2500.00;0.62934126798;0
+2d269b6f-b1ec-4b08-9114-9b9a8a9b8f1c;6YIGplX4LBP0UhBsNBESUwAKPXk2;Motorista;4.5;Toyota;Hiace;family;MAT-404-MN;Azul;12;zimpeto;matacuane;-25.8405617;32.5745318;-19.8349356;34.8612379;2025-12-20 16:45:00;4;1600.00;7.02899879505;128.62934130337
+(4 rows)

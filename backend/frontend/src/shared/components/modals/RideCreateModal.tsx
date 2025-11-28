@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
@@ -6,9 +6,26 @@ import { Textarea } from '@/shared/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/hooks/use-toast';
-import { Calendar, MapPin, Users, DollarSign, Car } from 'lucide-react';
+import { Calendar, MapPin, Users, DollarSign, Car, AlertCircle, AlertTriangle } from 'lucide-react';
 import { RideCreateParams } from '@/shared/hooks/useModalState';
 import { useAuth } from '@/shared/hooks/useAuth';
+import { getMyVehicles } from '../../../api/driver/vehicles';
+import { apiRequest } from '@/shared/lib/queryClient';
+
+// ✅ INTERFACE VEHICLE ADICIONADA
+interface Vehicle {
+  id: string;
+  plateNumber: string;
+  make: string;
+  model: string;
+  color: string;
+  year?: number;
+  vehicleType: string;
+  maxPassengers: number;
+  features: string[];
+  photoUrl?: string;
+  isActive: boolean;
+}
 
 interface RideCreateModalProps {
   initialParams: RideCreateParams;
@@ -20,22 +37,74 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
   const { user } = useAuth();
   const queryClient = useQueryClient();
   
-  // ✅ CORREÇÃO: Estado com nomes padronizados
+  // ✅ ESTADOS NOVOS PARA VEÍCULOS
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
+  const [vehiclesError, setVehiclesError] = useState<string | null>(null);
+  
+  // ✅ ESTADO ATUALIZADO COM vehicleId
   const [rideData, setRideData] = useState({
     fromLocation: initialParams.from || '',
     toLocation: initialParams.to || '',
-    departureDate: initialParams.date || '', // ✅ CORREÇÃO: date → departureDate
-    departureTime: '08:00', // ✅ CORREÇÃO: time → departureTime
-    availableSeats: initialParams.seats || 4, // ✅ CORREÇÃO: seats → availableSeats
-    pricePerSeat: initialParams.price || 100, // ✅ CORREÇÃO: price → pricePerSeat
-    additionalInfo: '', // ✅ CORREÇÃO: description → additionalInfo
+    departureDate: initialParams.date || '',
+    departureTime: '08:00',
+    availableSeats: initialParams.seats || 4,
+    pricePerSeat: initialParams.price || 100,
+    additionalInfo: '',
     vehicleType: 'sedan',
+    vehicleId: '', // ✅ NOVO CAMPO OBRIGATÓRIO
   });
+
+  // ✅ useEffect PARA CARREGAR VEÍCULOS
+  useEffect(() => {
+    const loadVehicles = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoadingVehicles(true);
+        setVehiclesError(null);
+        const myVehicles = await getMyVehicles();
+        setVehicles(myVehicles);
+        
+        // ✅ SELECIONAR PRIMEIRO VEÍCULO POR PADRÃO
+        if (myVehicles.length > 0) {
+          setRideData(prev => ({
+            ...prev,
+            vehicleId: myVehicles[0].id,
+            vehicleType: myVehicles[0].vehicleType
+          }));
+        }
+      } catch (error) {
+        console.error('❌ Erro ao carregar veículos:', error);
+        setVehiclesError('Erro ao carregar veículos. Tente novamente.');
+      } finally {
+        setLoadingVehicles(false);
+      }
+    };
+
+    loadVehicles();
+  }, [user?.id]);
 
   const createRideMutation = useMutation({
     mutationFn: async (data: typeof rideData) => {
       if (!user?.id) {
         throw new Error('Usuário não autenticado');
+      }
+
+      // ✅ VALIDAÇÃO OBRIGATÓRIA DO VEÍCULO
+      if (!data.vehicleId) {
+        throw new Error('Selecione um veículo para a viagem');
+      }
+
+      // ✅ VERIFICAR SE VEÍCULO EXISTE
+      const selectedVehicle = vehicles.find(v => v.id === data.vehicleId);
+      if (!selectedVehicle) {
+        throw new Error('Veículo selecionado não encontrado');
+      }
+
+      // ✅ VALIDAR CAPACIDADE
+      if (data.availableSeats > selectedVehicle.maxPassengers) {
+        throw new Error(`Número de assentos (${data.availableSeats}) excede capacidade do veículo (máximo: ${selectedVehicle.maxPassengers})`);
       }
 
       // ✅ CORREÇÃO: Validar data e hora
@@ -44,42 +113,36 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
         throw new Error('Data ou hora inválida');
       }
 
-      // ✅ CORREÇÃO: Payload padronizado e consistente
+      // ✅ CORREÇÃO: Payload padronizado e consistente COM vehicleId
       const payload = {
         fromLocation: data.fromLocation,
         toLocation: data.toLocation,
         fromAddress: data.fromLocation,
         toAddress: data.toLocation,
-        departureDate: departureDateTime.toISOString(), // ✅ CORREÇÃO: Enviar como ISO string
+        departureDate: departureDateTime.toISOString(),
         departureTime: data.departureTime,
-        pricePerSeat: Number(data.pricePerSeat), // ✅ CORREÇÃO: Já é number
-        availableSeats: Number(data.availableSeats), // ✅ CORREÇÃO: Já é number
+        pricePerSeat: Number(data.pricePerSeat),
+        availableSeats: Number(data.availableSeats),
         maxPassengers: Number(data.availableSeats),
         vehicleType: data.vehicleType,
         additionalInfo: data.additionalInfo || null,
-        description: data.additionalInfo || null, // ✅ CORREÇÃO: Usar additionalInfo
+        description: data.additionalInfo || null,
         driverId: user.id,
         allowNegotiation: true,
         isRecurring: false,
+        vehicleId: data.vehicleId, // ✅ NOVO CAMPO OBRIGATÓRIO
       };
 
       console.log('📤 Criando viagem:', payload);
 
-      // ✅ CORREÇÃO: Atualizar rota da API
-      const response = await fetch('/api/rides', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      // ✅ CORREÇÃO: Usar apiRequest em vez de fetch direto
+      const response = await apiRequest<{ success: boolean; ride: any; message: string }>('POST', '/api/provider/rides', payload);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao criar viagem');
+      if (!response.success) {
+        throw new Error(response.message || 'Erro ao criar viagem');
       }
       
-      return response.json();
+      return response;
     },
     onSuccess: (data) => {
       console.log('✅ Viagem criada com sucesso:', data);
@@ -98,6 +161,7 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
         pricePerSeat: 100,
         additionalInfo: '',
         vehicleType: 'sedan',
+        vehicleId: vehicles.length > 0 ? vehicles[0].id : '', // ✅ MANTER PRIMEIRO VEÍCULO
       });
       
       // Invalidar cache de buscas para mostrar a nova viagem
@@ -117,6 +181,25 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
   });
 
   const handleSubmit = () => {
+    // ✅ VALIDAÇÃO OBRIGATÓRIA DO VEÍCULO
+    if (!rideData.vehicleId) {
+      toast({
+        title: "Veículo obrigatório",
+        description: "Por favor, selecione um veículo para a viagem.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (vehicles.length === 0) {
+      toast({
+        title: "Cadastre um veículo",
+        description: "Você precisa cadastrar um veículo antes de criar uma viagem.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // ✅ CORREÇÃO: Validações melhoradas
     if (!rideData.fromLocation || !rideData.toLocation) {
       toast({
@@ -193,6 +276,79 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
             Informações da Viagem
           </h3>
           
+          {/* ✅ SELETOR DE VEÍCULO ADICIONADO */}
+          <div className="space-y-2">
+            <Label htmlFor="vehicleId" className="flex items-center gap-2">
+              <Car className="w-4 h-4" />
+              Veículo *
+            </Label>
+            
+            {loadingVehicles ? (
+              <div className="text-sm text-gray-500">Carregando veículos...</div>
+            ) : vehiclesError ? (
+              <div className="text-sm text-red-500 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                {vehiclesError}
+              </div>
+            ) : vehicles.length === 0 ? (
+              <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  <strong>Cadastre um veículo primeiro</strong>
+                </div>
+                <p>Você precisa cadastrar um veículo antes de oferecer boleia.</p>
+                <Button 
+                  variant="link" 
+                  className="p-0 h-auto text-blue-600 font-medium"
+                  onClick={() => {
+                    window.location.href = '/driver/vehicles';
+                  }}
+                >
+                  Cadastrar veículo agora
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Select
+                  value={rideData.vehicleId}
+                  onValueChange={(value) => {
+                    const vehicle = vehicles.find(v => v.id === value);
+                    handleInputChange('vehicleId', value);
+                    if (vehicle) {
+                      handleInputChange('vehicleType', vehicle.vehicleType);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full" data-testid="select-vehicle">
+                    <SelectValue placeholder="Selecione seu veículo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vehicles.map((vehicle) => (
+                      <SelectItem key={vehicle.id} value={vehicle.id}>
+                        🚗 {vehicle.make} {vehicle.model} ({vehicle.color}) - {vehicle.plateNumber}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* DETALHES DO VEÍCULO SELECIONADO */}
+                {rideData.vehicleId && (
+                  <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded border border-blue-200">
+                    <div className="font-medium">Veículo selecionado:</div>
+                    <div>
+                      {vehicles.find(v => v.id === rideData.vehicleId)?.make} {vehicles.find(v => v.id === rideData.vehicleId)?.model} 
+                      ({vehicles.find(v => v.id === rideData.vehicleId)?.color}) - {vehicles.find(v => v.id === rideData.vehicleId)?.plateNumber}
+                    </div>
+                    <div className="text-blue-500 text-xs mt-1">
+                      Capacidade: {vehicles.find(v => v.id === rideData.vehicleId)?.maxPassengers} passageiros • 
+                      Tipo: {vehicles.find(v => v.id === rideData.vehicleId)?.vehicleType}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fromLocation" className="flex items-center gap-2">
@@ -292,10 +448,10 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
                 <Car className="w-4 h-4" />
                 Tipo de Veículo
               </Label>
-              {/* ✅ CORREÇÃO: Usar componente Select customizado */}
               <Select
                 value={rideData.vehicleType}
                 onValueChange={(value) => handleInputChange('vehicleType', value)}
+                disabled={!!rideData.vehicleId} // ✅ DESABILITADO QUANDO VEÍCULO SELECIONADO
               >
                 <SelectTrigger data-testid="select-vehicle-type">
                   <SelectValue placeholder="Selecione o tipo" />
@@ -309,6 +465,11 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
                   <SelectItem value="minibus">Minibus</SelectItem>
                 </SelectContent>
               </Select>
+              {rideData.vehicleId && (
+                <p className="text-xs text-gray-500">
+                  Tipo definido automaticamente pelo veículo selecionado
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -342,6 +503,7 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
             <p><strong>Data e Hora:</strong> {rideData.departureDate ? new Date(rideData.departureDate).toLocaleDateString('pt-PT') : '...'} às {rideData.departureTime || '...'}</p>
             <p><strong>Assentos:</strong> {rideData.availableSeats} disponíveis</p>
             <p><strong>Preço:</strong> {rideData.pricePerSeat} MT por pessoa</p>
+            <p><strong>Veículo:</strong> {vehicles.find(v => v.id === rideData.vehicleId) ? `${vehicles.find(v => v.id === rideData.vehicleId)?.make} ${vehicles.find(v => v.id === rideData.vehicleId)?.model}` : 'Não selecionado'}</p>
             <p><strong>Receita Total:</strong> {rideData.pricePerSeat * rideData.availableSeats} MT (lotação completa)</p>
           </div>
         </div>
@@ -363,7 +525,8 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
               !rideData.toLocation || 
               !rideData.departureDate || 
               !rideData.departureTime ||
-              !rideData.vehicleType}
+              !rideData.vehicleId || // ✅ AGORA VALIDA vehicleId
+              vehicles.length === 0}
             className="flex-1"
             data-testid="button-submit-create"
           >

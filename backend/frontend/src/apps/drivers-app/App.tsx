@@ -9,6 +9,8 @@ import RoutePublisher from "./pages/route-publisher";
 import MyOffers from "./pages/my-offers";
 import Partnerships from "./pages/partnerships";
 import Chat from "./pages/chat";
+// ✅ ADICIONAR IMPORT DA PÁGINA DE VEÍCULOS
+import VehiclesPage from "./pages/vehicles";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +27,8 @@ export default function DriversApp() {
             <Route path="/drivers/offers" component={MyOffers} />
             <Route path="/drivers/partnerships" component={Partnerships} />
             <Route path="/drivers/chat" component={Chat} />
+            {/* ✅ ADICIONAR ROTA DE VEÍCULOS */}
+            <Route path="/drivers/vehicles" component={VehiclesPage} />
             <Route component={NotFound} />
           </Switch>
         </main>

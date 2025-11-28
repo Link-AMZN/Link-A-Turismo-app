@@ -18,6 +18,9 @@ export const verificationStatusEnum = pgEnum("verification_status", ['pending', 
 export const paymentMethodEnum = pgEnum("payment_method", ['card', 'mpesa', 'bank', 'mobile_money', 'bank_transfer']);
 export const rideTypeEnum = pgEnum("ride_type", ['regular', 'premium', 'shared', 'express']);
 
+// ✅ NOVO: Enum para tipos de veículo
+export const vehicleTypeEnum = pgEnum("vehicle_type", ['economy', 'comfort', 'luxury', 'family', 'premium', 'van', 'suv']);
+
 // Constantes para uso no código
 export const STATUS_ENUM = {
   PENDING: 'pending',
@@ -57,6 +60,17 @@ export const VERIFICATION_STATUS_ENUM = {
   IN_REVIEW: 'in_review',
   VERIFIED: 'verified',
   REJECTED: 'rejected'
+} as const;
+
+// ✅ NOVO: Constantes para tipos de veículo
+export const VEHICLE_TYPE_ENUM = {
+  ECONOMY: 'economy',
+  COMFORT: 'comfort',
+  LUXURY: 'luxury',
+  FAMILY: 'family',
+  PREMIUM: 'premium',
+  VAN: 'van',
+  SUV: 'suv'
 } as const;
 
 // ==================== TABELAS BASE ====================
@@ -123,6 +137,33 @@ export const mozambiqueLocations = pgTable("mozambique_locations", {
   geoIdx: index("locations_geo_idx").on(table.lat, table.lng),
   // ✅ CORREÇÃO: Índices otimizados - removido searchIdx redundante
   textSearchIdx: index("locations_text_search_idx").on(table.name),
+}));
+
+// ==================== TABELA DE VEÍCULOS (NOVA/ATUALIZADA) ====================
+
+// ✅ NOVO: Tabela vehicles completa com índices
+// ✅ CORREÇÃO: Removido .check() que causava erro - validação será feita no Zod
+export const vehicles = pgTable("vehicles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driver_id: text("driver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  plate_number: varchar("plate_number", { length: 20 }).notNull().unique(),
+  plate_number_raw: varchar("plate_number_raw", { length: 20 }).notNull(),
+  make: varchar("make", { length: 100 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  color: varchar("color", { length: 50 }).notNull(),
+  year: integer("year"),
+  vehicle_type: vehicleTypeEnum("vehicle_type").notNull(),
+  max_passengers: integer("max_passengers").notNull(), // ✅ CORREÇÃO: Removido .check()
+  features: text("features").array().default(sql`'{}'`),
+  photo_url: text("photo_url"),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  driverIdx: index("vehicles_driver_idx").on(table.driver_id),
+  plateIdx: index("vehicles_plate_idx").on(table.plate_number),
+  activeIdx: index("vehicles_active_idx").on(table.is_active).where(sql`is_active = true`),
+  typeIdx: index("vehicles_type_idx").on(table.vehicle_type),
 }));
 
 // ==================== ACCOMMODATIONS & RELATED TABLES ====================
@@ -221,13 +262,14 @@ export const roomTypes = pgTable("roomTypes", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ==================== RIDES & TRANSPORTATION ====================
+// ==================== RIDES & TRANSPORTATION (ATUALIZADA) ====================
 
 // ✅ CORREÇÃO: driverId agora é TEXT para compatibilidade
 // ✅ CORREÇÃO: Campos padronizados e tipo de ride usando enum
 // ✅ CORREÇÃO ADICIONAL: Adicionados campos fromCity e toCity
 // ✅ CORREÇÃO CRÍTICA: pricePerSeat alterado para varchar
 // ✅ CORREÇÃO COMPLETA: Adicionados todos os campos faltantes (usando text para campos geométricos)
+// ✅ CORREÇÃO CRÍTICA: Adicionado vehicleId como foreign key para vehicles
 export const rides = pgTable("rides", {
   id: uuid("id").primaryKey().defaultRandom(),
   driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -258,6 +300,10 @@ export const rides = pgTable("rides", {
   pricePerSeat: varchar("pricePerSeat").notNull(),
   
   vehicleType: varchar("vehicleType", { length: 50 }),
+  
+  // ✅ CORREÇÃO CRÍTICA: Adicionado vehicleId como foreign key para vehicles
+  vehicleId: uuid("vehicleId").references(() => vehicles.id, { onDelete: "set null" }),
+  
   additionalInfo: text("additionalInfo"),
   status: statusEnum("status").default('available'),
   type: rideTypeEnum("type").default("regular"), // ✅ CORREÇÃO: Usando enum
@@ -281,6 +327,8 @@ export const rides = pgTable("rides", {
   // ✅ CORREÇÃO COMPLETA: Índices para campos de distrito
   fromDistrictIdx: index("rides_from_district_idx").on(table.fromDistrict),
   toDistrictIdx: index("rides_to_district_idx").on(table.toDistrict),
+  // ✅ NOVO: Índice para vehicleId
+  vehicleIdx: index("rides_vehicle_idx").on(table.vehicleId),
 }));
 
 // ==================== BOOKINGS & PAYMENTS ====================
@@ -703,7 +751,7 @@ export const systemSettings = pgTable("systemSettings", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
-// ==================== ZOD SCHEMAS COMPLETOS ====================
+// ==================== ZOD SCHEMAS COMPLETOS (ATUALIZADOS) ====================
 
 // ✅ CORREÇÃO: Enums Zod atualizados e completos
 const userTypeZod = z.enum(["client", "driver", "host", "admin"]);
@@ -714,6 +762,8 @@ const verificationStatusZod = z.enum(["pending", "in_review", "verified", "rejec
 const paymentMethodZod = z.enum(["card", "mpesa", "bank", "mobile_money", "bank_transfer"]);
 const rideTypeZod = z.enum(["regular", "premium", "shared", "express"]);
 const locationTypeZod = z.enum(["city", "town", "village"]);
+// ✅ NOVO: Enum para tipos de veículo
+const vehicleTypeZod = z.enum(["economy", "comfort", "luxury", "family", "premium", "van", "suv"]);
 
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -761,6 +811,8 @@ export const insertRideSchema = createInsertSchema(rides, {
   pricePerSeat: z.string().min(1),
   status: statusZod.optional(),
   type: rideTypeZod.optional(),
+  // ✅ CORREÇÃO: vehicleId adicionado como opcional para compatibilidade
+  vehicleId: z.string().uuid().optional(),
   // ✅ CORREÇÃO COMPLETA: Campos geométricos adicionados
   distance_real_km: z.number().optional(),
   from_geom: z.string().optional(),
@@ -792,6 +844,8 @@ export const updateRideSchema = createInsertSchema(rides, {
   pricePerSeat: z.string().min(1).optional(),
   status: statusZod.optional(),
   type: rideTypeZod.optional(),
+  // ✅ CORREÇÃO: vehicleId adicionado como opcional
+  vehicleId: z.string().uuid().optional(),
   // ✅ CORREÇÃO COMPLETA: Campos geométricos adicionados
   distance_real_km: z.number().optional(),
   from_geom: z.string().optional(),
@@ -801,6 +855,64 @@ export const updateRideSchema = createInsertSchema(rides, {
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+// ✅ NOVO: Schema para veículos com validação de max_passengers
+export const vehicleSchema = z.object({
+  plateNumber: z.string().min(3).max(20),
+  make: z.string().min(1).max(100),
+  model: z.string().min(1).max(100),
+  color: z.string().min(1).max(50),
+  year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
+  vehicleType: vehicleTypeZod,
+  maxPassengers: z.number().min(1).max(50), // ✅ CORREÇÃO: Validação movida para Zod
+  features: z.array(z.string()).optional(),
+  photoUrl: z.string().url().optional().or(z.literal(''))
+});
+
+// ✅ NOVO: Schema para inserção de veículos
+export const insertVehicleSchema = createInsertSchema(vehicles, {
+  plate_number: z.string().min(3).max(20),
+  plate_number_raw: z.string().min(3).max(20),
+  make: z.string().min(1).max(100),
+  model: z.string().min(1).max(100),
+  color: z.string().min(1).max(50),
+  year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
+  vehicle_type: vehicleTypeZod,
+  max_passengers: z.number().min(1).max(50), // ✅ CORREÇÃO: Validação no Zod
+  features: z.array(z.string()).optional(),
+  photo_url: z.string().url().optional().or(z.literal('')),
+  is_active: z.boolean().default(true),
+}).omit({
+  id: true,
+  driver_id: true,
+  created_at: true,
+  updated_at: true,
+});
+
+// ✅ NOVO: Schema para criação de rides com vehicleId obrigatório (para uso futuro)
+export const createRideSchema = z.object({
+  fromLocation: z.object({
+    name: z.string().min(1),
+    lat: z.number(),
+    lng: z.number(),
+    address: z.string().optional()
+  }),
+  toLocation: z.object({
+    name: z.string().min(1),
+    lat: z.number(),
+    lng: z.number(),
+    address: z.string().optional()
+  }),
+  departureDate: z.string().datetime(),
+  departureTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  pricePerSeat: z.number().min(1),
+  maxPassengers: z.number().min(1),
+  // ✅ OBRIGATÓRIO no novo schema
+  vehicleId: z.string().uuid(),
+  description: z.string().optional(),
+  allowNegotiation: z.boolean().default(false),
+  allowPickupEnRoute: z.boolean().default(true)
 });
 
 export const insertAccommodationSchema = createInsertSchema(accommodations, {
@@ -860,13 +972,17 @@ export const insertLoyaltyRewardsSchema = createInsertSchema(loyaltyRewards);
 export const insertRewardRedemptionsSchema = createInsertSchema(rewardRedemptions);
 export const insertSystemSettingsSchema = createInsertSchema(systemSettings);
 
-// ==================== TIPOS TYPESCRIPT ====================
+// ==================== TIPOS TYPESCRIPT (ATUALIZADOS) ====================
 
 export type User = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
 
 export type Ride = typeof rides.$inferSelect;
 export type RideInsert = typeof rides.$inferInsert;
+
+// ✅ NOVO: Tipos para veículos
+export type Vehicle = typeof vehicles.$inferSelect;
+export type VehicleInsert = typeof vehicles.$inferInsert;
 
 export type Accommodation = typeof accommodations.$inferSelect;
 export type AccommodationInsert = typeof accommodations.$inferInsert;
@@ -917,4 +1033,28 @@ export interface RideSearchParams {
   toLocation: LocationSuggestion | null;
   date?: string;
   passengers?: number;
+}
+
+// ✅ NOVO: Interface para criação de rides com vehicleId
+export interface CreateRideRequest {
+  fromLocation: {
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  toLocation: {
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  departureDate: string;
+  departureTime: string;
+  pricePerSeat: number;
+  maxPassengers: number;
+  vehicleId: string; // ✅ OBRIGATÓRIO
+  description?: string;
+  allowNegotiation?: boolean;
+  allowPickupEnRoute?: boolean;
 }

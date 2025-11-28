@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -27,12 +27,33 @@ import {
   DollarSign,
   Car,
   Plus,
+  AlertCircle,
+  AlertTriangle,
+  Upload,
+  X,
 } from "lucide-react";
 
 // ✅ CORREÇÃO: Importar auth para obter token REAL
 import { auth } from "../../../shared/lib/firebaseConfig";
+// ✅ CORREÇÃO: Importar serviço de veículos CORRETO (sem /driver/)
+import { getMyVehicles } from '../../../api/driver/vehicles';
 
-// ✅ CORREÇÃO: Definir tipo completo do estado do formulário
+// ✅ INTERFACE VEHICLE ADICIONADA
+interface Vehicle {
+  id: string;
+  plateNumber: string;
+  make: string;
+  model: string;
+  color: string;
+  year?: number;
+  vehicleType: string;
+  maxPassengers: number;
+  features: string[];
+  photoUrl?: string;
+  isActive: boolean;
+}
+
+// ✅ CORREÇÃO: Definir tipo completo do estado do formulário COM vehicleId
 type FormState = {
   fromLocation: string | LocationOption;
   toLocation: string | LocationOption;
@@ -46,6 +67,7 @@ type FormState = {
   pickupPoint: string;
   dropoffPoint: string;
   vehiclePhoto: File | null;
+  vehicleId: string; // ✅ NOVO CAMPO OBRIGATÓRIO
 };
 
 // ✅ CORREÇÃO 4: Helper para limpar payload de campos undefined
@@ -69,7 +91,12 @@ export default function RoutePublisher() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // ✅ CORREÇÃO: Estado tipado com FormState - usando strings vazias em vez de null
+  // ✅ NOVOS ESTADOS PARA VEÍCULOS
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
+  const [vehiclesError, setVehiclesError] = useState<string | null>(null);
+
+  // ✅ CORREÇÃO: Estado tipado com FormState - incluindo vehicleId
   const [formData, setFormData] = useState<FormState>({
     fromLocation: "",
     toLocation: "",
@@ -83,9 +110,56 @@ export default function RoutePublisher() {
     pickupPoint: "",
     dropoffPoint: "",
     vehiclePhoto: null,
+    vehicleId: "", // ✅ NOVO CAMPO
   });
   
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  // ✅ useEffect PARA CARREGAR VEÍCULOS
+  useEffect(() => {
+    const loadVehicles = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoadingVehicles(true);
+        setVehiclesError(null);
+        console.log('🚗 Iniciando carregamento de veículos...');
+        const myVehicles = await getMyVehicles();
+        console.log('✅ Veículos carregados:', myVehicles);
+        setVehicles(myVehicles);
+        
+        // ✅ SELECIONAR PRIMEIRO VEÍCULO POR PADRÃO
+        if (myVehicles.length > 0) {
+          setFormData(prev => ({
+            ...prev,
+            vehicleId: myVehicles[0].id,
+            vehicleType: myVehicles[0].vehicleType
+          }));
+          console.log('🎯 Primeiro veículo selecionado automaticamente:', myVehicles[0].plateNumber);
+        } else {
+          console.log('⚠️ Nenhum veículo encontrado para este usuário');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao carregar veículos:', error);
+        setVehiclesError('Erro ao carregar veículos. Tente novamente.');
+        
+        // ✅ CORREÇÃO: Mostrar mensagem mais específica
+        if (error instanceof Error) {
+          if (error.message.includes('403')) {
+            setVehiclesError('Acesso negado. Verifique suas permissões.');
+          } else if (error.message.includes('404')) {
+            setVehiclesError('Nenhum veículo encontrado. Cadastre seu primeiro veículo.');
+          } else if (error.message.includes('Network Error')) {
+            setVehiclesError('Erro de conexão. Verifique sua internet.');
+          }
+        }
+      } finally {
+        setLoadingVehicles(false);
+      }
+    };
+
+    loadVehicles();
+  }, [user?.id]);
 
   // ✅ CORREÇÃO: Handle input change completamente tipado
   const handleInputChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
@@ -170,6 +244,30 @@ export default function RoutePublisher() {
       return;
     }
 
+    // ✅ VALIDAÇÃO OBRIGATÓRIA DO VEÍCULO
+    if (!formData.vehicleId) {
+      setError("Por favor selecione um veículo para a viagem.");
+      return;
+    }
+
+    if (vehicles.length === 0) {
+      setError("Você precisa cadastrar um veículo antes de criar uma viagem.");
+      return;
+    }
+
+    // ✅ VERIFICAR SE VEÍCULO EXISTE
+    const selectedVehicle = vehicles.find(v => v.id === formData.vehicleId);
+    if (!selectedVehicle) {
+      setError("Veículo selecionado não encontrado.");
+      return;
+    }
+
+    // ✅ VALIDAR CAPACIDADE DO VEÍCULO
+    if (formData.availableSeats > selectedVehicle.maxPassengers) {
+      setError(`Número de assentos (${formData.availableSeats}) excede capacidade do veículo (máximo: ${selectedVehicle.maxPassengers})`);
+      return;
+    }
+
     // ✅ CORREÇÃO: Validação atualizada para strings/objetos
     if (!formData.fromLocation || !formData.toLocation) {
       setError("Por favor preencha origem e destino.");
@@ -205,64 +303,104 @@ export default function RoutePublisher() {
       const fromLabel = getLocationLabel(formData.fromLocation);
       const toLabel = getLocationLabel(formData.toLocation);
 
-      // ✅ CORREÇÃO: Construir payload correto para o backend
+      // ✅✅✅ CORREÇÃO CRÍTICA: Construir payload compatível com sistema de busca
       const rideData: any = {
         driverId: user.id,
         departureDate: formData.date,
         departureTime: formData.time,
         availableSeats: Number(formData.availableSeats),
         pricePerSeat: Number(formData.pricePerSeat),
-        vehicleType: formData.vehicleType || "sedan",
-        description: formData.description || "",
-        status: "active",
+        vehicleType: formData.vehicleType || "family",
+        status: "available",
+        vehicleId: formData.vehicleId,
+        
+        // ✅ CORREÇÃO CRÍTICA: Campos obrigatórios para criação (satisfazer validação Zod)
+        fromAddress: "Ponto de encontro a combinar", // Valor padrão para satisfazer validação
+        toAddress: "Ponto de chegada a combinar",    // Valor padrão para satisfazer validação
+        
+        // ✅ CAMPOS USADOS PELA BUSCA (os mais importantes) - INICIALIZADOS VAZIOS
+        fromCity: "",
+        fromProvince: "", 
+        toCity: "",
+        toProvince: "",
+        fromLat: null,
+        fromLng: null,
+        toLat: null,
+        toLng: null,
       };
 
-      // ✅ CORREÇÃO: Processar origem com todos os campos necessários
+      // ✅✅✅ CORREÇÃO CRÍTICA: Processar origem - GARANTIR fromCity NÃO VAZIO
       if (isLocationOption(formData.fromLocation)) {
-        rideData.fromCity = formData.fromLocation.city || fromLabel;
-        rideData.fromProvince = formData.fromLocation.province || "";
-        rideData.fromDistrict = formData.fromLocation.district || "";
-        rideData.fromLocality = formData.fromLocation.locality || "";
+        const loc = formData.fromLocation;
         
-        // ✅ CORREÇÃO: Enviar geometria como GeoJSON, não WKT
-        if (formData.fromLocation.lat && formData.fromLocation.lng) {
+        // ✅✅✅ CORREÇÃO CRÍTICA: Garantir que fromCity tenha valor SEMPRE
+        rideData.fromCity = loc.city || fromLabel || "Cidade não especificada";
+        rideData.fromProvince = loc.province || "";
+        rideData.fromDistrict = loc.district || "";
+        
+        // ✅ GEOCODIFICAÇÃO para busca por localização
+        if (loc.lat && loc.lng) {
           rideData.from_geom = {
             type: "Point",
-            coordinates: [formData.fromLocation.lng, formData.fromLocation.lat] // ✅ CORREÇÃO: [lng, lat]
+            coordinates: [loc.lng, loc.lat]
           };
-          rideData.fromLat = formData.fromLocation.lat;
-          rideData.fromLng = formData.fromLocation.lng;
+          rideData.fromLat = loc.lat;
+          rideData.fromLng = loc.lng;
         }
+        
+        // ✅ Usar a cidade como fromAddress (mais útil que string vazia)
+        rideData.fromAddress = loc.city || fromLabel;
+        
       } else {
-        // Se for string, usar valores padrão
-        rideData.fromCity = fromLabel;
+        // ✅✅✅ CORREÇÃO CRÍTICA: Fallback seguro - NUNCA deixar vazio
+        rideData.fromCity = fromLabel || "Cidade não especificada";
         rideData.fromProvince = "";
         rideData.fromDistrict = "";
-        rideData.fromLocality = fromLabel;
+        rideData.fromAddress = fromLabel;
       }
 
-      // ✅ CORREÇÃO: Processar destino com todos os campos necessários
+      // ✅✅✅ CORREÇÃO CRÍTICA: Processar destino - GARANTIR toCity NÃO VAZIO  
       if (isLocationOption(formData.toLocation)) {
-        rideData.toCity = formData.toLocation.city || toLabel;
-        rideData.toProvince = formData.toLocation.province || "";
-        rideData.toDistrict = formData.toLocation.district || "";
-        rideData.toLocality = formData.toLocation.locality || "";
+        const loc = formData.toLocation;
         
-        // ✅ CORREÇÃO: Enviar geometria como GeoJSON, não WKT
-        if (formData.toLocation.lat && formData.toLocation.lng) {
+        // ✅✅✅ CORREÇÃO CRÍTICA: Garantir que toCity tenha valor SEMPRE
+        rideData.toCity = loc.city || toLabel || "Cidade não especificada";
+        rideData.toProvince = loc.province || "";
+        rideData.toDistrict = loc.district || "";
+        
+        // ✅ GEOCODIFICAÇÃO para busca por localização
+        if (loc.lat && loc.lng) {
           rideData.to_geom = {
-            type: "Point",
-            coordinates: [formData.toLocation.lng, formData.toLocation.lat] // ✅ CORREÇÃO: [lng, lat]
+            type: "Point", 
+            coordinates: [loc.lng, loc.lat]
           };
-          rideData.toLat = formData.toLocation.lat;
-          rideData.toLng = formData.toLocation.lng;
+          rideData.toLat = loc.lat;
+          rideData.toLng = loc.lng;
         }
+        
+        // ✅ Usar a cidade como toAddress (mais útil que string vazia)
+        rideData.toAddress = loc.city || toLabel;
+        
       } else {
-        // Se for string, usar valores padrão
-        rideData.toCity = toLabel;
+        // ✅✅✅ CORREÇÃO CRÍTICA: Fallback seguro - NUNCA deixar vazio
+        rideData.toCity = toLabel || "Cidade não especificada";
         rideData.toProvince = "";
         rideData.toDistrict = "";
-        rideData.toLocality = toLabel;
+        rideData.toAddress = toLabel;
+      }
+
+      // ✅✅✅ GARANTIR ABSOLUTA que os campos críticos não sejam vazios
+      if (!rideData.fromCity || rideData.fromCity.trim() === '') {
+        rideData.fromCity = fromLabel || "Origem não especificada";
+      }
+      if (!rideData.toCity || rideData.toCity.trim() === '') {
+        rideData.toCity = toLabel || "Destino não especificada";
+      }
+      if (!rideData.fromAddress || rideData.fromAddress.trim() === '') {
+        rideData.fromAddress = rideData.fromCity || "Origem a definir";
+      }
+      if (!rideData.toAddress || rideData.toAddress.trim() === '') {
+        rideData.toAddress = rideData.toCity || "Destino a definir";
       }
 
       // ✅ CORREÇÃO: Adicionar pontos de encontro se preenchidos
@@ -273,8 +411,24 @@ export default function RoutePublisher() {
         rideData.dropoffPoint = formData.dropoffPoint;
       }
 
-      console.log("📝 Publicando viagem:", rideData);
-      console.log("* Tentando criar viagem...");
+      // ✅ CORREÇÃO: Adicionar descrição se preenchida
+      if (formData.description) {
+        rideData.description = formData.description;
+      }
+
+      console.log("📝 Payload final para criação:", {
+        fromCity: rideData.fromCity,
+        toCity: rideData.toCity, 
+        fromProvince: rideData.fromProvince,
+        toProvince: rideData.toProvince,
+        fromAddress: rideData.fromAddress,
+        toAddress: rideData.toAddress,
+        fromLat: rideData.fromLat,
+        fromLng: rideData.fromLng,
+        toLat: rideData.toLat,
+        toLng: rideData.toLng,
+        vehicleId: rideData.vehicleId
+      });
 
       // ✅ CORREÇÃO 4: Limpar payload antes de enviar
       const cleanRideData = cleanPayload(rideData);
@@ -282,7 +436,7 @@ export default function RoutePublisher() {
 
       // ✅ CORREÇÃO 2: Garantir URL da API correta
       const API_BASE_URL = getApiBaseUrl();
-      const apiUrl = `${API_BASE_URL}/api/rides`;
+      const apiUrl = `${API_BASE_URL}/api/provider/rides`;
       console.log("@ URL da API:", apiUrl);
 
       // ✅✅✅ CORREÇÃO CRÍTICA: Obter token REAL do Firebase
@@ -295,28 +449,6 @@ export default function RoutePublisher() {
       });
 
       console.log("🔧 Headers finais:", Object.fromEntries(headers.entries()));
-
-      // ✅ CORREÇÃO: Testar autenticação primeiro (opcional - para debug)
-      if (process.env.NODE_ENV === 'development') {
-        try {
-          const testResponse = await fetch(`${API_BASE_URL}/api/debug/firebase-auth`, {
-            method: 'GET',
-            headers: {
-              "Authorization": `Bearer ${freshToken}`,
-              "Content-Type": "application/json"
-            }
-          });
-          
-          const testResult = await testResponse.json();
-          console.log("🧪 Teste de autenticação:", testResult);
-          
-          if (!testResult.success) {
-            throw new Error(`Teste de autenticação falhou: ${testResult.error}`);
-          }
-        } catch (testError) {
-          console.warn("⚠️ Teste de autenticação falhou, continuando...", testError);
-        }
-      }
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -357,7 +489,7 @@ export default function RoutePublisher() {
         description: `Rota ${fromLabel} → ${toLabel} está disponível!`,
       });
 
-      // ✅ CORREÇÃO: Reset form com strings vazias em vez de null
+      // ✅ CORREÇÃO: Reset form mantendo vehicleId se houver veículos
       setFormData({
         fromLocation: "",
         toLocation: "",
@@ -366,11 +498,12 @@ export default function RoutePublisher() {
         departureDate: "",
         pricePerSeat: 0,
         availableSeats: 4,
-        vehicleType: "sedan",
+        vehicleType: vehicles.length > 0 ? vehicles[0].vehicleType : "sedan",
         description: "",
         pickupPoint: "",
         dropoffPoint: "",
         vehiclePhoto: null,
+        vehicleId: vehicles.length > 0 ? vehicles[0].id : "", // ✅ MANTER PRIMEIRO VEÍCULO
       });
       setPhotoPreview(null);
       
@@ -406,7 +539,8 @@ export default function RoutePublisher() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4">
-            ❌ {error}
+            <AlertCircle className="w-4 h-4 inline mr-2" />
+            {error}
           </div>
         )}
         {success && (
@@ -423,6 +557,83 @@ export default function RoutePublisher() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* ✅ SELETOR DE VEÍCULO ADICIONADO */}
+            <div className="space-y-2">
+              <Label htmlFor="vehicleId" className="flex items-center gap-2">
+                <Car className="w-4 h-4 text-red-600" />
+                Selecione seu Veículo *
+              </Label>
+              
+              {loadingVehicles ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                  Carregando veículos...
+                </div>
+              ) : vehiclesError ? (
+                <div className="text-sm text-red-500 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {vehiclesError}
+                </div>
+              ) : vehicles.length === 0 ? (
+                <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded border border-yellow-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <strong>Cadastre um veículo primeiro</strong>
+                  </div>
+                  <p className="mb-2">Você precisa cadastrar um veículo antes de oferecer boleia.</p>
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => {
+                      window.location.href = '/driver/vehicles';
+                    }}
+                  >
+                    <Car className="w-4 h-4 mr-2" />
+                    Cadastrar veículo agora
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <Select
+                    value={formData.vehicleId}
+                    onValueChange={(value) => {
+                      const vehicle = vehicles.find(v => v.id === value);
+                      handleInputChange('vehicleId', value);
+                      if (vehicle) {
+                        handleInputChange('vehicleType', vehicle.vehicleType);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full" data-testid="select-vehicle">
+                      <SelectValue placeholder="Selecione seu veículo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vehicles.map((vehicle) => (
+                        <SelectItem key={vehicle.id} value={vehicle.id}>
+                          🚗 {vehicle.make} {vehicle.model} ({vehicle.color}) - {vehicle.plateNumber}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* DETALHES DO VEÍCULO SELECIONADO */}
+                  {formData.vehicleId && (
+                    <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded border border-blue-200">
+                      <div className="font-medium">Veículo selecionado:</div>
+                      <div>
+                        {vehicles.find(v => v.id === formData.vehicleId)?.make} {vehicles.find(v => v.id === formData.vehicleId)?.model} 
+                        ({vehicles.find(v => v.id === formData.vehicleId)?.color}) - {vehicles.find(v => v.id === formData.vehicleId)?.plateNumber}
+                      </div>
+                      <div className="text-blue-500 text-xs mt-1">
+                        Capacidade: {vehicles.find(v => v.id === formData.vehicleId)?.maxPassengers} passageiros • 
+                        Tipo: {vehicles.find(v => v.id === formData.vehicleId)?.vehicleType}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Origem e Destino com AutoComplete */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -538,8 +749,9 @@ export default function RoutePublisher() {
                   onValueChange={(value) =>
                     handleInputChange("vehicleType", value)
                   }
+                  disabled={!!formData.vehicleId} // ✅ DESABILITADO QUANDO VEÍCULO SELECIONADO
                 >
-                  <SelectTrigger data-testid="select-vehicle">
+                  <SelectTrigger data-testid="select-vehicle-type">
                     <SelectValue placeholder="Seu veículo" />
                   </SelectTrigger>
                   <SelectContent>
@@ -551,6 +763,11 @@ export default function RoutePublisher() {
                     <SelectItem value="other">Outro</SelectItem>
                   </SelectContent>
                 </Select>
+                {formData.vehicleId && (
+                  <p className="text-xs text-gray-500">
+                    Tipo definido automaticamente pelo veículo selecionado
+                  </p>
+                )}
               </div>
             </div>
 
@@ -674,6 +891,8 @@ export default function RoutePublisher() {
                   !formData.date ||
                   !formData.time ||
                   !formData.pricePerSeat ||
+                  !formData.vehicleId || // ✅ AGORA VALIDA vehicleId
+                  vehicles.length === 0 ||
                   isLoading
                 }
                 data-testid="button-publish"
@@ -706,6 +925,7 @@ export default function RoutePublisher() {
                       hour: '2-digit', 
                       minute: '2-digit'
                     })}</p>
+                    <p><strong className="text-green-700">Veículo:</strong> {vehicles.find(v => v.id === formData.vehicleId) ? `${vehicles.find(v => v.id === formData.vehicleId)?.make} ${vehicles.find(v => v.id === formData.vehicleId)?.model}` : 'Não selecionado'}</p>
                   </div>
                   <div>
                     <p><strong className="text-green-700">Lugares:</strong> {formData.availableSeats} disponíveis</p>

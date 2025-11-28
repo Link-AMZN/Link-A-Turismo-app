@@ -4,7 +4,7 @@ import { Offer, HotelPartner } from '@/shared/types/dashboard';
 
 /**
  * Serviço central de API para todas as apps
- * Gerencia autenticação Firebase e comunicação com Railway backend
+ * ATUALIZADO para compatibilidade com get_rides_smart_final
  */
 class ApiService {
   private baseURL: string;
@@ -92,6 +92,32 @@ class ApiService {
     return response.json() as Promise<T>;
   }
 
+  // ✅✅✅ NOVO: Método para chamadas RPC (PostgreSQL Functions)
+  private async rpcRequest<T>(
+    functionName: string,
+    parameters: Record<string, any> = {}
+  ): Promise<T> {
+    const headers = await this.getAuthHeaders(true);
+    const url = this.buildURL('/rpc');
+    
+    const payload = {
+      function: functionName,
+      parameters: parameters
+    };
+    
+    console.log(`🧠 RPC Call ${functionName}:`, parameters);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      credentials: 'include'
+    });
+    
+    await this.throwIfResNotOk(response);
+    return response.json() as Promise<T>;
+  }
+
   // ✅ CORREÇÃO 7: Helper para adicionar informações do passageiro
   private async attachUserInfo<T extends object>(payload: T): Promise<T & { userId: string; createdBy: string }> {
     const user = auth.currentUser;
@@ -145,6 +171,154 @@ class ApiService {
       ...payload,
       updatedBy: user.uid
     };
+  }
+
+  // ===== RIDES API - COMPLETAMENTE ATUALIZADA =====
+  
+  // ✅✅✅ CORREÇÃO CRÍTICA: Busca usando get_rides_smart_final via RPC
+  async searchRides(params: { 
+    from?: string; 
+    to?: string; 
+    passengers?: number; 
+    date?: string;
+    radiusKm?: number;
+    maxResults?: number;
+  }): Promise<any> {
+    console.log('🔍 [API] Buscando rides com função inteligente:', params);
+    
+    // ✅✅✅ CORREÇÃO: Usar RPC call para get_rides_smart_final
+    return this.rpcRequest('get_rides_smart_final', {
+      search_from: params.from || '',
+      search_to: params.to || '',
+      radius_km: params.radiusKm || 100,
+      max_results: params.maxResults || 50
+    });
+  }
+
+  // ✅✅✅ NOVO: Busca inteligente específica (alias para searchRides)
+  async searchRidesSmart(params: {
+    from: string;
+    to: string;
+    date?: string;
+    passengers?: number;
+    radiusKm?: number;
+    maxResults?: number;
+  }): Promise<any> {
+    console.log('🧠 [API] Busca inteligente específica:', params);
+    
+    return this.searchRides({
+      from: params.from,
+      to: params.to,
+      date: params.date,
+      passengers: params.passengers,
+      radiusKm: params.radiusKm,
+      maxResults: params.maxResults
+    });
+  }
+
+  // ✅✅✅ CORREÇÃO: Busca universal simplificada (usando função inteligente)
+  async searchRidesUniversal(params: { 
+    from?: string; 
+    to?: string; 
+    lat?: number;
+    lng?: number;
+    toLat?: number;
+    toLng?: number;
+    radiusKm?: number;
+    maxResults?: number;
+  }): Promise<any> {
+    console.log('🌍 [API] Busca universal:', params);
+    
+    // ✅ CORREÇÃO: Usar função inteligente mesmo para busca universal
+    return this.searchRides({
+      from: params.from,
+      to: params.to,
+      radiusKm: params.radiusKm,
+      maxResults: params.maxResults
+    });
+  }
+
+  // ✅✅✅ CORREÇÃO: Busca por proximidade (usando função inteligente)
+  async searchNearby(params: { 
+    location: string;
+    radiusKm?: number;
+    passengers?: number;
+  }): Promise<any> {
+    console.log('📍 [API] Busca por proximidade:', params);
+    
+    // ✅ CORREÇÃO: Usar mesma localização para from e to
+    return this.searchRides({
+      from: params.location,
+      to: params.location,
+      radiusKm: params.radiusKm,
+      passengers: params.passengers
+    });
+  }
+
+  // ✅✅✅ CORREÇÃO: Métodos redundantes REMOVIDOS/SUBSTITUÍDOS
+  // ❌ REMOVIDOS: searchHybrid, searchBetweenCities, searchByProvince, detectProvince
+  // ✅ TODOS usam get_rides_smart_final agora
+
+  // ✅ CORREÇÃO CRÍTICA: Endpoint atualizado de /rides-simple/create para /rides
+  async createRide(rideData: {
+    fromAddress: string;
+    toAddress: string;
+    fromProvince: string;
+    toProvince: string;
+    fromCity?: string;
+    toCity?: string;
+    fromDistrict?: string;
+    toDistrict?: string;
+    fromLocality?: string;
+    toLocality?: string;
+    fromLat?: number;
+    fromLng?: number;
+    toLat?: number;
+    toLng?: number;
+    departureDate: string;
+    departureTime?: string;
+    pricePerSeat: number;
+    availableSeats: number;
+    maxPassengers?: number;
+    vehicleType?: string;
+    additionalInfo?: string;
+  }): Promise<any> {
+    const rideDataWithDriver = await this.attachDriverInfo(rideData);
+    
+    // ✅ CORREÇÃO: Usar endpoint correto /rides em vez de /rides-simple/create
+    return this.request<any>('POST', '/rides', rideDataWithDriver);
+  }
+
+  // ✅ Métodos de gestão de rides mantidos
+  async updateRide(rideId: string, rideData: any): Promise<any> {
+    const rideDataWithUpdate = await this.attachUpdatedBy(rideData);
+    return this.request<any>('PUT', `/rides/${rideId}`, rideDataWithUpdate);
+  }
+
+  async deleteRide(rideId: string): Promise<void> {
+    return this.request<void>('DELETE', `/rides/${rideId}`);
+  }
+
+  async getRideById(rideId: string): Promise<any> {
+    return this.request<any>('GET', `/rides/${rideId}`);
+  }
+
+  async getRidesByDriver(driverId: string, status?: string): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (status) searchParams.append('status', status);
+    
+    return this.request<any[]>('GET', `/rides/driver/${driverId}?${searchParams.toString()}`);
+  }
+
+  // ✅✅✅ NOVO: Estatísticas de matching
+  async getRideMatchStats(from: string, to: string): Promise<any> {
+    console.log('📊 [API] Buscando estatísticas de matching:', { from, to });
+    
+    const searchParams = new URLSearchParams();
+    searchParams.append('from', from);
+    searchParams.append('to', to);
+    
+    return this.request<any>('GET', `/rides/match-stats?${searchParams.toString()}`);
   }
 
   // ===== HOTEL WIZARD API =====
@@ -248,193 +422,6 @@ class ApiService {
 
   async deleteOffer(offerId: string): Promise<void> {
     return this.request<void>('DELETE', `/offers/${offerId}`);
-  }
-
-  // ===== RIDES API =====
-  
-  // ✅ CORREÇÃO CRÍTICA: Atualizado para usar endpoints corretos do backend
-  async searchRides(params: { 
-    from?: string; 
-    to?: string; 
-    passengers?: number; 
-    date?: string;
-    lat?: number;
-    lng?: number;
-    toLat?: number;
-    toLng?: number;
-    radiusKm?: number;
-    maxResults?: number;
-  }): Promise<any> {
-    const searchParams = new URLSearchParams();
-    if (params.from) searchParams.append('from', params.from);
-    if (params.to) searchParams.append('to', params.to);
-    if (params.passengers) searchParams.append('passengers', params.passengers.toString());
-    if (params.date) searchParams.append('date', params.date);
-    if (params.lat) searchParams.append('lat', params.lat.toString());
-    if (params.lng) searchParams.append('lng', params.lng.toString());
-    if (params.toLat) searchParams.append('toLat', params.toLat.toString());
-    if (params.toLng) searchParams.append('toLng', params.toLng.toString());
-    if (params.radiusKm) searchParams.append('radiusKm', params.radiusKm.toString());
-    if (params.maxResults) searchParams.append('maxResults', params.maxResults.toString());
-    
-    return this.request<any>('GET', `/rides/search/universal?${searchParams.toString()}`);
-  }
-
-  // ✅ CORREÇÃO CRÍTICA: Endpoint atualizado de /rides-simple/create para /rides
-  async createRide(rideData: {
-    fromAddress: string;
-    toAddress: string;
-    fromProvince: string;
-    toProvince: string;
-    fromCity?: string;
-    toCity?: string;
-    fromDistrict?: string;
-    toDistrict?: string;
-    fromLocality?: string;
-    toLocality?: string;
-    fromLat?: number;
-    fromLng?: number;
-    toLat?: number;
-    toLng?: number;
-    departureDate: string;
-    departureTime?: string;
-    pricePerSeat: number;
-    availableSeats: number;
-    maxPassengers?: number;
-    vehicleType?: string;
-    additionalInfo?: string;
-  }): Promise<any> {
-    const rideDataWithDriver = await this.attachDriverInfo(rideData);
-    
-    // ✅ CORREÇÃO: Usar endpoint correto /rides em vez de /rides-simple/create
-    return this.request<any>('POST', '/rides', rideDataWithDriver);
-  }
-
-  // ✅ NOVO: Métodos para todas as funcionalidades de rides
-  async updateRide(rideId: string, rideData: any): Promise<any> {
-    const rideDataWithUpdate = await this.attachUpdatedBy(rideData);
-    return this.request<any>('PUT', `/rides/${rideId}`, rideDataWithUpdate);
-  }
-
-  async deleteRide(rideId: string): Promise<void> {
-    return this.request<void>('DELETE', `/rides/${rideId}`);
-  }
-
-  async getRideById(rideId: string): Promise<any> {
-    return this.request<any>('GET', `/rides/${rideId}`);
-  }
-
-  async getRidesByDriver(driverId: string, status?: string): Promise<any[]> {
-    const searchParams = new URLSearchParams();
-    if (status) searchParams.append('status', status);
-    
-    return this.request<any[]>('GET', `/rides/driver/${driverId}?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Busca inteligente
-  async searchRidesSmart(params: {
-    from: string;
-    to: string;
-    lat?: number;
-    lng?: number;
-    toLat?: number;
-    toLng?: number;
-    date?: string;
-    passengers?: number;
-    maxResults?: number;
-    useUniversal?: boolean;
-  }): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('from', params.from);
-    searchParams.append('to', params.to);
-    if (params.lat) searchParams.append('lat', params.lat.toString());
-    if (params.lng) searchParams.append('lng', params.lng.toString());
-    if (params.toLat) searchParams.append('toLat', params.toLat.toString());
-    if (params.toLng) searchParams.append('toLng', params.toLng.toString());
-    if (params.date) searchParams.append('date', params.date);
-    if (params.passengers) searchParams.append('passengers', params.passengers.toString());
-    if (params.maxResults) searchParams.append('maxResults', params.maxResults.toString());
-    if (params.useUniversal !== undefined) searchParams.append('useUniversal', params.useUniversal.toString());
-    
-    return this.request<any>('GET', `/rides/smart/search?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Busca por proximidade
-  async searchNearby(params: { 
-    lat: number; 
-    lng: number; 
-    toLat?: number; 
-    toLng?: number; 
-    radiusKm?: number 
-  }): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('lat', params.lat.toString());
-    searchParams.append('lng', params.lng.toString());
-    if (params.toLat) searchParams.append('toLat', params.toLat.toString());
-    if (params.toLng) searchParams.append('toLng', params.toLng.toString());
-    if (params.radiusKm) searchParams.append('radiusKm', params.radiusKm.toString());
-    
-    return this.request<any>('GET', `/rides/nearby?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Busca híbrida
-  async searchHybrid(params: {
-    from: string;
-    to: string;
-    lat?: number;
-    lng?: number;
-    toLat?: number;
-    toLng?: number;
-    fromProvince?: string;
-    toProvince?: string;
-    maxResults?: number;
-    minCompatibility?: number;
-    useUniversal?: boolean;
-  }): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('from', params.from);
-    searchParams.append('to', params.to);
-    if (params.lat) searchParams.append('lat', params.lat.toString());
-    if (params.lng) searchParams.append('lng', params.lng.toString());
-    if (params.toLat) searchParams.append('toLat', params.toLat.toString());
-    if (params.toLng) searchParams.append('toLng', params.toLng.toString());
-    if (params.fromProvince) searchParams.append('fromProvince', params.fromProvince);
-    if (params.toProvince) searchParams.append('toProvince', params.toProvince);
-    if (params.maxResults) searchParams.append('maxResults', params.maxResults.toString());
-    if (params.minCompatibility) searchParams.append('minCompatibility', params.minCompatibility.toString());
-    if (params.useUniversal !== undefined) searchParams.append('useUniversal', params.useUniversal.toString());
-    
-    return this.request<any>('GET', `/rides/hybrid/search?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Busca entre cidades
-  async searchBetweenCities(cityFrom: string, cityTo: string, radiusKm?: number): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('city_from', cityFrom);
-    searchParams.append('city_to', cityTo);
-    if (radiusKm) searchParams.append('radius_km', radiusKm.toString());
-    
-    return this.request<any>('GET', `/rides/between-cities?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Busca por província
-  async searchByProvince(fromProvince: string, toProvince: string, status?: string, maxResults?: number): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('fromProvince', fromProvince);
-    searchParams.append('toProvince', toProvince);
-    if (status) searchParams.append('status', status);
-    if (maxResults) searchParams.append('maxResults', maxResults.toString());
-    
-    return this.request<any>('GET', `/rides/province/search?${searchParams.toString()}`);
-  }
-
-  // ✅ NOVO: Detecção geográfica
-  async detectProvince(from: string, to: string): Promise<any> {
-    const searchParams = new URLSearchParams();
-    searchParams.append('from', from);
-    searchParams.append('to', to);
-    
-    return this.request<any>('GET', `/rides/geographic/detect?${searchParams.toString()}`);
   }
 
   // ===== BOOKINGS API =====

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { format, isSameDay, parseISO, differenceInDays } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -8,62 +9,101 @@ import { Label } from "@/shared/components/ui/label";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { Badge } from "@/shared/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
-import { ArrowLeft, Phone, Mail, CreditCard, User, Star, MapPin, Navigation, RefreshCw, XCircle } from "lucide-react";
+import { ArrowLeft, Phone, Mail, CreditCard, User, Star, MapPin, Navigation, RefreshCw, XCircle, Car, Users, Clock, MapPinned } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import PageHeader from "@/shared/components/PageHeader";
 import MobileNavigation from "@/shared/components/MobileNavigation";
 import useAuth from "@/shared/hooks/useAuth";
 
-// ✅✅✅ CORREÇÃO: IMPORTAR FUNÇÃO DE NORMALIZAÇÃO DO API SERVICE
-import { normalizeRide, formatPrice, type Ride } from "@/services/api";
+// ✅✅✅ CORREÇÃO: IMPORTAR DA API CLIENT EM VEZ DO TYPES
+import { clientRidesApi, type Ride } from "@/api/client/rides";
+import { formatPrice } from "@/services/api";
 
-// ✅✅✅ CORREÇÃO: INTERFACE COMPATÍVEL COM A Ride DO SERVIÇO API
-export interface RideFrontend {
-  // ✅ Campos básicos da interface Ride do serviço
-  id: string;
-  driverId: string;
-  driverName: string;
-  driverRating: number;
-  fromLocation: string;
-  toLocation: string;
-  fromCity: string;
-  toCity: string;
-  fromAddress: string;
-  toAddress: string;
-  fromProvince?: string;
-  toProvince?: string;
-  departureDate: string;
+// ✅✅✅ CORREÇÃO CRÍTICA: Interface local COMPATÍVEL com a Ride original
+interface RideWithMatch {
+  // ✅ Campos obrigatórios da interface Ride
+  ride_id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_rating: number;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_type: string;
+  vehicle_plate: string;
+  vehicle_color: string;
+  max_passengers: number;
+  from_city: string;
+  to_city: string;
+  from_lat: number;
+  from_lng: number;
+  to_lat: number;
+  to_lng: number;
+  departuredate: string;
+  availableseats: number;
+  priceperseat: number;
+  distance_from_city_km: number;
+  distance_to_city_km: number;
+  
+  // ✅ Campos opcionais da interface Ride
+  from_province?: string;
+  to_province?: string;
+  match_type?: string;
+  direction_score?: number;
+  
+  // ✅ Campos adicionais para compatibilidade com frontend
+  id: string; // ✅ ALIAS para ride_id
+  driverId: string; // ✅ ALIAS para driver_id
+  driverName: string; // ✅ ALIAS para driver_name
+  driverRating: number; // ✅ ALIAS para driver_rating
+  fromLocation: string; // ✅ ALIAS para from_city
+  toLocation: string; // ✅ ALIAS para to_city
+  fromAddress: string; // ✅ ALIAS para from_city
+  toAddress: string; // ✅ ALIAS para to_city
+  fromCity: string; // ✅ ALIAS para from_city
+  toCity: string; // ✅ ALIAS para to_city
+  departureDate: string; // ✅ ALIAS para departuredate
   departureTime: string;
-  price: number;
-  pricePerSeat: number;
-  availableSeats: number;
-  maxPassengers: number;
-  vehicle: string;
-  vehicleType: string;
+  price: number; // ✅ ALIAS para priceperseat
+  pricePerSeat: number; // ✅ ALIAS para priceperseat
+  availableSeats: number; // ✅ ALIAS para availableseats
+  maxPassengers: number; // ✅ ALIAS para max_passengers
+  vehicle: string; // ✅ ALIAS para vehicle_type
+  vehicleType: string; // ✅ ALIAS para vehicle_type
+  vehicleMake: string; // ✅ ALIAS para vehicle_make
+  vehicleModel: string; // ✅ ALIAS para vehicle_model
+  vehiclePlate: string; // ✅ ALIAS para vehicle_plate
+  vehicleColor: string; // ✅ ALIAS para vehicle_color
   status: string;
   type: string;
   
-  // ✅ Campos opcionais que podem vir do backend
+  // ✅ Campos de matching
+  route_compatibility?: number;
+  matchScore?: number;
+  dist_from_user_km?: number;
+  
+  // ✅ Campos adicionais
   currentPassengers?: number;
-  vehicleInfo?: any;
+  vehicleInfo?: string;
   description?: string;
   vehiclePhoto?: string;
-  estimatedDuration?: number;
-  estimatedDistance?: number;
+  estimatedDuration?: string;
+  estimatedDistance?: string;
   allowNegotiation?: boolean;
   allowPickupEnRoute?: boolean;
   isVerifiedDriver?: boolean;
-  driver?: {
-    firstName?: string;
-    lastName?: string;
-    rating?: number;
-    isVerified?: boolean;
-  };
-  from_lat?: number;
-  from_lng?: number;
-  to_lat?: number;
-  to_lng?: number;
+  driver?: any;
+  fromLatitude?: number;
+  fromLongitude?: number;
+  toLatitude?: number;
+  toLongitude?: number;
   vehicleFeatures?: string[];
+  
+  // ✅ Campos formatados
+  departureDateFormatted?: string;
+  departureTimeFormatted?: string;
+  departureDateTimeFormatted?: string;
+  departureLongDate?: string;
+  departureWeekday?: string;
 }
 
 // ✅ CORREÇÃO: Interface MatchStats atualizada
@@ -75,20 +115,8 @@ export interface MatchStats {
   same_direction?: number;
   potential_match?: number;
   smart_matches?: number;
+  match_types?: Record<string, number>;
 }
-
-// ✅ CORREÇÃO: Interface para informações de matching
-export interface RideMatchInfo {
-  match_type?: 'exact_match' | 'same_segment' | 'covers_route' | 'nearby' | 'same_direction' | 'smart_match' | 'potential_match' | 'smart_final_direct';
-  route_compatibility?: number;
-  matchScore?: number;
-  dist_from_user_km?: number;
-  distance_from_city_km?: number;
-  distance_to_city_km?: number;
-}
-
-// ✅✅✅ CORREÇÃO: TIPO COMBINADO PARA RIDE COM MATCHING
-type RideWithMatch = RideFrontend & RideMatchInfo;
 
 // ✅ INTERFACE EXTENDIDA PARA PARÂMETROS DE BUSCA COM COORDENADAS
 interface RideSearchParamsExtended {
@@ -122,7 +150,88 @@ interface BookingRequest {
   notes: string;
 }
 
-// ✅✅✅ CORREÇÃO: FUNÇÃO DE MAPEAMENTO COMPATÍVEL COM A Ride DO SERVIÇO
+// ✅✅✅ FUNÇÕES DE DATA - NOVAS
+const formatDateForDisplay = (dateString: string) => {
+  try {
+    if (!dateString) return 'Data não disponível';
+    
+    const date = parseISO(dateString);
+    if (isNaN(date.getTime())) return 'Data inválida';
+    
+    return format(date, 'dd/MM/yyyy, HH:mm');
+  } catch (error) {
+    console.error('❌ Erro ao formatar data:', error);
+    return 'Erro na data';
+  }
+};
+
+const isRideDateExact = (rideDate: string, searchDate: string) => {
+  if (!rideDate || !searchDate) return false;
+  
+  try {
+    const rideDateObj = parseISO(rideDate);
+    const searchDateObj = parseISO(searchDate);
+    return isSameDay(rideDateObj, searchDateObj);
+  } catch (error) {
+    console.error('❌ Erro ao comparar datas:', error);
+    return false;
+  }
+};
+
+const getDateDifference = (rideDate: string, searchDate: string) => {
+  if (!rideDate || !searchDate) return 0;
+  
+  try {
+    const rideDateObj = parseISO(rideDate);
+    const searchDateObj = parseISO(searchDate);
+    return Math.abs(differenceInDays(rideDateObj, searchDateObj));
+  } catch (error) {
+    console.error('❌ Erro ao calcular diferença de datas:', error);
+    return 0;
+  }
+};
+
+// ✅ COMPONENTE: Banner de aviso para datas diferentes
+const DateWarningBanner = ({ searchDate, hasExactDateRides }: { 
+  searchDate: string; 
+  hasExactDateRides: boolean;
+}) => {
+  if (hasExactDateRides) return null;
+  
+  try {
+    const searchDateObj = parseISO(searchDate);
+    const formattedSearchDate = format(searchDateObj, 'dd/MM/yyyy');
+    
+    return (
+      <div className="date-warning-banner" style={{
+        background: 'linear-gradient(135deg, #fff3cd, #ffeaa7)',
+        border: '2px solid #ffd54f',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px'
+      }}>
+        <div style={{ fontSize: '20px' }}>⚠️</div>
+        <div>
+          <strong style={{ color: '#856404', display: 'block', marginBottom: '4px' }}>
+            Rides em datas diferentes
+          </strong>
+          <p style={{ color: '#856404', margin: 0, fontSize: '14px' }}>
+            Não encontramos rides na data {formattedSearchDate}, 
+            mas temos essas opções em outras datas próximas:
+          </p>
+        </div>
+      </div>
+    );
+  } catch (error) {
+    console.error('❌ Erro no DateWarningBanner:', error);
+    return null;
+  }
+};
+
+// ✅✅✅ CORREÇÃO: FUNÇÃO DE MAPEAMENTO COMPLETAMENTE CORRIGIDA
 const mapRidesToFrontend = (rides: any[]): RideWithMatch[] => {
   console.log('🔄 [MAPEAMENTO-LOCAL] Mapeando rides para frontend:', rides?.length || 0);
   
@@ -133,83 +242,169 @@ const mapRidesToFrontend = (rides: any[]): RideWithMatch[] => {
 
   return rides.map((ride, index) => {
     console.log(`🚗 [MAPEAMENTO-${index}] Processando ride:`, {
-      id: ride.id,
-      driverName: ride.driverName,
-      price: ride.price,
-      fromLocation: ride.fromLocation,
-      toLocation: ride.toLocation
+      id: ride.ride_id || ride.id,
+      driverName: ride.driver_name || ride.driverName,
+      match_type: ride.match_type,
+      direction_score: ride.direction_score
     });
 
-    // ✅✅✅ CORREÇÃO: Usar normalizeRide do serviço API para consistência
-    const normalizedRide = normalizeRide(ride);
-    
-    // ✅✅✅ CORREÇÃO: Extrair campos adicionais do ride original antes da normalização
-    const additionalFields = {
-      currentPassengers: ride.currentPassengers || ride.current_passengers || 0,
-      vehicleInfo: ride.vehicleInfo,
-      description: ride.description,
-      vehiclePhoto: ride.vehiclePhoto || ride.vehicle_photo,
-      estimatedDuration: ride.estimatedDuration || ride.estimated_duration,
-      estimatedDistance: ride.estimatedDistance || ride.estimated_distance,
-      allowNegotiation: ride.allowNegotiation,
-      allowPickupEnRoute: ride.allowPickupEnRoute,
-      isVerifiedDriver: ride.isVerifiedDriver,
-      driver: ride.driver,
-      from_lat: ride.from_lat || ride.fromLat,
-      from_lng: ride.from_lng || ride.fromLng,
-      to_lat: ride.to_lat || ride.toLat,
-      to_lng: ride.to_lng || ride.toLng,
-      vehicleFeatures: ride.vehicleFeatures,
-      
-      // Campos de matching
-      match_type: ride.match_type || ride.matchType,
-      route_compatibility: ride.route_compatibility || ride.matchScore || 0,
-      matchScore: ride.matchScore || ride.route_compatibility || 0,
-      dist_from_user_km: ride.dist_from_user_km || ride.distanceFromUserKm,
-      distance_from_city_km: ride.distance_from_city_km || ride.distanceFromCityKm,
-      distance_to_city_km: ride.distance_to_city_km || ride.distanceToCityKm,
-    };
-
-    // ✅✅✅ CORREÇÃO: Criar objeto compatível com RideFrontend
+    // ✅✅✅ CORREÇÃO: Mapeamento COMPATÍVEL com ambas as interfaces
     const mappedRide: RideWithMatch = {
-      // ✅ Campos básicos da interface Ride
-      id: normalizedRide.id || '',
-      driverId: normalizedRide.driverId || '',
-      driverName: normalizedRide.driverName || 'Motorista não disponível',
-      driverRating: normalizedRide.driverRating || 4.5,
-      fromLocation: normalizedRide.fromLocation || normalizedRide.fromCity || 'Localização não disponível',
-      toLocation: normalizedRide.toLocation || normalizedRide.toCity || 'Localização não disponível',
-      fromCity: normalizedRide.fromCity || 'Cidade não disponível',
-      toCity: normalizedRide.toCity || 'Cidade não disponível',
-      fromAddress: normalizedRide.fromAddress || normalizedRide.fromLocation || 'Endereço não disponível',
-      toAddress: normalizedRide.toAddress || normalizedRide.toLocation || 'Endereço não disponível',
-      fromProvince: normalizedRide.fromProvince || '',
-      toProvince: normalizedRide.toProvince || '',
-      departureDate: normalizedRide.departureDate || '',
-      departureTime: normalizedRide.departureTime || '',
-      price: normalizedRide.price || 0,
-      pricePerSeat: normalizedRide.pricePerSeat || normalizedRide.price || 0,
-      availableSeats: normalizedRide.availableSeats || 0,
-      maxPassengers: normalizedRide.maxPassengers || 4,
-      vehicle: normalizedRide.vehicle || 'Veículo não disponível',
-      vehicleType: normalizedRide.vehicleType || 'economy',
-      status: normalizedRide.status || 'available',
-      type: normalizedRide.type || 'one-way',
+      // ✅ Campos ORIGINAIS da interface Ride (obrigatórios)
+      ride_id: ride.ride_id || ride.id || '',
+      driver_id: ride.driver_id || ride.driverId || '',
+      driver_name: ride.driver_name || ride.driverName || 'Motorista',
+      driver_rating: Number(ride.driver_rating ?? ride.driverRating ?? 4.5),
+      vehicle_make: ride.vehicle_make || ride.vehicleMake || '',
+      vehicle_model: ride.vehicle_model || ride.vehicleModel || '',
+      vehicle_type: ride.vehicle_type || ride.vehicleType || 'economy',
+      vehicle_plate: ride.vehicle_plate || ride.vehiclePlate || '',
+      vehicle_color: ride.vehicle_color || ride.vehicleColor || '',
+      max_passengers: Number(ride.max_passengers ?? ride.maxPassengers ?? 4),
+      from_city: ride.from_city || ride.fromCity || '',
+      to_city: ride.to_city || ride.toCity || '',
+      from_lat: Number(ride.from_lat ?? ride.fromLat ?? 0),
+      from_lng: Number(ride.from_lng ?? ride.fromLng ?? 0),
+      to_lat: Number(ride.to_lat ?? ride.toLat ?? 0),
+      to_lng: Number(ride.to_lng ?? ride.toLng ?? 0),
+      departuredate: ride.departuredate || ride.departureDate || '',
+      availableseats: Number(ride.availableseats ?? ride.availableSeats ?? 0),
+      priceperseat: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+      distance_from_city_km: Number(ride.distance_from_city_km ?? ride.distanceFromCityKm ?? 0),
+      distance_to_city_km: Number(ride.distance_to_city_km ?? ride.distanceToCityKm ?? 0),
       
-      // ✅ Campos adicionais (opcionais)
-      ...additionalFields
+      // ✅ Campos opcionais da interface Ride
+      from_province: ride.from_province || ride.fromProvince,
+      to_province: ride.to_province || ride.toProvince,
+      match_type: ride.match_type || 'traditional',
+      direction_score: Number(ride.direction_score ?? ride.route_compatibility ?? ride.matchScore ?? 0),
+      
+      // ✅✅✅ CORREÇÃO CRÍTICA: ALIAS para compatibilidade com frontend
+      id: ride.ride_id || ride.id || '',
+      driverId: ride.driver_id || ride.driverId || '',
+      driverName: ride.driver_name || ride.driverName || 'Motorista',
+      driverRating: Number(ride.driver_rating ?? ride.driverRating ?? 4.5),
+      fromLocation: ride.from_city || ride.fromCity || '',
+      toLocation: ride.to_city || ride.toCity || '',
+      fromAddress: ride.from_city || ride.fromCity || '',
+      toAddress: ride.to_city || ride.toCity || '',
+      fromCity: ride.from_city || ride.fromCity || '',
+      toCity: ride.to_city || ride.toCity || '',
+      departureDate: ride.departuredate || ride.departureDate || '',
+      departureTime: ride.departureTime || '',
+      price: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+      pricePerSeat: Number(ride.priceperseat ?? ride.pricePerSeat ?? 0),
+      availableSeats: Number(ride.availableseats ?? ride.availableSeats ?? 0),
+      maxPassengers: Number(ride.max_passengers ?? ride.maxPassengers ?? 4),
+      vehicle: ride.vehicle_type || ride.vehicleType || 'Veículo',
+      vehicleType: ride.vehicle_type || ride.vehicleType || 'economy',
+      vehicleMake: ride.vehicle_make || ride.vehicleMake || '',
+      vehicleModel: ride.vehicle_model || ride.vehicleModel || '',
+      vehiclePlate: ride.vehicle_plate || ride.vehiclePlate || '',
+      vehicleColor: ride.vehicle_color || ride.vehicleColor || '',
+      status: ride.status || 'available',
+      type: ride.type || 'one-way',
+      
+      // ✅ Campos de compatibilidade
+      route_compatibility: Number(ride.direction_score ?? ride.route_compatibility ?? ride.matchScore ?? 0),
+      matchScore: Number(ride.direction_score ?? ride.route_compatibility ?? ride.matchScore ?? 0),
+      dist_from_user_km: Number(ride.distance_from_city_km ?? ride.distanceFromCityKm ?? 0),
+      
+      // ✅ Campos de coordenadas (alias)
+      fromLatitude: Number(ride.from_lat ?? ride.fromLat ?? 0),
+      fromLongitude: Number(ride.from_lng ?? ride.fromLng ?? 0),
+      toLatitude: Number(ride.to_lat ?? ride.toLat ?? 0),
+      toLongitude: Number(ride.to_lng ?? ride.toLng ?? 0),
+      
+      // ✅ Campos formatados
+      departureDateFormatted: '',
+      departureTimeFormatted: '',
+      departureDateTimeFormatted: '',
+      departureLongDate: '',
+      departureWeekday: '',
+      
+      // ✅ Campos opcionais
+      currentPassengers: ride.currentPassengers || 0,
+      vehicleInfo: ride.vehicleInfo || `${ride.vehicle_make || ''} ${ride.vehicle_model || ''}`.trim(),
+      description: ride.description,
+      vehiclePhoto: ride.vehiclePhoto,
+      estimatedDuration: ride.estimatedDuration,
+      estimatedDistance: ride.estimatedDistance,
+      allowNegotiation: ride.allowNegotiation || false,
+      allowPickupEnRoute: ride.allowPickupEnRoute || false,
+      isVerifiedDriver: ride.isVerifiedDriver || false,
+      driver: ride.driver,
+      vehicleFeatures: ride.vehicleFeatures || [],
     };
 
     console.log(`✅ [MAPEAMENTO-${index}] Ride mapeado:`, {
       id: mappedRide.id,
       driverName: mappedRide.driverName,
-      price: mappedRide.price,
       match_type: mappedRide.match_type,
-      route_compatibility: mappedRide.route_compatibility
+      direction_score: mappedRide.direction_score,
+      distance: mappedRide.distance_from_city_km
     });
 
     return mappedRide;
   });
+};
+
+// ✅✅✅ CORREÇÃO: BUSCA USANDO A NOVA API CLIENT
+const executeSearch = async (searchParams: RideSearchParamsExtended) => {
+  try {
+    console.log('🎯 Iniciando busca com API CLIENT...', searchParams);
+    
+    // ✅✅✅ CORREÇÃO: Usar a nova API client em vez de fetch direto
+    const searchResults = await clientRidesApi.search({
+      from: searchParams.from,
+      to: searchParams.to,
+      date: searchParams.date,
+      passengers: searchParams.passengers,
+      radiusKm: searchParams.radius || 100,
+      smartSearch: true // ✅ Sempre usar busca inteligente
+    });
+
+    console.log('✅ Resultados da API:', {
+      success: searchResults.success,
+      ridesCount: searchResults.rides?.length || 0,
+      smartSearch: searchResults.smart_search,
+      matchStats: searchResults.matchStats
+    });
+
+    if (searchResults.success && searchResults.rides) {
+      const mappedRides = mapRidesToFrontend(searchResults.rides);
+      
+      return {
+        success: true,
+        rides: mappedRides,
+        searchType: 'smart',
+        total: mappedRides.length,
+        matchStats: searchResults.matchStats
+      };
+    }
+
+    // ✅ SE NÃO ENCONTRAR, RETORNAR VAZIO
+    console.log('ℹ️ Nenhum resultado encontrado na busca');
+    return {
+      success: true,
+      rides: [],
+      searchType: 'smart',
+      total: 0,
+      message: 'Nenhuma viagem encontrada para os critérios especificados'
+    };
+
+  } catch (error) {
+    console.error('❌ Erro na busca:', error);
+    
+    // ✅ EM CASO DE ERRO, RETORNAR VAZIO COM MENSAGEM
+    return {
+      success: false,
+      rides: [],
+      searchType: 'error',
+      total: 0,
+      message: 'Erro temporário na busca. Tente novamente.'
+    };
+  }
 };
 
 export default function RideSearchPage() {
@@ -236,8 +431,6 @@ export default function RideSearchPage() {
     radius: 100 // ✅ CORREÇÃO: Raio padrão aumentado para 100km
   });
 
-  // ✅ ESTADO PARA INDICAR BUSCA INTELIGENTE
-  const [isSmartSearch, setIsSmartSearch] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // ✅✅✅ CORREÇÃO CRÍTICA: Nova função para ler parâmetros da URL
@@ -333,218 +526,57 @@ export default function RideSearchPage() {
     setLocation('/');
   };
 
-  // ✅✅✅ CORREÇÃO CRÍTICA: Função fetchSmartRides SIMPLIFICADA
-  const fetchSmartRides = async (params: RideSearchParamsExtended): Promise<RideWithMatch[]> => {
-    try {
-      console.log('🧠 [SMART-FINAL] Buscando com parâmetros:', {
-        from: params.from,
-        to: params.to,
-        date: params.date
-      });
-
-      // ✅✅✅ CORREÇÃO CRÍTICA: Usar parâmetros PASSADOS, não searchParams do estado
-      const smartParams = new URLSearchParams({
-        from: params.from || '',
-        to: params.to || '',
-        date: params.date || '',
-        passengers: params.passengers.toString(),
-        radiusKm: (params.radius || 100).toString()
-      });
-
-      console.log('🔍 [DEBUG-SMART-PARAMS] URL que será enviada:', `/api/rides/smart/search?${smartParams.toString()}`);
-
-      // ✅✅✅ CORREÇÃO CRÍTICA: Usar endpoint CORRETO - /api/rides/smart/search
-      const response = await fetch(`/api/rides/smart/search?${smartParams.toString()}`);
-      
-      if (!response.ok) {
-        console.error('❌ Erro na resposta:', response.status, response.statusText);
-        throw new Error("Erro ao buscar rotas inteligentes");
-      }
-      
-      const data = await response.json();
-      
-      console.log('✅ Resposta smart final:', {
-        success: data.success,
-        totalRides: data.data?.rides?.length || data.results?.length || 0,
-        smartSearch: data.smart_search,
-        matchStats: data.data?.stats,
-        searchMetadata: data.metadata
-      });
-
-      // ✅ CORREÇÃO: Processar resposta específica da função smart final
-      if (data.success) {
-        const ridesArray = Array.isArray(data.data?.rides) ? data.data.rides : 
-                          Array.isArray(data.results) ? data.results : 
-                          Array.isArray(data.rides) ? data.rides : [];
-        
-        // ✅✅✅ CORREÇÃO CRÍTICA: USAR mapRidesToFrontend LOCAL
-        console.log('🔄 [MAPEAMENTO-AUTO] Aplicando mapRidesToFrontend...');
-        const mappedRides: RideWithMatch[] = mapRidesToFrontend(ridesArray);
-        
-        console.log('🎯 Rides mapeados do smart final:', mappedRides.length);
-        
-        // ✅ LOG DETALHADO DOS MATCHES ENCONTRADOS
-        if (mappedRides.length > 0) {
-          const exactMatches = mappedRides.filter(r => r.match_type === 'exact_match').length;
-          const smartMatches = mappedRides.filter(r => r.match_type && r.match_type !== 'exact_match').length;
-          
-          console.log(`📊 Estatísticas Smart: ${exactMatches} exatos, ${smartMatches} inteligentes`);
-        }
-        
-        return mappedRides;
-      }
-      
-      return [];
-      
-    } catch (error) {
-      console.error('❌ Erro na busca smart final:', error);
-      // Fallback para busca tradicional SEGURA
-      return await fetchTraditionalRidesSafely(params);
-    }
-  };
-
-  // ✅✅✅ CORREÇÃO: fetchTraditionalRidesSafely também recebe parâmetros
-  const fetchTraditionalRidesSafely = async (params: RideSearchParamsExtended): Promise<RideWithMatch[]> => {
-    // Verificação rigorosa antes de fazer a requisição
-    if (!params.from || !params.to) {
-      console.warn('⚠️ [TRADITIONAL-SAFE] Parâmetros insuficientes, pulando busca tradicional');
-      return [];
-    }
-
-    try {
-      console.log('🔍 [TRADITIONAL-SECONDARY] Buscando tradicionalmente...');
-      
-      const queryParams = new URLSearchParams({
-        from: params.from,
-        to: params.to,
-        passengers: params.passengers.toString(),
-        date: params.date || '',
-        radiusKm: (params.radius || 150).toString()
-      });
-
-      const response = await fetch(`/api/rides/traditional/search?${queryParams.toString()}`);
-      
-      if (!response.ok) {
-        console.warn('⚠️ [TRADITIONAL-SECONDARY] Busca tradicional falhou:', response.status);
-        return [];
-      }
-      
-      const data = await response.json();
-      console.log('✅ [TRADITIONAL-SECONDARY] Resultados:', data.length);
-      
-      // ✅✅✅ CORREÇÃO: USAR mapRidesToFrontend local para resultados tradicionais
-      return mapRidesToFrontend(data);
-      
-    } catch (error) {
-      console.error('❌ [TRADITIONAL-SECONDARY] Erro seguro:', error);
-      return [];
-    }
-  };
-
-  // ✅✅✅ CORREÇÃO: Função handleSmartSearch simplificada
-  const handleSmartSearch = async () => {
-    console.log('🧠 [HANDLE-SMART-SEARCH] Iniciando busca...');
-    
-    // ✅ Usar searchParams atual + fallback da URL se necessário
-    const currentFrom = searchParams.from;
-    const currentTo = searchParams.to;
-    
-    console.log('🔍 [HANDLE-SEARCH-STATE] Estado atual:', {
-      currentFrom,
-      currentTo,
-      hasFrom: !!currentFrom,
-      hasTo: !!currentTo
-    });
-
-    // ✅ Se estado não tem dados, buscar da URL diretamente
-    if (!currentFrom || !currentTo) {
-      console.log('🔄 [HANDLE-SEARCH-FALLBACK] Buscando parâmetros da URL...');
-      const urlParams = getSearchParamsFromURL();
-      
-      if (urlParams.from && urlParams.to) {
-        console.log('✅ [HANDLE-SEARCH-URL-SUCCESS] Usando URL:', {
-          from: urlParams.from,
-          to: urlParams.to
-        });
-        
-        // ✅ Atualizar estado e buscar
-        setSearchParams(prev => ({ ...prev, ...urlParams }));
-        await executeSearchWithParams({ ...searchParams, ...urlParams } as RideSearchParamsExtended);
-        return;
-      }
-    }
-
-    // ✅ Se temos parâmetros, executar busca normal
-    if (currentFrom && currentTo) {
-      await executeSearchWithParams(searchParams);
-    } else {
-      console.error('❌ [HANDLE-SEARCH-CRITICAL] Nenhum parâmetro disponível');
-      toast({
-        title: "Erro nos parâmetros",
-        description: "Não foi possível obter origem e destino para a busca.",
-        variant: "destructive",
-        duration: 4000,
-      });
-    }
-  };
-
   // ✅✅✅ CORREÇÃO: executeSearchWithParams recebe parâmetros explicitamente
   const executeSearchWithParams = async (params: RideSearchParamsExtended) => {
     console.log('🚀 [EXECUTE-SEARCH] Executando busca com parâmetros:', {
       from: params.from,
       to: params.to,
-      date: params.date,
-      hasCompleteCoordinates: !!(params.fromLat && params.fromLng && params.toLat && params.toLng)
+      date: params.date
     });
 
     setIsLoading(true);
     
     try {
-      let searchResults: RideWithMatch[] = [];
-
-      // ✅ PRIMEIRO: Busca Inteligente (Principal)
-      console.log('🧠 [PRIMARY-SMART] Buscando com smart final...');
-      searchResults = await fetchSmartRides(params); // ✅ Passar params explicitamente
-      console.log('🎯 [PRIMARY-SMART-RESULTS] Resultados smart:', searchResults.length);
+      // ✅✅✅ USAR NOVA API CLIENT
+      const searchResults = await executeSearch(params);
       
-      // ✅ SECUNDÁRIO: Se inteligente não encontrou nada, tenta tradicional APENAS se válido
-      if (searchResults.length === 0) {
-        console.log('🔍 [SECONDARY-TRADITIONAL] Nenhum resultado inteligente, tentando tradicional...');
-        searchResults = await fetchTraditionalRidesSafely(params); // ✅ Passar params explicitamente
-        console.log('📊 [SECONDARY-TRADITIONAL-RESULTS] Resultados tradicionais:', searchResults.length);
-      }
+      console.log('🎯 [SMART-SEARCH-RESULTS] Resultados:', searchResults.rides.length);
       
       // ✅✅✅ CORREÇÃO: Exibir estatísticas de matching
-      if (searchResults.length > 0) {
-        const smartMatches = searchResults.filter(r => r.match_type).length;
-        const exactMatches = searchResults.filter(r => r.match_type === 'exact_match').length;
-        const similarMatches = searchResults.filter(r => 
-          r.match_type === 'same_segment' || r.match_type === 'same_direction'
-        ).length;
+      if (searchResults.rides.length > 0) {
+        const matchTypes = searchResults.rides.reduce((acc, ride) => {
+          acc[ride.match_type || 'traditional'] = (acc[ride.match_type || 'traditional'] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
         
-        console.log(`📊 Estatísticas: ${exactMatches} exatos, ${similarMatches} similares, ${smartMatches} smart no total`);
+        const exactMatches = matchTypes['exact_match'] || 0;
+        const smartMatches = Object.keys(matchTypes).filter(key => 
+          key !== 'traditional'
+        ).reduce((sum, key) => sum + (matchTypes[key] || 0), 0);
+        
+        console.log(`📊 Estatísticas:`, matchTypes);
         
         // ✅ FEEDBACK POSITIVO PARA BUSCA INTELIGENTE
         toast({
-          title: `🎯 ${searchResults.length} viagens encontradas`,
-          description: `${exactMatches} matchs exatos + ${similarMatches} rotas similares`,
+          title: `🎯 ${searchResults.rides.length} viagens encontradas`,
+          description: `${exactMatches} matchs exatos + ${smartMatches} rotas inteligentes`,
           variant: "default",
           duration: 4000,
         });
       }
 
       // ✅✅✅ CORREÇÃO: Usar os rides mapeados
-      setRides(searchResults);
+      setRides(searchResults.rides);
       
       // ✅ ATUALIZAR SESSION STORAGE
       const searchState: LocationState = {
-        rides: searchResults,
+        rides: searchResults.rides,
         searchParams: params, // ✅ Usar params passados
         timestamp: Date.now()
       };
       sessionStorage.setItem('lastSearchResults', JSON.stringify(searchState));
 
-      if (searchResults.length === 0) {
+      if (searchResults.rides.length === 0) {
         toast({
           title: "Nenhuma viagem encontrada",
           description: "Tente aumentar o raio de busca para encontrar rotas similares",
@@ -552,7 +584,7 @@ export default function RideSearchPage() {
           duration: 3000,
         });
       } else {
-        console.log('✅ [SEARCH-SUCCESS] Busca concluída:', searchResults.length, 'resultados');
+        console.log('✅ [SEARCH-SUCCESS] Busca concluída:', searchResults.rides.length, 'resultados');
       }
 
     } catch (error) {
@@ -570,28 +602,21 @@ export default function RideSearchPage() {
 
   // ✅ NOVA FUNÇÃO: Recarregar resultados
   const handleRefreshResults = () => {
-    handleSmartSearch();
+    executeSearchWithParams(searchParams);
   };
 
   // 🆕 Função para obter nome do motorista (compatibilidade) - CORRIGIDA
-  const getDriverName = (ride: RideFrontend): string => {
-    if (ride.driver && typeof ride.driver === 'object') {
-      // ✅ CORREÇÃO: Verificar se driver é um objeto
-      return `${ride.driver.firstName ?? ''} ${ride.driver.lastName ?? ''}`.trim() || 'Motorista';
-    }
-    return ride.driverName || 'Motorista';
+  const getDriverName = (ride: RideWithMatch): string => {
+    return ride.driver_name || ride.driverName || 'Motorista';
   };
 
   // 🆕 Função para obter rating do motorista (compatibilidade) - CORRIGIDA
-  const getDriverRating = (ride: RideFrontend): string => {
-    if (ride.driver && typeof ride.driver === 'object' && ride.driver.rating !== undefined) {
-      return ride.driver.rating.toString();
-    }
-    return ride.driverRating?.toString() || '4.5';
+  const getDriverRating = (ride: RideWithMatch): string => {
+    return (ride.driver_rating || ride.driverRating || 4.5).toFixed(1);
   };
 
   // ✅✅✅ CORREÇÃO COMPLETA: Função getAvailableSeats robusta
-  const getAvailableSeats = (ride: RideFrontend): number => {
+  const getAvailableSeats = (ride: RideWithMatch): number => {
     if (!ride) {
       console.warn('⚠️ [SEATS] Ride undefined');
       return 0;
@@ -600,16 +625,15 @@ export default function RideSearchPage() {
     console.log('🔍 [SEATS] Analisando assentos do ride:', {
       id: ride.id,
       availableSeats: ride.availableSeats,
-      maxPassengers: ride.maxPassengers,
-      currentPassengers: ride.currentPassengers
+      maxPassengers: ride.maxPassengers
     });
 
     // ✅ CORREÇÃO: Usar availableSeats diretamente
-    let availableSeats = Number(ride.availableSeats || 0);
+    let availableSeats = Number(ride.availableseats || ride.availableSeats || 0);
     
     // ✅ CORREÇÃO: Se availableSeats for 0, tentar calcular a partir de maxPassengers
     if (availableSeats === 0) {
-      const maxPassengers = Number(ride.maxPassengers || 0);
+      const maxPassengers = Number(ride.max_passengers || ride.maxPassengers || 0);
       const currentPassengers = Number(ride.currentPassengers || 0);
       
       if (maxPassengers > 0) {
@@ -635,45 +659,55 @@ export default function RideSearchPage() {
   // ✅ CORREÇÃO: Função tipada para obter tipo de match para exibição
   const getMatchTypeDisplay = (ride: RideWithMatch): { text: string; color: string } => {
     const matchType = ride.match_type;
+    const directionScore = ride.direction_score || 0;
     
     switch (matchType) {
       case 'exact_match':
-        return { text: '🎯 Match Exato', color: 'bg-green-100 text-green-800' };
-      case 'same_segment':
-      case 'covers_route':
-        return { text: '🛣️ Mesmo Trecho', color: 'bg-blue-100 text-blue-800' };
+        return { text: `🎯 Exato (${directionScore}pts)`, color: 'bg-green-100 text-green-800 border-green-200' };
+      case 'exact_province':
+        return { text: `🏛️ Mesma Província (${directionScore}pts)`, color: 'bg-blue-100 text-blue-800 border-blue-200' };
+      case 'from_correct_province_to':
+        return { text: `📍 Origem Correta (${directionScore}pts)`, color: 'bg-teal-100 text-teal-800 border-teal-200' };
+      case 'to_correct_province_from':
+        return { text: `🏁 Destino Correto (${directionScore}pts)`, color: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
+      case 'partial_from':
+        return { text: `🧭 Origem Similar (${directionScore}pts)`, color: 'bg-orange-100 text-orange-800 border-orange-200' };
+      case 'partial_to':
+        return { text: `🧭 Destino Similar (${directionScore}pts)`, color: 'bg-amber-100 text-amber-800 border-amber-200' };
       case 'nearby':
-        return { text: '📍 Próximo', color: 'bg-purple-100 text-purple-800' };
-      case 'same_direction':
-        return { text: '🧭 Mesma Direção', color: 'bg-orange-100 text-orange-800' };
+        return { text: `📍 Próximo (${directionScore}pts)`, color: 'bg-purple-100 text-purple-800 border-purple-200' };
       case 'smart_match':
       case 'smart_final_direct':
-        return { text: '🧠 Inteligente', color: 'bg-indigo-100 text-indigo-800' };
+        return { text: `🧠 Inteligente (${directionScore}pts)`, color: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
       case 'potential_match':
-        return { text: '🤝 Compatível', color: 'bg-yellow-100 text-yellow-800' };
+        return { text: `🤝 Compatível (${directionScore}pts)`, color: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
       default:
-        return { text: '🔍 Tradicional', color: 'bg-gray-100 text-gray-800' };
+        return { text: `🔍 Tradicional (${directionScore}pts)`, color: 'bg-gray-100 text-gray-800 border-gray-200' };
     }
   };
 
   // ✅ CORREÇÃO: Função tipada para obter score de compatibilidade
   const getCompatibilityScore = (ride: RideWithMatch): number => {
-    return ride.route_compatibility || ride.matchScore || 0;
+    return ride.direction_score || ride.route_compatibility || ride.matchScore || 0;
   };
 
   // ✅ NOVA FUNÇÃO: Obter descrição do match
   const getMatchDescription = (ride: RideWithMatch): string => {
     const matchType = ride.match_type;
     const compatibility = getCompatibilityScore(ride);
+    const distance = ride.distance_from_city_km;
     
     const descriptions: { [key: string]: string } = {
-      'exact_match': `Match perfeito (${compatibility}% de compatibilidade)`,
-      'same_segment': `No mesmo trecho da rota (${compatibility}% compatível)`,
-      'same_direction': `Mesma direção geográfica (${compatibility}% compatível)`,
-      'smart_match': `Encontrado por busca inteligente (${compatibility}% compatível)`,
-      'smart_final_direct': `Rota similar encontrada (${compatibility}% compatível)`,
-      'potential_match': `Rota potencialmente compatível (${compatibility}% compatível)`,
-      'nearby': `Próximo da localização desejada`
+      'exact_match': `Match perfeito! ${compatibility} pontos de compatibilidade`,
+      'exact_province': `Na mesma província. ${compatibility} pontos`,
+      'from_correct_province_to': `Origem correta + destino na província. ${compatibility} pontos`,
+      'to_correct_province_from': `Destino correto + origem na província. ${compatibility} pontos`,
+      'partial_from': `Origem similar. ${compatibility} pontos${distance ? `, ${distance.toFixed(1)}km` : ''}`,
+      'partial_to': `Destino similar. ${compatibility} pontos${distance ? `, ${distance.toFixed(1)}km` : ''}`,
+      'nearby': `Próximo da localização${distance ? ` (${distance.toFixed(1)}km)` : ''}. ${compatibility} pontos`,
+      'smart_match': `Encontrado por busca inteligente. ${compatibility} pontos`,
+      'smart_final_direct': `Rota similar encontrada. ${compatibility} pontos`,
+      'potential_match': `Rota potencialmente compatível. ${compatibility} pontos`
     };
     
     return descriptions[matchType || ''] || 'Rota disponível';
@@ -705,28 +739,22 @@ export default function RideSearchPage() {
     setBookingModal(true);
   };
 
-  // ✅ CORREÇÃO: Mutation com tipagem adequada
-  const bookingMutation = useMutation<void, Error, BookingRequest>({
+  // ✅✅✅ CORREÇÃO CRÍTICA: Mutation com tipagem CORRIGIDA
+  const bookingMutation = useMutation({
     mutationFn: async (data: BookingRequest) => {
-      const response = await fetch('/api/client/rides/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          rideId: data.rideId,
-          passengers: data.passengers,
-          pickupLocation: data.pickupLocation,
-          notes: data.notes
-        }),
-      });
+      // ✅✅✅ CORREÇÃO: Usar API client em vez de fetch direto
+      const response = await clientRidesApi.requestRide(
+        data.rideId, 
+        data.passengers, 
+        data.pickupLocation, 
+        data.notes
+      );
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to book ride');
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to book ride');
       }
       
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({
@@ -800,41 +828,9 @@ export default function RideSearchPage() {
     return formatPrice(price);
   };
 
-  // ✅✅✅ CORREÇÃO CRÍTICA: Função formatDate completamente corrigida
-  const formatDate = (dateString: string) => {
-    try {
-      console.log('📅 [DATE] Formatando data:', dateString);
-      
-      if (!dateString) {
-        return 'Data não disponível';
-      }
-
-      const date = new Date(dateString);
-      
-      if (isNaN(date.getTime())) {
-        console.warn('⚠️ [DATE] Data inválida:', dateString);
-        return 'Data inválida';
-      }
-
-      const formatted = date.toLocaleDateString('pt-PT', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      console.log('✅ [DATE] Data formatada:', dateString, '->', formatted);
-      return formatted;
-    } catch (error) {
-      console.error('❌ [DATE] Erro ao formatar data:', error);
-      return 'Erro na data';
-    }
-  };
-
   // ✅✅✅ CORREÇÃO CRÍTICA: Função para obter localização formatada
-  const getLocationDisplay = (ride: RideFrontend, type: 'from' | 'to'): string => {
-    const location = type === 'from' ? ride.fromLocation : ride.toLocation;
+  const getLocationDisplay = (ride: RideWithMatch, type: 'from' | 'to'): string => {
+    const location = type === 'from' ? ride.from_city : ride.to_city;
     const city = type === 'from' ? ride.fromCity : ride.toCity;
     
     // ✅ Se temos localização específica, usar ela
@@ -857,276 +853,313 @@ export default function RideSearchPage() {
     setBookingData({...bookingData, passengers: finalValue});
   };
 
-  // ✅ VERIFICAR SE TEM COORDENADAS COMPLETAS
-  const hasCompleteCoordinates = 
-    searchParams.fromLat !== undefined && 
-    searchParams.fromLng !== undefined &&
-    searchParams.toLat !== undefined && 
-    searchParams.toLng !== undefined;
+  // ✅ CALCULAR SE HÁ RIDES NA DATA EXATA
+  const hasExactDateRides = rides.some(ride => 
+    isRideDateExact(ride.departureDate, searchParams.date)
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Resultados da Busca" />
       
-      <div className="container mx-auto px-4 max-w-7xl py-6">
-        <div className="flex justify-between items-center mb-6">
+      <div className="container mx-auto px-4 max-w-4xl py-4">
+        <div className="flex justify-between items-center mb-4">
           <Button 
             variant="ghost" 
             onClick={() => setLocation('/')}
+            size="sm"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar ao Início
           </Button>
 
-          {/* ✅ BOTÃO PARA RECARREGAR RESULTADOS */}
           <Button 
             onClick={handleRefreshResults}
             disabled={isLoading}
             variant="outline"
+            size="sm"
             className="flex items-center gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {isLoading ? 'Buscando...' : 'Atualizar Resultados'}
+            {isLoading ? 'Buscando...' : 'Atualizar'}
           </Button>
         </div>
 
-        {/* ✅ RESUMO DA BUSCA MELHORADO */}
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm flex-1">
+        <Card className="mb-4">
+          <CardContent className="pt-4">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm flex-1">
                 <div>
-                  <Label>Saindo de</Label>
-                  <p className="font-semibold">{searchParams.from || "Não especificado"}</p>
-                  {searchParams.fromCity && (
-                    <p className="text-xs text-gray-500">{searchParams.fromCity}</p>
-                  )}
-                  {hasCompleteCoordinates && (
-                    <p className="text-xs text-green-600">
-                      📍 {searchParams.fromLat?.toFixed(4)}, {searchParams.fromLng?.toFixed(4)}
-                    </p>
-                  )}
+                  <Label className="text-xs">Saindo de</Label>
+                  <p className="font-semibold text-sm">{searchParams.from || "Não especificado"}</p>
                 </div>
                 <div>
-                  <Label>Indo para</Label>
-                  <p className="font-semibold">{searchParams.to || "Não especificado"}</p>
-                  {searchParams.toCity && (
-                    <p className="text-xs text-gray-500">{searchParams.toCity}</p>
-                  )}
-                  {hasCompleteCoordinates && (
-                    <p className="text-xs text-green-600">
-                      📍 {searchParams.toLat?.toFixed(4)}, {searchParams.toLng?.toFixed(4)}
-                    </p>
-                  )}
+                  <Label className="text-xs">Indo para</Label>
+                  <p className="font-semibold text-sm">{searchParams.to || "Não especificado"}</p>
                 </div>
                 <div>
-                  <Label>Data</Label>
-                  <p className="font-semibold">{searchParams.date || "Não especificada"}</p>
+                  <Label className="text-xs">Data</Label>
+                  <p className="font-semibold text-sm">{searchParams.date || "Não especificada"}</p>
                 </div>
                 <div>
-                  <Label>Passageiros</Label>
-                  <p className="font-semibold">{searchParams.passengers}</p>
+                  <Label className="text-xs">Passageiros</Label>
+                  <p className="font-semibold text-sm">{searchParams.passengers}</p>
                 </div>
               </div>
               
-              {/* ✅ INDICADOR DE BUSCA INTELIGENTE */}
-              {hasCompleteCoordinates && (
-                <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg border border-blue-200">
-                  <Navigation className="w-4 h-4" />
-                  <div>
-                    <p className="text-sm font-medium">Busca Inteligente</p>
-                    <p className="text-xs">Raio: {searchParams.radius || 100}km</p>
-                    <p className="text-xs">Usando get_rides_smart_final</p>
-                  </div>
+              <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-200 text-xs">
+                <Navigation className="w-3 h-3" />
+                <div>
+                  <p className="font-medium">Busca Inteligente</p>
+                  <p>Raio: {searchParams.radius || 100}km</p>
                 </div>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* ✅ RESULTADOS - AGORA COM GARANTIA DE QUE RIDES É ARRAY */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-lg">
               <div className="flex items-center gap-2">
                 {isLoading ? (
                   <div className="flex items-center gap-2">
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    Buscando viagens inteligentes...
+                    Buscando viagens...
                   </div>
                 ) : (
                   <>
                     {rides.length} viagem(s) encontrada(s)
-                    {hasCompleteCoordinates && (
-                      <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                        <MapPin className="w-3 h-3 mr-1" />
-                        Busca Inteligente
+                    {!hasExactDateRides && rides.length > 0 && (
+                      <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-200 text-xs">
+                        <span className="mr-1">📅</span>
+                        Datas próximas
                       </Badge>
                     )}
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+                      <MapPin className="w-3 h-3 mr-1" />
+                      Inteligente
+                    </Badge>
                   </>
                 )}
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {isLoading ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
                 </div>
-                <p className="text-gray-600">Buscando viagens mais relevantes...</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  {hasCompleteCoordinates 
-                    ? "Usando algoritmo inteligente para encontrar rotas similares" 
-                    : "Buscando viagens tradicionais"}
-                </p>
+                <p className="text-gray-600 text-sm">Buscando viagens mais relevantes...</p>
               </div>
             ) : rides.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <User className="w-8 h-8 text-gray-400" />
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <User className="w-6 h-6 text-gray-400" />
                 </div>
-                <p className="text-gray-600">Nenhuma viagem encontrada</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  {hasCompleteCoordinates 
-                    ? "Tente aumentar o raio de busca para encontrar rotas similares" 
-                    : "Tente alterar os critérios de busca na página principal"}
-                </p>
+                <p className="text-gray-600 text-sm">Nenhuma viagem encontrada</p>
                 <Button 
                   onClick={() => setLocation('/')}
                   variant="outline"
-                  className="mt-4"
+                  size="sm"
+                  className="mt-3"
                 >
                   Voltar à Página Principal
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
+                {/* ✅ ADICIONAR BANNER DE AVISO PARA DATAS DIFERENTES */}
+                <DateWarningBanner 
+                  searchDate={searchParams.date} 
+                  hasExactDateRides={hasExactDateRides}
+                />
+                
+                {/* ✅✅✅ ESTATÍSTICAS ATUALIZADAS COM INFO DE DATAS */}
+                {rides.some(ride => ride.match_type) && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <h4 className="text-sm font-medium text-blue-900 mb-2 flex items-center">
+                      <span className="text-blue-600 mr-2">⚡</span>
+                      Busca Inteligente - Resultados
+                      {!hasExactDateRides && rides.length > 0 && (
+                        <span className="text-orange-600 text-xs ml-2 italic">
+                          • Mostrando rides em datas próximas
+                        </span>
+                      )}
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <div className="text-center">
+                        <div className="text-blue-700 font-bold">
+                          {rides.filter(r => isRideDateExact(r.departureDate, searchParams.date)).length}
+                        </div>
+                        <div className="text-blue-600">Na data</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-blue-700 font-bold">
+                          {rides.filter(r => !isRideDateExact(r.departureDate, searchParams.date)).length}
+                        </div>
+                        <div className="text-blue-600">Datas próximas</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-blue-700 font-bold">
+                          {rides.filter(r => r.direction_score && r.direction_score >= 80).length}
+                        </div>
+                        <div className="text-blue-600">Alta Pont.</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-blue-700 font-bold">{rides.length}</div>
+                        <div className="text-blue-600">Total</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {rides.map((ride) => {
                   const availableSeats = getAvailableSeats(ride);
                   const canBook = availableSeats >= bookingData.passengers;
                   const isFullyBooked = availableSeats === 0;
                   const matchInfo = getMatchTypeDisplay(ride);
                   const compatibilityScore = getCompatibilityScore(ride);
-                  const matchDescription = getMatchDescription(ride);
+                  const isExactDate = isRideDateExact(ride.departureDate, searchParams.date);
+                  const dateDifference = getDateDifference(ride.departureDate, searchParams.date);
                   
                   return (
-                    <div key={ride.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div key={ride.id} className={`border rounded-lg p-3 hover:shadow-md transition-shadow ${
+                      isExactDate 
+                        ? 'border-l-4 border-l-green-500' 
+                        : 'border-l-4 border-l-orange-500 bg-orange-50'
+                    }`}>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="flex-1">
-                          {/* ✅ CABEÇALHO COM INFO DE MATCHING */}
-                          <div className="flex items-center justify-between mb-2">
-                            <h3 className="font-semibold text-lg">
-                              {/* ✅ CORREÇÃO: Usar função de localização formatada */}
-                              {getLocationDisplay(ride, 'from')} → {getLocationDisplay(ride, 'to')}
-                            </h3>
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-base leading-tight">
+                                {getLocationDisplay(ride, 'from')} → {getLocationDisplay(ride, 'to')}
+                              </h3>
+                              
+                              {/* ✅✅✅ SEÇÃO DE DATA COM DESTAQUE - MODIFICADA */}
+                              <div className={`mt-1 p-2 rounded-md ${
+                                isExactDate 
+                                  ? 'bg-green-100 text-green-800 border border-green-200' 
+                                  : 'bg-orange-100 text-orange-800 border border-orange-200 font-semibold'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <span>📅</span>
+                                  <span>
+                                    {formatDateForDisplay(ride.departureDate)}
+                                    {!isExactDate && (
+                                      <span className="text-xs italic ml-2">
+                                        ({dateDifference === 1 ? '1 dia' : `${dateDifference} dias`} de diferença)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
                             {compatibilityScore > 0 && (
-                              <Badge className={matchInfo.color}>
-                                {matchInfo.text} {compatibilityScore}%
+                              <Badge className={`${matchInfo.color} text-xs border`}>
+                                {matchInfo.text}
                               </Badge>
                             )}
                           </div>
                           
-                          {/* ✅ DESCRIÇÃO DO MATCH */}
-                          {ride.match_type && (
-                            <p className="text-sm text-gray-600 mb-2 italic">
-                              {matchDescription}
-                            </p>
-                          )}
-                          
-                          {/* ✅ CORREÇÃO: Data formatada com tratamento de erro */}
-                          <p className="text-gray-600">{formatDate(ride.departureDate)}</p>
-                          
-                          <div className="flex items-center gap-2 mt-2">
-                            <User className="w-4 h-4" />
-                            {/* ✅ USAR NOVA FUNÇÃO PARA NOME */}
-                            <span className="text-sm">{getDriverName(ride)}</span>
-                            {/* ✅ USAR NOVA FUNÇÃO PARA RATING */}
+                          <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
                             <div className="flex items-center gap-1">
-                              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                              <User className="w-3 h-3" />
+                              <span className="text-sm">{getDriverName(ride)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                               <span className="text-sm">{getDriverRating(ride)}</span>
                             </div>
-                          </div>
-                          
-                          {/* ✅ EXIBIR DISPONIBILIDADE */}
-                          <div className="mt-2">
-                            <span className={`text-sm font-medium ${
-                              isFullyBooked ? 'text-red-600' : 'text-green-600'
-                            }`}>
-                              {isFullyBooked ? (
-                                <span className="flex items-center">
-                                  <XCircle className="w-4 h-4 mr-1" />
-                                  LOTADO
-                                </span>
-                              ) : (
-                                `${availableSeats} lugar(es) disponível(is)`
-                              )}
-                            </span>
-                          </div>
-                          
-                          {/* ✅ VEHICLE TYPE E FEATURES */}
-                          <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-500">
-                            {ride.vehicleType && (
-                              <span>🚗 {ride.vehicleType}</span>
-                            )}
-                            {ride.estimatedDuration && (
-                              <span>⏱️ {ride.estimatedDuration} min</span>
-                            )}
-                            {/* ✅ EXIBIR DISTÂNCIA SE DISPONÍVEL - AGORA TIPADO */}
-                            {(ride.dist_from_user_km || ride.distance_from_city_km) && (
-                              <span>📍 {(ride.dist_from_user_km || ride.distance_from_city_km)?.toFixed(1)} km</span>
-                            )}
+                            <div className={`flex items-center gap-1 ${isFullyBooked ? 'text-red-600' : 'text-green-600'}`}>
+                              <Users className="w-3 h-3" />
+                              <span className="text-sm font-medium">
+                                {isFullyBooked ? 'LOTADO' : `${availableSeats} lugar(es)`}
+                              </span>
+                            </div>
                           </div>
 
-                          {/* ✅ FEATURES DO VEÍCULO */}
-                          {ride.vehicleFeatures && ride.vehicleFeatures.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {ride.vehicleFeatures.map((feature, index) => (
-                                <span key={index} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                  {feature}
-                                </span>
-                              ))}
+                          <div className="bg-gray-50 rounded-lg p-2 mb-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Car className="w-3 h-3 text-gray-500" />
+                              <h4 className="text-xs font-semibold text-gray-700">Detalhes do Veículo</h4>
                             </div>
-                          )}
-                          
-                          {/* ✅ CORREÇÃO: Fallback para imagem do veículo */}
-                          {ride.vehiclePhoto && (
-                            <img 
-                              src={ride.vehiclePhoto} 
-                              alt="Veículo" 
-                              className="w-20 h-20 object-cover rounded mt-2"
-                              onError={(e) => {
-                                // ✅ CORREÇÃO: Fallback para imagem quebrada
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
-                          )}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-1 text-xs text-gray-600">
+                              {ride.vehicle_make && ride.vehicle_model && (
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium">Veículo:</span>
+                                  <span>{ride.vehicle_make} {ride.vehicle_model}</span>
+                                </div>
+                              )}
+                              {ride.vehicle_plate && (
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium">Matrícula:</span>
+                                  <span className="font-mono">{ride.vehicle_plate}</span>
+                                </div>
+                              )}
+                              {ride.vehicle_color && (
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium">Cor:</span>
+                                  <span>{ride.vehicle_color}</span>
+                                </div>
+                              )}
+                              {ride.max_passengers && (
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium">Capacidade:</span>
+                                  <span>{ride.max_passengers}p</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                            {ride.vehicle_type && (
+                              <div className="flex items-center gap-1">
+                                <Car className="w-3 h-3" />
+                                <span className="capitalize">{ride.vehicle_type}</span>
+                              </div>
+                            )}
+                            {ride.estimatedDuration && (
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>{ride.estimatedDuration} min</span>
+                              </div>
+                            )}
+                            {(ride.distance_from_city_km) && (
+                              <div className="flex items-center gap-1">
+                                <MapPinned className="w-3 h-3" />
+                                <span>{ride.distance_from_city_km.toFixed(1)} km</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         
-                        <div className="flex flex-col items-end gap-2">
-                          {/* ✅ USAR PROPRIEDADE price EM VEZ DE pricePerSeat */}
-                          <span className="text-2xl font-bold text-green-600">
-                            {displayPrice(ride.price)}
-                          </span>
-                          {ride.pricePerSeat && ride.pricePerSeat !== ride.price && (
-                            <span className="text-sm text-gray-500">
-                              {displayPrice(ride.pricePerSeat)}/passageiro
+                        <div className="flex flex-col items-end gap-2 min-w-[120px]">
+                          <div className="text-right">
+                            <span className="text-xl font-bold text-green-600 block">
+                              {displayPrice(ride.price)}
                             </span>
-                          )}
+                            {ride.pricePerSeat && ride.pricePerSeat !== ride.price && (
+                              <span className="text-xs text-gray-500 block">
+                                {displayPrice(ride.pricePerSeat)}/passageiro
+                              </span>
+                            )}
+                          </div>
                           <Button 
                             onClick={() => handleBookRide(ride)}
-                            // ✅ CORREÇÃO: Simplificar disabled
                             disabled={isFullyBooked || !user}
-                            className={`${
+                            size="sm"
+                            className={`w-full ${
                               !isFullyBooked && user
                                 ? 'bg-primary hover:bg-red-600' 
                                 : 'bg-gray-400 cursor-not-allowed'
                             }`}
                           >
-                            {!user ? 'Faça login para reservar' : 
+                            {!user ? 'Login' : 
                              isFullyBooked ? 'LOTADO' : 
-                             'Reservar Agora'}
+                             'Reservar'}
                           </Button>
                         </div>
                       </div>
@@ -1139,7 +1172,6 @@ export default function RideSearchPage() {
         </Card>
       </div>
 
-      {/* ✅ MODAL DE RESERVA */}
       <Dialog open={bookingModal} onOpenChange={setBookingModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1154,32 +1186,27 @@ export default function RideSearchPage() {
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="text-sm">
-                    {/* ✅ USAR NOVAS PROPRIEDADES */}
                     <span className="font-semibold">{getLocationDisplay(selectedRide, 'from')}</span>
                     <span className="mx-2">→</span>
                     <span className="font-semibold">{getLocationDisplay(selectedRide, 'to')}</span>
                   </div>
                 </div>
                 <div className="text-sm text-gray-600">
-                  {formatDate(selectedRide.departureDate)}
+                  {formatDateForDisplay(selectedRide.departureDate)}
                 </div>
-                {/* ✅ USAR NOVA FUNÇÃO PARA NOME */}
                 <div className="text-sm text-gray-600">
                   Motorista: {getDriverName(selectedRide)}
                 </div>
-                {/* ✅ USAR PROPRIEDADE price EM VEZ DE pricePerSeat */}
                 <div className="text-sm font-semibold mt-2">
                   Preço: {displayPrice(selectedRide.price)}
                 </div>
                 
-                {/* ✅ EXIBIR INFO OF MATCHING NO MODAL */}
                 {selectedRide.match_type && (
                   <div className="text-sm text-blue-600 mt-2">
                     🎯 {getMatchDescription(selectedRide)}
                   </div>
                 )}
                 
-                {/* ✅ EXIBIR DISPONIBILIDADE NO MODAL */}
                 <div className={`text-sm font-medium mt-2 ${
                   getAvailableSeats(selectedRide) === 0 ? 'text-red-600' : 'text-green-600'
                 }`}>
@@ -1249,7 +1276,6 @@ export default function RideSearchPage() {
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="flex justify-between items-center">
                     <span>Total ({bookingData.passengers} passageiro{bookingData.passengers > 1 ? 's' : ''})</span>
-                    {/* ✅ CORREÇÃO: Multiplicação segura de preço */}
                     <span className="text-xl font-bold text-blue-600">
                       {displayPrice((selectedRide.price || 0) * bookingData.passengers)}
                     </span>
