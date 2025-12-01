@@ -20,7 +20,7 @@ router.get("/health", async (req, res) => {
       endpoints: {
         search: {
           rides: "/api/search/rides",
-          accommodations: "/api/search/accommodations", 
+          hotels: "/api/search/hotels", 
           events: "/api/search/events",
           universal: "/api/search/all"
         },

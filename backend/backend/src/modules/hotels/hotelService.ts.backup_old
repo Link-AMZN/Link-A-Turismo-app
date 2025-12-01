@@ -1,0 +1,499 @@
+// src/services/hotelService.ts - VERSÃO OTIMIZADA
+import { db } from '../../../db';
+import { 
+  accommodations as hotels, 
+  roomTypes, 
+  hotelRooms as rooms,
+  bookings 
+} from '../../../shared/schema';
+import { eq, and, sql } from 'drizzle-orm';
+import { Pool } from 'pg';
+
+export class HotelService {
+  private pool: Pool;
+
+  constructor() {
+    this.pool = new Pool({
+      connectionString: process.env.DATABASE_URL || 'postgresql://linka_user:@localhost:5432/linka2_database'
+    });
+  }
+
+  // 🔍 BUSCA INTELIGENTE - USANDO FUNÇÃO POSTGRESQL
+  async searchHotels(params: {
+    location?: string;
+    checkIn?: Date;
+    checkOut?: Date;
+    guests?: number;
+    roomType?: string;
+    maxPrice?: number;
+    amenities?: string[];
+    radiusKm?: number;
+    limit?: number;
+  }) {
+    const {
+      location = '',
+      checkIn = new Date(Date.now() + 24 * 60 * 60 * 1000),
+      checkOut = new Date(Date.now() + 48 * 60 * 60 * 1000),
+      guests = 2,
+      roomType = null,
+      maxPrice = null,
+      amenities = null,
+      radiusKm = 50,
+      limit = 20
+    } = params;
+
+    try {
+      console.log('🔍 Buscando hotéis com função inteligente:', { location, checkIn, checkOut, guests });
+
+      // Tentar usar a função PostgreSQL inteligente
+      try {
+        const result = await this.pool.query(`
+          SELECT * FROM search_hotels_smart(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9
+          )
+        `, [
+          location,
+          radiusKm,
+          checkIn.toISOString().split('T')[0],
+          checkOut.toISOString().split('T')[0],
+          guests,
+          roomType,
+          maxPrice,
+          amenities,
+          limit
+        ]);
+
+        if (result.rows.length > 0) {
+          console.log(`✅ Encontrados ${result.rows.length} hotéis com busca inteligente`);
+          return this.formatSearchResults(result.rows);
+        }
+      } catch (pgError) {
+        console.log('⚠️ Função PostgreSQL não disponível, usando busca Drizzle...');
+      }
+
+      // Fallback para busca Drizzle (compatibilidade)
+      return await this.fallbackDrizzleSearch(params);
+
+    } catch (error) {
+      console.error('❌ Erro na busca de hotéis:', error);
+      return await this.fallbackDrizzleSearch(params);
+    }
+  }
+
+  // 🎯 FORMATA RESULTADOS DA BUSCA INTELIGENTE
+  private formatSearchResults(rows: any[]) {
+    return rows.map(row => ({
+      id: row.hotel_id,
+      name: row.hotel_name,
+      description: row.description,
+      address: row.address,
+      locality: row.locality,
+      province: row.province,
+      lat: parseFloat(row.lat) || 0,
+      lng: parseFloat(row.lng) || 0,
+      distance_km: row.distance_km,
+      available_room_types: row.available_room_types,
+      min_price_per_night: parseFloat(row.min_price_per_night) || 0,
+      max_price_per_night: parseFloat(row.max_price_per_night) || 0,
+      match_score: row.match_score,
+      total_available_rooms: row.total_available_rooms,
+      // Campos para compatibilidade com frontend
+      images: [],
+      amenities: [],
+      rating: 0,
+      reviewCount: 0,
+      basePrice: parseFloat(row.min_price_per_night) || 0
+    }));
+  }
+
+  // 🔄 FALLBACK - BUSCA DRIZZLE (COMPATIBILIDADE)
+  private async fallbackDrizzleSearch(params: {
+    location?: string;
+    checkIn?: Date;
+    checkOut?: Date;
+    guests?: number;
+    roomType?: string;
+    maxPrice?: number;
+    amenities?: string[];
+    radiusKm?: number;
+    limit?: number;
+  }) {
+    const { location = '', limit = 20 } = params;
+
+    console.log('🔄 Usando busca Drizzle fallback para:', location);
+    
+    const hotelList = await db.select({
+      id: hotels.id,
+      name: hotels.name,
+      description: hotels.description,
+      address: hotels.address,
+      locality: hotels.locality,
+      province: hotels.province,
+      lat: hotels.lat,
+      lng: hotels.lng,
+      images: hotels.images,
+      amenities: hotels.amenities,
+      rating: hotels.rating,
+      reviewCount: hotels.reviewCount,
+      basePrice: roomTypes.pricePerNight
+    })
+    .from(hotels)
+    .leftJoin(roomTypes, eq(hotels.id, roomTypes.accommodationId))
+    .where(eq(hotels.isAvailable, true))
+    .limit(limit);
+
+    console.log(`✅ Encontrados ${hotelList.length} hotéis com fallback`);
+    return hotelList;
+  }
+
+  // 🏨 DETALHES DO HOTEL - MANTIDO ORIGINAL
+  async getHotelDetails(hotelId: string) {
+    const hotel = await db.select()
+      .from(hotels)
+      .where(eq(hotels.id, hotelId))
+      .limit(1);
+
+    if (!hotel[0]) {
+      throw new Error('Hotel não encontrado');
+    }
+
+    const roomTypesList = await db.select()
+      .from(roomTypes)
+      .where(eq(roomTypes.accommodationId, hotelId));
+
+    return {
+      ...hotel[0],
+      roomTypes: roomTypesList
+    };
+  }
+
+  // 🛏️ TIPOS DE QUARTO DO HOTEL - MANTIDO ORIGINAL
+  async getHotelRoomTypes(hotelId: string) {
+    const roomTypesList = await db.select()
+      .from(roomTypes)
+      .where(
+        and(
+          eq(roomTypes.accommodationId, hotelId),
+          eq(roomTypes.isAvailable, true)
+        )
+      );
+
+    return roomTypesList;
+  }
+
+  // 📅 VERIFICAR DISPONIBILIDADE - MANTIDO ORIGINAL
+  async checkAvailability(params: {
+    hotelId: string;
+    roomTypeId: string;
+    checkIn: Date;
+    checkOut: Date;
+    units?: number;
+  }) {
+    const { roomTypeId, checkIn, checkOut, units = 1 } = params;
+
+    try {
+      const conflictingBookings = await db.select()
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.hotelRoomId, roomTypeId),
+            eq(bookings.status, 'confirmed'),
+            sql`${bookings.checkInDate}::date < ${checkOut.toISOString().split('T')[0]}::date`,
+            sql`${bookings.checkOutDate}::date > ${checkIn.toISOString().split('T')[0]}::date`
+          )
+        );
+
+      const isAvailable = conflictingBookings.length === 0;
+      
+      const roomType = await db.select()
+        .from(roomTypes)
+        .where(eq(roomTypes.id, roomTypeId))
+        .limit(1);
+
+      const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+      const pricePerNight = roomType[0] ? Number(roomType[0].pricePerNight) : 0;
+      const totalPrice = pricePerNight * nights * units;
+
+      return {
+        isAvailable,
+        nights,
+        totalPrice,
+        pricePerNight
+      };
+
+    } catch (error) {
+      console.error('Erro ao verificar disponibilidade:', error);
+      return {
+        isAvailable: false,
+        nights: 0,
+        totalPrice: 0,
+        pricePerNight: 0
+      };
+    }
+  }
+
+  // 💰 CALCULAR PREÇO - MANTIDO ORIGINAL
+  async calculatePrice(params: {
+    roomTypeId: string;
+    checkIn: Date;
+    checkOut: Date;
+    units?: number;
+    adults?: number;
+    children?: number;
+  }) {
+    const { roomTypeId, checkIn, checkOut, units = 1, adults = 2, children = 0 } = params;
+    
+    const availability = await this.checkAvailability({
+      hotelId: '',
+      roomTypeId,
+      checkIn,
+      checkOut,
+      units
+    });
+
+    if (!availability.isAvailable) {
+      throw new Error('Não há disponibilidade para as datas selecionadas');
+    }
+
+    return {
+      nights: availability.nights,
+      pricePerNight: availability.pricePerNight,
+      totalPrice: availability.totalPrice,
+      adults,
+      children,
+      units
+    };
+  }
+
+  // 📝 CRIAR RESERVA - MANTIDO ORIGINAL
+  async createBooking(params: {
+    hotelId: string;
+    roomTypeId: string;
+    checkIn: Date;
+    checkOut: Date;
+    units?: number;
+    adults?: number;
+    children?: number;
+    guestName: string;
+    guestEmail: string;
+    guestPhone?: string;
+  }) {
+    const {
+      hotelId,
+      roomTypeId,
+      checkIn,
+      checkOut,
+      units = 1,
+      guestName,
+      guestEmail,
+      guestPhone
+    } = params;
+
+    const availability = await this.checkAvailability({
+      hotelId,
+      roomTypeId,
+      checkIn,
+      checkOut,
+      units
+    });
+
+    if (!availability.isAvailable) {
+      throw new Error('Não há disponibilidade para as datas selecionadas');
+    }
+
+    const [booking] = await db.insert(bookings).values({
+      totalPrice: availability.totalPrice.toString(),
+      seatsBooked: units,
+      accommodationId: hotelId,
+      hotelRoomId: roomTypeId,
+      type: 'accommodation',
+      status: 'confirmed',
+      guestName: guestName,
+      guestEmail: guestEmail,
+      guestPhone: guestPhone || '',
+      checkInDate: checkIn,
+      checkOutDate: checkOut,
+      passengers: units
+    }).returning();
+
+    console.log('✅ Reserva criada com ID:', booking.id);
+    return booking;
+  }
+
+  // ❌ CANCELAR RESERVA - MANTIDO ORIGINAL
+  async cancelBooking(bookingId: string) {
+    const [updatedBooking] = await db.update(bookings)
+      .set({ 
+        status: 'cancelled',
+        updatedAt: new Date()
+      })
+      .where(eq(bookings.id, bookingId))
+      .returning();
+
+    if (!updatedBooking) {
+      throw new Error('Reserva não encontrada');
+    }
+
+    return updatedBooking;
+  }
+
+  // 📊 DASHBOARD DO HOTEL - MANTIDO ORIGINAL
+  async getHotelDashboard(hotelId: string) {
+    try {
+      const [hotelData, hotelRooms, hotelBookings] = await Promise.all([
+        db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1),
+        db.select().from(rooms).where(eq(rooms.accommodationId, hotelId)),
+        db.select().from(bookings).where(
+          and(
+            eq(bookings.accommodationId, hotelId),
+            eq(bookings.type, 'accommodation')
+          )
+        )
+      ]);
+
+      const hotel = hotelData[0];
+      if (!hotel) {
+        throw new Error('Hotel não encontrado');
+      }
+
+      const totalRooms = hotelRooms.length;
+      const confirmedBookings = hotelBookings.filter(b => b.status === 'confirmed');
+      const occupancyRate = totalRooms > 0 ? (confirmedBookings.length / totalRooms) * 100 : 0;
+
+      const today = new Date();
+      const todayRevenue = confirmedBookings
+        .filter(booking => {
+          if (!booking.checkInDate) return false;
+          const checkInDate = new Date(booking.checkInDate).toDateString();
+          return checkInDate === today.toDateString();
+        })
+        .reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
+
+      const monthlyRevenue = hotelBookings
+        .filter(booking => {
+          if (!booking.checkInDate) return false;
+          const checkInDate = new Date(booking.checkInDate);
+          const currentMonth = new Date().getMonth();
+          const currentYear = new Date().getFullYear();
+          return checkInDate.getMonth() === currentMonth && 
+                 checkInDate.getFullYear() === currentYear;
+        })
+        .reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
+
+      const upcomingBookings = confirmedBookings
+        .filter(booking => {
+          if (!booking.checkInDate) return false;
+          return new Date(booking.checkInDate) > today;
+        })
+        .slice(0, 5)
+        .map(b => ({
+          id: b.id,
+          guestName: b.guestName || 'Cliente',
+          checkInDate: b.checkInDate,
+          totalPrice: b.totalPrice,
+          status: b.status
+        }));
+
+      const recentBookings = hotelBookings
+        .slice(0, 10)
+        .map(b => ({
+          id: b.id,
+          guestName: b.guestName || 'Cliente',
+          checkInDate: b.checkInDate,
+          totalPrice: b.totalPrice,
+          status: b.status
+        }));
+
+      return {
+        occupancy: {
+          rate: Math.round(occupancyRate),
+          occupied: confirmedBookings.length,
+          total: totalRooms
+        },
+        revenue: {
+          today: todayRevenue,
+          monthly: monthlyRevenue,
+          bookings: hotelBookings.length
+        },
+        upcomingBookings,
+        recentBookings
+      };
+
+    } catch (error) {
+      console.error('Erro no dashboard:', error);
+      throw error;
+    }
+  }
+
+  // 🏨 CRIAR HOTEL - MANTIDO ORIGINAL
+  async createHotel(data: {
+    name: string;
+    description?: string;
+    address: string;
+    locality?: string;
+    province?: string;
+    country?: string;
+    lat?: number;
+    lng?: number;
+    images?: string[];
+    amenities?: string[];
+    contactEmail?: string;
+    contactPhone?: string;
+    hostId: string;
+    checkInTime?: string;
+    checkOutTime?: string;
+    policies?: string;
+  }) {
+    const [hotel] = await db.insert(hotels).values({
+      name: data.name,
+      type: 'hotel',
+      description: data.description,
+      address: data.address,
+      locality: data.locality,
+      province: data.province,
+      country: data.country || 'Moçambique',
+      lat: data.lat ? data.lat.toString() : null,
+      lng: data.lng ? data.lng.toString() : null,
+      images: data.images,
+      amenities: data.amenities,
+      contactEmail: data.contactEmail,
+      contactPhone: data.contactPhone,
+      hostId: data.hostId,
+      checkInTime: data.checkInTime || '14:00',
+      checkOutTime: data.checkOutTime || '12:00',
+      policies: data.policies,
+      isAvailable: true
+    }).returning();
+
+    console.log('✅ Hotel criado com ID:', hotel.id);
+    return hotel;
+  }
+
+  // 🛏️ CRIAR TIPO DE QUARTO - MANTIDO ORIGINAL
+  async createRoomType(data: {
+    hotelId: string;
+    name: string;
+    description?: string;
+    basePrice: number;
+    maxOccupancy?: number;
+    amenities?: string[];
+    images?: string[];
+  }) {
+    const [roomType] = await db.insert(roomTypes).values({
+      accommodationId: data.hotelId,
+      name: data.name,
+      type: 'standard',
+      pricePerNight: data.basePrice.toString(),
+      maxOccupancy: data.maxOccupancy || 2,
+      amenities: data.amenities,
+      images: data.images,
+      isAvailable: true,
+      status: 'active'
+    }).returning();
+
+    console.log('✅ Tipo de quarto criado com ID:', roomType.id);
+    return roomType;
+  }
+}
+
+export const hotelService = new HotelService();

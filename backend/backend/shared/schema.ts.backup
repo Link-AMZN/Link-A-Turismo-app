@@ -302,7 +302,7 @@ export const rides = pgTable("rides", {
   vehicleType: varchar("vehicleType", { length: 50 }),
   
   // ✅ CORREÇÃO CRÍTICA: Adicionado vehicleId como foreign key para vehicles
-  vehicleId: uuid("vehicleId").references(() => vehicles.id, { onDelete: "set null" }),
+  vehicle_uuid: uuid("vehicle_uuid").references(() => vehicles.id, { onDelete: "set null" }),
   
   additionalInfo: text("additionalInfo"),
   status: statusEnum("status").default('available'),
@@ -328,7 +328,7 @@ export const rides = pgTable("rides", {
   fromDistrictIdx: index("rides_from_district_idx").on(table.fromDistrict),
   toDistrictIdx: index("rides_to_district_idx").on(table.toDistrict),
   // ✅ NOVO: Índice para vehicleId
-  vehicleIdx: index("rides_vehicle_idx").on(table.vehicleId),
+  vehicleIdx: index("rides_vehicle_idx").on(table.vehicle_uuid),
 }));
 
 // ==================== BOOKINGS & PAYMENTS ====================

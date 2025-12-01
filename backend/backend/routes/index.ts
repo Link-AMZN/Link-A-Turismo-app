@@ -14,7 +14,7 @@ import bookingsRoutes from './bookings';
 import geoRoutes from './geo';
 import billingRoutes from './billing';
 import chatRoutes from './chat';
-import pmsRoutes from './pms';
+
 
 // ===== ROTAS DE LOCALIDADES =====
 import locationsRouter from './locations';
@@ -548,8 +548,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/geo', geoRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/chat', chatRoutes);
-  app.use('/api/pms', pmsRoutes);
-  console.log('🔐 Sistemas funcionais registrados com sucesso');
+   console.log('🔐 Sistemas funcionais registrados com sucesso');
 
   // ===== SISTEMA DE HOTELS =====
   app.use('/api/hotels', hotelController);
