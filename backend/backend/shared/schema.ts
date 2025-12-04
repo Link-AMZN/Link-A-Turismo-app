@@ -5,77 +5,26 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // ==================== ENUMS GLOBAIS (COM pgEnum) ====================
-// ✅ CORREÇÃO: Enums padronizados e completos
 export const statusEnum = pgEnum("status", [
   'pending', 'active', 'available', 'confirmed', 'cancelled', 
-  'completed', 'expired', 'in_progress', 'approved', 'rejected'
+  'completed', 'expired', 'in_progress', 'checked_in', 'checked_out',
+  'approved', 'rejected', 'pending_payment'
 ]);
 
-export const serviceTypeEnum = pgEnum("service_type", ['ride', 'accommodation', 'event']);
+export const serviceTypeEnum = pgEnum("service_type", ['ride', 'accommodation', 'event', 'hotel']);
 export const userTypeEnum = pgEnum("user_type", ['client', 'driver', 'host', 'admin']);
 export const partnershipLevelEnum = pgEnum("partnership_level", ['bronze', 'silver', 'gold', 'platinum']);
 export const verificationStatusEnum = pgEnum("verification_status", ['pending', 'in_review', 'verified', 'rejected']);
-export const paymentMethodEnum = pgEnum("payment_method", ['card', 'mpesa', 'bank', 'mobile_money', 'bank_transfer']);
+export const paymentMethodEnum = pgEnum("payment_method", ['card', 'mpesa', 'bank', 'mobile_money', 'bank_transfer', 'pending']);
 export const rideTypeEnum = pgEnum("ride_type", ['regular', 'premium', 'shared', 'express']);
-
-// ✅ NOVO: Enum para tipos de veículo
 export const vehicleTypeEnum = pgEnum("vehicle_type", ['economy', 'comfort', 'luxury', 'family', 'premium', 'van', 'suv']);
 
-// Constantes para uso no código
-export const STATUS_ENUM = {
-  PENDING: 'pending',
-  ACTIVE: 'active',
-  AVAILABLE: 'available',
-  CONFIRMED: 'confirmed',
-  CANCELLED: 'cancelled',
-  COMPLETED: 'completed',
-  EXPIRED: 'expired',
-  IN_PROGRESS: 'in_progress',
-  APPROVED: 'approved',
-  REJECTED: 'rejected'
-} as const;
-
-export const SERVICE_TYPE_ENUM = {
-  RIDE: 'ride',
-  ACCOMMODATION: 'accommodation',
-  EVENT: 'event'
-} as const;
-
-export const USER_TYPE_ENUM = {
-  CLIENT: 'client',
-  DRIVER: 'driver',
-  HOST: 'host',
-  ADMIN: 'admin'
-} as const;
-
-export const PARTNERSHIP_LEVEL_ENUM = {
-  BRONZE: 'bronze',
-  SILVER: 'silver',
-  GOLD: 'gold',
-  PLATINUM: 'platinum'
-} as const;
-
-export const VERIFICATION_STATUS_ENUM = {
-  PENDING: 'pending',
-  IN_REVIEW: 'in_review',
-  VERIFIED: 'verified',
-  REJECTED: 'rejected'
-} as const;
-
-// ✅ NOVO: Constantes para tipos de veículo
-export const VEHICLE_TYPE_ENUM = {
-  ECONOMY: 'economy',
-  COMFORT: 'comfort',
-  LUXURY: 'luxury',
-  FAMILY: 'family',
-  PREMIUM: 'premium',
-  VAN: 'van',
-  SUV: 'suv'
-} as const;
+// ✅ NOVO: Enums para sistema hoteleiro
+export const roomStatusEnum = pgEnum("room_status", ['available', 'occupied', 'maintenance', 'cleaning']);
+export const bookingSourceEnum = pgEnum("booking_source", ['website', 'mobile_app', 'agency', 'walk_in', 'phone']);
 
 // ==================== TABELAS BASE ====================
 
-// Session storage table for Replit Auth
 export const sessions = pgTable(
   "sessions",
   {
@@ -88,15 +37,14 @@ export const sessions = pgTable(
   })
 );
 
-// ✅ CORREÇÃO: users.id agora é TEXT para compatibilidade com Firebase IDs
-// ✅ CORREÇÃO: Campos redundantes removidos e padronizados
+// ✅ CORREÇÃO: users.id mantido como TEXT para Firebase
 export const users = pgTable("users", {
-  id: text("id").primaryKey(), // Firebase IDs são strings, não UUIDs
+  id: text("id").primaryKey(),
   email: varchar("email").unique(),
   firstName: varchar("firstName"),
   lastName: varchar("lastName"),
   fullName: text("fullName"),
-  profileImageUrl: varchar("profileImageUrl"), // ✅ Mantido como principal
+  profileImageUrl: varchar("profileImageUrl"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
   phone: text("phone").unique(),
@@ -106,7 +54,7 @@ export const users = pgTable("users", {
   rating: decimal("rating", { precision: 3, scale: 2 }).default("0.00"),
   totalReviews: integer("totalReviews").default(0),
   isVerified: boolean("isVerified").default(false),
-  verificationStatus: verificationStatusEnum("verificationStatus").default('pending'), // ✅ CORREÇÃO: Usando enum
+  verificationStatus: verificationStatusEnum("verificationStatus").default('pending'),
   verificationDate: timestamp("verificationDate"),
   verificationNotes: text("verificationNotes"),
   identityDocumentUrl: text("identityDocumentUrl"),
@@ -118,7 +66,7 @@ export const users = pgTable("users", {
   badgeEarnedDate: timestamp("badgeEarnedDate"),
 });
 
-// ==================== TABELA DE LOCALIDADES OSM (ATUALIZADA) ====================
+// ==================== TABELA DE LOCALIDADES ====================
 
 export const mozambiqueLocations = pgTable("mozambique_locations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -127,22 +75,18 @@ export const mozambiqueLocations = pgTable("mozambique_locations", {
   district: varchar("district", { length: 100 }),
   lat: decimal("lat", { precision: 10, scale: 7 }).notNull(),
   lng: decimal("lng", { precision: 10, scale: 7 }).notNull(),
-  type: varchar("type", { length: 20 }).notNull(), // 'city' | 'town' | 'village'
+  geom: text("geom"), // ✅ CORREÇÃO: Adicionado campo geom para PostGIS
+  type: varchar("type", { length: 20 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 }, (table) => ({
   nameIdx: index("locations_name_idx").on(table.name),
   provinceIdx: index("locations_province_idx").on(table.province),
-  typeIdx: index("locations_type_idx").on(table.type),
   geoIdx: index("locations_geo_idx").on(table.lat, table.lng),
-  // ✅ CORREÇÃO: Índices otimizados - removido searchIdx redundante
-  textSearchIdx: index("locations_text_search_idx").on(table.name),
 }));
 
-// ==================== TABELA DE VEÍCULOS (NOVA/ATUALIZADA) ====================
+// ==================== TABELA DE VEÍCULOS ====================
 
-// ✅ NOVO: Tabela vehicles completa com índices
-// ✅ CORREÇÃO: Removido .check() que causava erro - validação será feita no Zod
 export const vehicles = pgTable("vehicles", {
   id: uuid("id").primaryKey().defaultRandom(),
   driver_id: text("driver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -153,7 +97,7 @@ export const vehicles = pgTable("vehicles", {
   color: varchar("color", { length: 50 }).notNull(),
   year: integer("year"),
   vehicle_type: vehicleTypeEnum("vehicle_type").notNull(),
-  max_passengers: integer("max_passengers").notNull(), // ✅ CORREÇÃO: Removido .check()
+  max_passengers: integer("max_passengers").notNull(),
   features: text("features").array().default(sql`'{}'`),
   photo_url: text("photo_url"),
   is_active: boolean("is_active").default(true),
@@ -166,24 +110,271 @@ export const vehicles = pgTable("vehicles", {
   typeIdx: index("vehicles_type_idx").on(table.vehicle_type),
 }));
 
-// ==================== ACCOMMODATIONS & RELATED TABLES ====================
+// ==================== SISTEMA HOTELEIRO (CORRIGIDO) ====================
 
-// ✅ CORREÇÃO: hostId agora é TEXT para compatibilidade
-// ✅ CORREÇÃO: Campos padronizados e redundâncias removidas
+// ✅ TABELA PRINCIPAL DE HOTÉIS (CORRIGIDA)
+export const hotels = pgTable("hotels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").unique().notNull(),
+  description: text("description"),
+  address: text("address").notNull(),
+  locality: varchar("locality", { length: 100 }).notNull(),
+  province: varchar("province", { length: 100 }).notNull(),
+  country: varchar("country", { length: 100 }).default('Moçambique'),
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
+  location_geom: text("location_geom"), // Para PostGIS
+  images: text("images").array().default(sql`'{}'`),
+  amenities: text("amenities").array().default(sql`'{}'`),
+  contact_email: text("contact_email").notNull(),
+  contact_phone: text("contact_phone"),
+  host_id: text("host_id").references(() => users.id, { onDelete: "set null" }),
+  check_in_time: timestamp("check_in_time", { mode: 'string' }).default('14:00:00'),
+  check_out_time: timestamp("check_out_time", { mode: 'string' }).default('12:00:00'),
+  policies: text("policies"),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("0.00"),
+  total_reviews: integer("total_reviews").default(0),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+  created_by: text("created_by"),
+  updated_by: text("updated_by"),
+}, (table) => ({
+  nameIdx: index("hotels_name_idx").on(table.name),
+  slugIdx: index("hotels_slug_idx").on(table.slug),
+  locationIdx: index("hotels_location_idx").on(table.locality, table.province),
+  activeIdx: index("hotels_active_idx").on(table.is_active).where(sql`is_active = true`),
+}));
+
+// ✅ TABELA DE TIPOS DE QUARTO (CORRIGIDA)
+export const room_types = pgTable("room_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  base_price: decimal("base_price", { precision: 10, scale: 2 }).notNull(),
+  base_price_low: decimal("base_price_low", { precision: 10, scale: 2 }),
+  base_price_high: decimal("base_price_high", { precision: 10, scale: 2 }),
+  total_units: integer("total_units").notNull().default(1),
+  base_occupancy: integer("base_occupancy").notNull().default(2),
+  max_occupancy: integer("max_occupancy").notNull().default(2),
+  min_nights_default: integer("min_nights_default").default(1),
+  extra_adult_price: decimal("extra_adult_price", { precision: 10, scale: 2 }).default("0.00"),
+  extra_child_price: decimal("extra_child_price", { precision: 10, scale: 2 }).default("0.00"),
+  amenities: text("amenities").array().default(sql`'{}'`),
+  images: text("images").array().default(sql`'{}'`),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  hotelIdx: index("room_types_hotel_idx").on(table.hotel_id),
+  activeIdx: index("room_types_active_idx").on(table.is_active).where(sql`is_active = true`),
+}));
+
+// ✅ TABELA DE DISPONIBILIDADE (CRÍTICA - CORRIGIDA) - ÚNICA ALTERAÇÃO
+export const room_availability = pgTable("room_availability", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  room_type_id: uuid("room_type_id").references(() => room_types.id, { onDelete: "cascade" }).notNull(),
+  date: timestamp("date", { mode: 'date' }).notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  remaining_units: integer("remaining_units").notNull().default(0),
+  stop_sell: boolean("stop_sell").default(false),
+  min_nights: integer("min_nights").default(1),
+  max_stay: integer("max_stay"),
+  min_stay: integer("min_stay").default(1),
+  max_available_units: integer("max_available_units"),
+  blocked_reason: text("blocked_reason"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  // ✅ CORREÇÃO: Removido .unique() do índice
+  roomTypeDateIdx: index("room_availability_room_type_date_idx").on(table.room_type_id, table.date),
+  hotelDateIdx: index("room_availability_hotel_date_idx").on(table.hotel_id, table.date),
+  dateIdx: index("room_availability_date_idx").on(table.date),
+  // ❌ REMOVIDO: uniqueConstraint: index("room_availability_unique").on(table.room_type_id, table.date).unique(),
+}));
+
+// ✅ TABELA DE RESERVAS DE HOTEL (NOVA - CORRIGIDA)
+export const hotel_bookings = pgTable("hotel_bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  room_type_id: uuid("room_type_id").references(() => room_types.id, { onDelete: "cascade" }).notNull(),
+  guest_name: text("guest_name").notNull(),
+  guest_email: text("guest_email").notNull(),
+  guest_phone: text("guest_phone"),
+  check_in: timestamp("check_in", { mode: 'date' }).notNull(),
+  check_out: timestamp("check_out", { mode: 'date' }).notNull(),
+  nights: integer("nights").notNull(),
+  units: integer("units").notNull().default(1),
+  adults: integer("adults").notNull().default(2),
+  children: integer("children").notNull().default(0),
+  base_price: decimal("base_price", { precision: 10, scale: 2 }).notNull(),
+  extra_charges: decimal("extra_charges", { precision: 10, scale: 2 }).default("0.00"),
+  total_price: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+  special_requests: text("special_requests"),
+  status: statusEnum("status").notNull().default('confirmed'),
+  payment_status: statusEnum("payment_status").notNull().default('pending'),
+  cancellation_reason: text("cancellation_reason"),
+  checked_in_at: timestamp("checked_in_at"),
+  checked_out_at: timestamp("checked_out_at"),
+  cancelled_at: timestamp("cancelled_at"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  hotelIdx: index("hotel_bookings_hotel_idx").on(table.hotel_id),
+  guestEmailIdx: index("hotel_bookings_guest_email_idx").on(table.guest_email),
+  datesIdx: index("hotel_bookings_dates_idx").on(table.check_in, table.check_out),
+  statusIdx: index("hotel_bookings_status_idx").on(table.status),
+  paymentStatusIdx: index("hotel_bookings_payment_status_idx").on(table.payment_status),
+}));
+
+// ✅ TABELA DE TEMPORADAS/PROMOÇÕES
+export const hotel_seasons = pgTable("hotel_seasons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  start_date: timestamp("start_date", { mode: 'date' }).notNull(),
+  end_date: timestamp("end_date", { mode: 'date' }).notNull(),
+  multiplier: decimal("multiplier", { precision: 5, scale: 2 }).notNull().default("1.00"),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const hotel_promotions = pgTable("hotel_promotions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  room_type_id: uuid("room_type_id").references(() => room_types.id, { onDelete: "cascade" }),
+  promo_code: text("promo_code").notNull(),
+  discount_percent: integer("discount_percent"),
+  discount_amount: decimal("discount_amount", { precision: 10, scale: 2 }),
+  start_date: timestamp("start_date", { mode: 'date' }).notNull(),
+  end_date: timestamp("end_date", { mode: 'date' }).notNull(),
+  max_uses: integer("max_uses"),
+  current_uses: integer("current_uses").default(0),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// ==================== RIDES & TRANSPORTATION (MANTIDA FUNCIONAL) ====================
+
+export const rides = pgTable("rides", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  driverName: text("driverName"),
+  fromAddress: varchar("fromAddress", { length: 255 }).notNull(),
+  toAddress: varchar("toAddress", { length: 255 }).notNull(),
+  fromCity: varchar("fromCity", { length: 100 }),
+  toCity: varchar("toCity", { length: 100 }),
+  fromDistrict: varchar("fromDistrict", { length: 100 }),
+  toDistrict: varchar("toDistrict", { length: 100 }),
+  fromLocality: varchar("fromLocality", { length: 100 }),
+  fromProvince: varchar("fromProvince", { length: 100 }),
+  toLocality: varchar("toLocality", { length: 100 }),
+  toProvince: varchar("toProvince", { length: 100 }),
+  departureDate: timestamp("departureDate").notNull(),
+  departureTime: text("departureTime").notNull(),
+  availableSeats: integer("availableSeats").notNull(),
+  maxPassengers: integer("maxPassengers").default(4),
+  pricePerSeat: varchar("pricePerSeat").notNull(),
+  vehicleType: varchar("vehicleType", { length: 50 }),
+  vehicle_uuid: uuid("vehicle_uuid").references(() => vehicles.id, { onDelete: "set null" }),
+  additionalInfo: text("additionalInfo"),
+  status: statusEnum("status").default('available'),
+  type: rideTypeEnum("type").default("regular"),
+  from_geom: text("from_geom"),
+  to_geom: text("to_geom"),
+  distance_real_km: decimal("distance_real_km", { precision: 10, scale: 2 }),
+  polyline: text("polyline"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+}, (table) => ({
+  fromLocationIdx: index("rides_from_location_idx").on(table.fromLocality, table.fromProvince),
+  toLocationIdx: index("rides_to_location_idx").on(table.toLocality, table.toProvince),
+  fromCityIdx: index("rides_from_city_idx").on(table.fromCity),
+  toCityIdx: index("rides_to_city_idx").on(table.toCity),
+  statusIdx: index("rides_status_idx").on(table.status),
+  driverIdx: index("rides_driver_idx").on(table.driverId),
+  fromDistrictIdx: index("rides_from_district_idx").on(table.fromDistrict),
+  toDistrictIdx: index("rides_to_district_idx").on(table.toDistrict),
+  vehicleIdx: index("rides_vehicle_idx").on(table.vehicle_uuid),
+}));
+
+// ==================== BOOKINGS & PAYMENTS (CORRIGIDA) ====================
+
+// ✅ TABELA DE BOOKINGS DE RIDES (MANTIDA)
+export const bookings = pgTable("bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rideId: uuid("rideId").references(() => rides.id, { onDelete: "cascade" }),
+  passengerId: text("passengerId").references(() => users.id, { onDelete: "cascade" }),
+  accommodationId: uuid("accommodationId").references(() => hotels.id, { onDelete: "cascade" }), // ✅ CORREÇÃO: Referencia hotels
+  hotelRoomId: uuid("hotelRoomId").references(() => room_types.id, { onDelete: "cascade" }), // ✅ CORREÇÃO: Referencia room_types
+  type: serviceTypeEnum("type").default('ride'),
+  status: statusEnum("status").default('pending'),
+  totalPrice: decimal("totalPrice", { precision: 10, scale: 2 }).notNull(),
+  seatsBooked: integer("seatsBooked").notNull(),
+  passengers: integer("passengers").default(1),
+  guestName: text("guestName"),
+  guestEmail: text("guestEmail"),
+  guestPhone: text("guestPhone"),
+  checkInDate: timestamp("checkInDate"),
+  checkOutDate: timestamp("checkOutDate"),
+  nightsCount: integer("nightsCount"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+}, (table) => ({
+  statusIdx: index("bookings_status_idx").on(table.status),
+  typeIdx: index("bookings_type_idx").on(table.type),
+  passengerIdx: index("bookings_passenger_idx").on(table.passengerId),
+}));
+
+// ✅ TABELA DE PAGAMENTOS (CRITICAMENTE CORRIGIDA)
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("bookingId"), // ✅ CORREÇÃO: Referencia bookings.id (para rides) ou hotel_bookings.id
+  // ✅ NOVA REFERÊNCIA: Adicionado bookingId para hotel_bookings
+  hotel_booking_id: uuid("hotel_booking_id").references(() => hotel_bookings.id, { onDelete: "cascade" }),
+  userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  serviceType: serviceTypeEnum("serviceType").notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  platformFee: decimal("platformFee", { precision: 10, scale: 2 }).notNull(),
+  discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0.00"),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: paymentMethodEnum("paymentMethod"),
+  cardLast4: text("cardLast4"),
+  cardBrand: text("cardBrand"),
+  mpesaNumber: text("mpesaNumber"),
+  paymentStatus: statusEnum("paymentStatus").default('pending'),
+  paymentReference: text("paymentReference"),
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+}, (table) => ({
+  // ✅ CORREÇÃO: Adicionado índice para hotel_booking_id
+  hotelBookingIdx: index("payments_hotel_booking_idx").on(table.hotel_booking_id),
+  bookingIdx: index("payments_booking_idx").on(table.bookingId),
+  userIdx: index("payments_user_idx").on(table.userId),
+}));
+
+// ==================== TABELAS LEGACY (PARA COMPATIBILIDADE) ====================
+
+// ✅ TABELAS LEGACY - Mantidas para compatibilidade com código existente
 export const accommodations = pgTable("accommodations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   type: text("type").notNull(),
-  hostId: text("hostId").references(() => users.id, { onDelete: "set null" }).notNull(), // ✅ CORREÇÃO: notNull adicionado
+  hostId: text("hostId").references(() => users.id, { onDelete: "set null" }).notNull(),
   address: text("address").notNull(),
-  // CAMPOS PARA LOCALIZAÇÃO INTELIGENTE
   locality: varchar("locality", { length: 100 }),
   province: varchar("province", { length: 100 }),
   country: varchar("country", { length: 100 }).default('Moçambique'),
   searchRadius: integer("searchRadius").default(50),
-  lat: decimal("lat", { precision: 10, scale: 7 }), // ✅ CORREÇÃO: Mantido nullable
-  lng: decimal("lng", { precision: 10, scale: 7 }), // ✅ CORREÇÃO: Mantido nullable
-  rating: decimal("rating", { precision: 3, scale: 2 }).default("0.00"), // ✅ CORREÇÃO: Escala padronizada para 2
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("0.00"),
   reviewCount: integer("reviewCount").default(0),
   images: text("images").array().default(sql`'{}'`),
   amenities: text("amenities").array().default(sql`'{}'`),
@@ -206,13 +397,11 @@ export const accommodations = pgTable("accommodations", {
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 }, (table) => ({
-  // ✅ CORREÇÃO: Índices otimizados
   locationIdx: index("accommodations_location_idx").on(table.locality, table.province),
   geoIdx: index("accommodations_geo_idx").on(table.lat, table.lng),
   hostIdx: index("accommodations_host_idx").on(table.hostId),
 }));
 
-// ✅ CORREÇÃO: Campos redundantes removidos (amenities vs roomAmenities)
 export const hotelRooms = pgTable("hotelRooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   accommodationId: uuid("accommodationId").references(() => accommodations.id, { onDelete: "cascade" }).notNull(),
@@ -224,7 +413,7 @@ export const hotelRooms = pgTable("hotelRooms", {
   weekendPrice: decimal("weekendPrice", { precision: 8, scale: 2 }),
   holidayPrice: decimal("holidayPrice", { precision: 8, scale: 2 }),
   maxOccupancy: integer("maxOccupancy").notNull().default(2),
-  status: statusEnum("status").default("available"), // ✅ CORREÇÃO: Usando enum
+  status: statusEnum("status").default("available"),
   bedType: text("bedType"),
   bedCount: integer("bedCount").default(1),
   hasPrivateBathroom: boolean("hasPrivateBathroom").default(true),
@@ -233,14 +422,13 @@ export const hotelRooms = pgTable("hotelRooms", {
   hasTV: boolean("hasTV").default(false),
   hasBalcony: boolean("hasBalcony").default(false),
   hasKitchen: boolean("hasKitchen").default(false),
-  amenities: text("amenities").array().default(sql`'{}'`), // ✅ CORREÇÃO: Mantido apenas um campo
+  amenities: text("amenities").array().default(sql`'{}'`),
   isAvailable: boolean("isAvailable").default(true),
   maintenanceUntil: timestamp("maintenanceUntil"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: Status padronizado para usar enum
 export const roomTypes = pgTable("roomTypes", {
   id: uuid("id").defaultRandom().primaryKey(),
   accommodationId: uuid("accommodationId")
@@ -256,133 +444,14 @@ export const roomTypes = pgTable("roomTypes", {
   amenities: text("amenities").array().default(sql`'{}'`),
   images: text("images").array().default(sql`'{}'`),
   isAvailable: boolean("isAvailable").default(true),
-  status: statusEnum("status").default('active'), // ✅ CORREÇÃO: Usando enum
+  status: statusEnum("status").default('active'),
   basePrice: decimal("basePrice", { precision: 8, scale: 2 }),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ==================== RIDES & TRANSPORTATION (ATUALIZADA) ====================
+// ==================== TABELAS RESTANTES (MANTIDAS) ====================
 
-// ✅ CORREÇÃO: driverId agora é TEXT para compatibilidade
-// ✅ CORREÇÃO: Campos padronizados e tipo de ride usando enum
-// ✅ CORREÇÃO ADICIONAL: Adicionados campos fromCity e toCity
-// ✅ CORREÇÃO CRÍTICA: pricePerSeat alterado para varchar
-// ✅ CORREÇÃO COMPLETA: Adicionados todos os campos faltantes (usando text para campos geométricos)
-// ✅ CORREÇÃO CRÍTICA: Adicionado vehicleId como foreign key para vehicles
-export const rides = pgTable("rides", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  driverName: text("driverName"),
-  fromAddress: varchar("fromAddress", { length: 255 }).notNull(),
-  toAddress: varchar("toAddress", { length: 255 }).notNull(),
-  
-  // ✅ CORREÇÃO ADICIONAL: CAMPOS NOVOS fromCity e toCity
-  fromCity: varchar("fromCity", { length: 100 }),
-  toCity: varchar("toCity", { length: 100 }),
-  
-  // ✅ CORREÇÃO COMPLETA: CAMPOS FALTANTES ADICIONADOS
-  fromDistrict: varchar("fromDistrict", { length: 100 }),
-  toDistrict: varchar("toDistrict", { length: 100 }),
-  
-  // CAMPOS PARA LOCALIZAÇÃO INTELIGENTE
-  fromLocality: varchar("fromLocality", { length: 100 }),
-  fromProvince: varchar("fromProvince", { length: 100 }),
-  toLocality: varchar("toLocality", { length: 100 }),
-  toProvince: varchar("toProvince", { length: 100 }),
-  
-  departureDate: timestamp("departureDate").notNull(),
-  departureTime: text("departureTime").notNull(),
-  availableSeats: integer("availableSeats").notNull(),
-  maxPassengers: integer("maxPassengers").default(4),
-  
-  // ✅ CORREÇÃO CRÍTICA: Alterado de decimal para varchar
-  pricePerSeat: varchar("pricePerSeat").notNull(),
-  
-  vehicleType: varchar("vehicleType", { length: 50 }),
-  
-  // ✅ CORREÇÃO CRÍTICA: Adicionado vehicleId como foreign key para vehicles
-  vehicle_uuid: uuid("vehicle_uuid").references(() => vehicles.id, { onDelete: "set null" }),
-  
-  additionalInfo: text("additionalInfo"),
-  status: statusEnum("status").default('available'),
-  type: rideTypeEnum("type").default("regular"), // ✅ CORREÇÃO: Usando enum
-  
-  // ✅ CORREÇÃO COMPLETA: CAMPOS GEOMÉTRICOS E DE ROTA ADICIONADOS (usando text)
-  from_geom: text("from_geom"), // Será armazenado como texto (WKT ou GeoJSON)
-  to_geom: text("to_geom"), // Será armazenado como texto (WKT ou GeoJSON)
-  distance_real_km: decimal("distance_real_km", { precision: 10, scale: 2 }),
-  polyline: text("polyline"), // Será armazenado como texto (encoded polyline)
-  
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow(),
-}, (table) => ({
-  fromLocationIdx: index("rides_from_location_idx").on(table.fromLocality, table.fromProvince),
-  toLocationIdx: index("rides_to_location_idx").on(table.toLocality, table.toProvince),
-  // ✅ CORREÇÃO ADICIONAL: Índices para os novos campos
-  fromCityIdx: index("rides_from_city_idx").on(table.fromCity),
-  toCityIdx: index("rides_to_city_idx").on(table.toCity),
-  statusIdx: index("rides_status_idx").on(table.status),
-  driverIdx: index("rides_driver_idx").on(table.driverId),
-  // ✅ CORREÇÃO COMPLETA: Índices para campos de distrito
-  fromDistrictIdx: index("rides_from_district_idx").on(table.fromDistrict),
-  toDistrictIdx: index("rides_to_district_idx").on(table.toDistrict),
-  // ✅ NOVO: Índice para vehicleId
-  vehicleIdx: index("rides_vehicle_idx").on(table.vehicle_uuid),
-}));
-
-// ==================== BOOKINGS & PAYMENTS ====================
-
-// ✅ CORREÇÃO: passengerId agora é TEXT para compatibilidade
-export const bookings = pgTable("bookings", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  rideId: uuid("rideId").references(() => rides.id, { onDelete: "cascade" }),
-  passengerId: text("passengerId").references(() => users.id, { onDelete: "cascade" }), // ✅ CORREÇÃO: Mantido nullable
-  accommodationId: uuid("accommodationId").references(() => accommodations.id, { onDelete: "cascade" }),
-  hotelRoomId: uuid("hotelRoomId").references(() => hotelRooms.id, { onDelete: "cascade" }),
-  type: serviceTypeEnum("type").default('ride'),
-  status: statusEnum("status").default('pending'),
-  totalPrice: decimal("totalPrice", { precision: 10, scale: 2 }).notNull(),
-  seatsBooked: integer("seatsBooked").notNull(),
-  passengers: integer("passengers").default(1),
-  guestName: text("guestName"),
-  guestEmail: text("guestEmail"),
-  guestPhone: text("guestPhone"),
-  checkInDate: timestamp("checkInDate"),
-  checkOutDate: timestamp("checkOutDate"),
-  nightsCount: integer("nightsCount"),
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow(),
-}, (table) => ({
-  statusIdx: index("bookings_status_idx").on(table.status),
-  typeIdx: index("bookings_type_idx").on(table.type),
-  passengerIdx: index("bookings_passenger_idx").on(table.passengerId),
-}));
-
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
-export const payments = pgTable("payments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  bookingId: uuid("bookingId").references(() => bookings.id, { onDelete: "cascade" }).notNull(),
-  userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  serviceType: serviceTypeEnum("serviceType").notNull(),
-  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
-  platformFee: decimal("platformFee", { precision: 10, scale: 2 }).notNull(),
-  discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0.00"),
-  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
-  paymentMethod: paymentMethodEnum("paymentMethod"), // ✅ CORREÇÃO: Usando enum
-  cardLast4: text("cardLast4"),
-  cardBrand: text("cardBrand"),
-  mpesaNumber: text("mpesaNumber"),
-  paymentStatus: statusEnum("paymentStatus").default('pending'),
-  paymentReference: text("paymentReference"),
-  paidAt: timestamp("paidAt"),
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow(),
-});
-
-// ==================== RATINGS & REVIEWS ====================
-
-// ✅ CORREÇÃO: fromUserId e toUserId agora são TEXT para compatibilidade
 export const ratings = pgTable("ratings", {
   id: uuid("id").primaryKey().defaultRandom(),
   fromUserId: text("fromUserId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -397,9 +466,6 @@ export const ratings = pgTable("ratings", {
   serviceTypeIdx: index("ratings_service_type_idx").on(table.serviceType),
 }));
 
-// ==================== CHAT SYSTEM ====================
-
-// ✅ CORREÇÃO: participantOneId e participantTwoId agora são TEXT para compatibilidade
 export const chatRooms = pgTable("chatRooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   participantOneId: text("participantOneId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -415,7 +481,6 @@ export const chatRooms = pgTable("chatRooms", {
   participantsIdx: index("chat_rooms_participants_idx").on(table.participantOneId, table.participantTwoId),
 }));
 
-// ✅ CORREÇÃO: fromUserId e toUserId agora são TEXT para compatibilidade
 export const chatMessages = pgTable("chatMessages", {
   id: uuid("id").primaryKey().defaultRandom(),
   chatRoomId: uuid("chatRoomId").references(() => chatRooms.id, { onDelete: "cascade" }).notNull(),
@@ -431,11 +496,9 @@ export const chatMessages = pgTable("chatMessages", {
   fromUserIdx: index("chat_messages_from_user_idx").on(table.fromUserId),
 }));
 
-// ==================== PARTNERSHIP SYSTEM ====================
-
 export const partnershipProposals = pgTable("partnershipProposals", {
   id: uuid("id").primaryKey().defaultRandom(),
-  hotelId: uuid("hotelId").references(() => accommodations.id, { onDelete: "cascade" }).notNull(),
+  hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }).notNull(), // ✅ CORREÇÃO: Referencia hotels
   title: text("title").notNull(),
   description: text("description"),
   status: statusEnum("status").notNull().default('pending'),
@@ -457,7 +520,6 @@ export const partnershipProposals = pgTable("partnershipProposals", {
   hotelIdx: index("partnership_proposals_hotel_idx").on(table.hotelId),
 }));
 
-// ✅ CORREÇÃO: driverId agora é TEXT para compatibilidade
 export const partnershipApplications = pgTable("partnershipApplications", {
   id: uuid("id").primaryKey().defaultRandom(),
   proposalId: uuid("proposalId")
@@ -479,9 +541,6 @@ export const partnershipApplications = pgTable("partnershipApplications", {
   driverIdx: index("partnership_applications_driver_idx").on(table.driverId),
 }));
 
-// ==================== ADMIN & SYSTEM TABLES ====================
-
-// ✅ CORREÇÃO: adminId e targetUserId agora são TEXT para compatibilidade
 export const adminActions = pgTable("adminActions", {
   id: uuid("id").primaryKey().defaultRandom(),
   adminId: text("adminId").references(() => users.id, { onDelete: "set null" }).notNull(),
@@ -496,7 +555,7 @@ export const adminActions = pgTable("adminActions", {
 
 export const priceRegulations = pgTable("priceRegulations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  rideType: rideTypeEnum("rideType").notNull(), // ✅ CORREÇÃO: Usando enum
+  rideType: rideTypeEnum("rideType").notNull(),
   minPricePerKm: decimal("minPricePerKm", { precision: 8, scale: 2 }).notNull(),
   maxPricePerKm: decimal("maxPricePerKm", { precision: 8, scale: 2 }).notNull(),
   baseFare: decimal("baseFare", { precision: 8, scale: 2 }).notNull(),
@@ -505,7 +564,6 @@ export const priceRegulations = pgTable("priceRegulations", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: passengerId e driverId agora são TEXT para compatibilidade
 export const priceNegotiations = pgTable("priceNegotiations", {
   id: uuid("id").primaryKey().defaultRandom(),
   rideId: uuid("rideId").references(() => rides.id, { onDelete: "cascade" }),
@@ -521,7 +579,6 @@ export const priceNegotiations = pgTable("priceNegotiations", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: passengerId e driverId agora são TEXT para compatibilidade
 export const pickupRequests = pgTable("pickupRequests", {
   id: uuid("id").primaryKey().defaultRandom(),
   rideId: uuid("rideId").references(() => rides.id, { onDelete: "cascade" }),
@@ -542,9 +599,6 @@ export const pickupRequests = pgTable("pickupRequests", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ==================== DRIVER & VEHICLE MANAGEMENT ====================
-
-// ✅ CORREÇÃO: driverId agora é TEXT para compatibilidade
 export const driverStats = pgTable("driverStats", {
   id: uuid("id").primaryKey().defaultRandom(),
   driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).unique().notNull(),
@@ -560,7 +614,6 @@ export const driverStats = pgTable("driverStats", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: driverId agora é TEXT para compatibilidade
 export const driverDocuments = pgTable("driverDocuments", {
   id: uuid("id").primaryKey().defaultRandom(),
   driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -580,9 +633,6 @@ export const driverDocuments = pgTable("driverDocuments", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ==================== EVENTS & FAIRS SYSTEM ====================
-
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
 export const eventManagers = pgTable("eventManagers", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -598,7 +648,6 @@ export const eventManagers = pgTable("eventManagers", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: organizerId agora é TEXT para compatibilidade
 export const events = pgTable("events", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizerId: text("organizerId").references(() => users.id, { onDelete: "set null" }).notNull(),
@@ -645,9 +694,6 @@ export const events = pgTable("events", {
   statusIdx: index("events_status_idx").on(table.status),
 }));
 
-// ==================== LOYALTY SYSTEM ====================
-
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
 export const loyaltyProgram = pgTable("loyaltyProgram", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -659,7 +705,6 @@ export const loyaltyProgram = pgTable("loyaltyProgram", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
 export const pointsHistory = pgTable("pointsHistory", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -686,7 +731,6 @@ export const loyaltyRewards = pgTable("loyaltyRewards", {
   updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
 export const rewardRedemptions = pgTable("rewardRedemptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -698,9 +742,6 @@ export const rewardRedemptions = pgTable("rewardRedemptions", {
   createdAt: timestamp("createdAt").defaultNow(),
 });
 
-// ==================== NOTIFICATIONS & FINANCIAL REPORTS ====================
-
-// ✅ CORREÇÃO: userId agora é TEXT para compatibilidade
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -720,7 +761,7 @@ export const notifications = pgTable("notifications", {
 
 export const hotelFinancialReports = pgTable("hotelFinancialReports", {
   id: uuid("id").primaryKey().defaultRandom(),
-  accommodationId: uuid("accommodationId").references(() => accommodations.id, { onDelete: "cascade" }).notNull(),
+  accommodationId: uuid("accommodationId").references(() => hotels.id, { onDelete: "cascade" }).notNull(), // ✅ CORREÇÃO: Referencia hotels
   reportDate: timestamp("reportDate").notNull(),
   reportType: text("reportType").notNull(),
   totalRevenue: decimal("totalRevenue", { precision: 10, scale: 2 }).notNull(),
@@ -751,19 +792,90 @@ export const systemSettings = pgTable("systemSettings", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
-// ==================== ZOD SCHEMAS COMPLETOS (ATUALIZADOS) ====================
+// ==================== ZOD SCHEMAS (ATUALIZADOS) ====================
 
-// ✅ CORREÇÃO: Enums Zod atualizados e completos
 const userTypeZod = z.enum(["client", "driver", "host", "admin"]);
-const statusZod = z.enum(["pending", "active", "available", "confirmed", "cancelled", "completed", "expired", "in_progress", "approved", "rejected"]);
-const serviceTypeZod = z.enum(["ride", "accommodation", "event"]);
+const statusZod = z.enum(["pending", "active", "available", "confirmed", "cancelled", "completed", "expired", "in_progress", "checked_in", "checked_out", "approved", "rejected", "pending_payment"]);
+const serviceTypeZod = z.enum(["ride", "accommodation", "event", "hotel"]);
 const partnershipLevelZod = z.enum(["bronze", "silver", "gold", "platinum"]);
 const verificationStatusZod = z.enum(["pending", "in_review", "verified", "rejected"]);
-const paymentMethodZod = z.enum(["card", "mpesa", "bank", "mobile_money", "bank_transfer"]);
+const paymentMethodZod = z.enum(["card", "mpesa", "bank", "mobile_money", "bank_transfer", "pending"]);
 const rideTypeZod = z.enum(["regular", "premium", "shared", "express"]);
 const locationTypeZod = z.enum(["city", "town", "village"]);
-// ✅ NOVO: Enum para tipos de veículo
 const vehicleTypeZod = z.enum(["economy", "comfort", "luxury", "family", "premium", "van", "suv"]);
+
+// ✅ NOVO: Schema para hotéis
+export const insertHotelSchema = createInsertSchema(hotels, {
+  name: z.string().min(1).max(255),
+  slug: z.string().min(1).max(255),
+  contact_email: z.string().email(),
+  contact_phone: z.string().optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  is_active: z.boolean().default(true),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  created_by: true,
+  updated_by: true,
+});
+
+// ✅ NOVO: Schema para room_types
+export const insertRoomTypeSchema = createInsertSchema(room_types, {
+  base_price: z.number().positive(),
+  total_units: z.number().int().positive(),
+  base_occupancy: z.number().int().positive(),
+  max_occupancy: z.number().int().positive(),
+  min_nights_default: z.number().int().positive().default(1),
+  extra_adult_price: z.number().nonnegative(),
+  extra_child_price: z.number().nonnegative(),
+  is_active: z.boolean().default(true),
+}).omit({
+  id: true,
+  hotel_id: true,
+  created_at: true,
+  updated_at: true,
+});
+
+// ✅ NOVO: Schema para room_availability
+export const insertRoomAvailabilitySchema = createInsertSchema(room_availability, {
+  date: z.date(),
+  price: z.number().positive(),
+  remaining_units: z.number().int().nonnegative(),
+  stop_sell: z.boolean().default(false),
+  min_nights: z.number().int().positive().default(1),
+}).omit({
+  id: true,
+  hotel_id: true,
+  room_type_id: true,
+  created_at: true,
+  updated_at: true,
+});
+
+// ✅ NOVO: Schema para hotel_bookings
+export const insertHotelBookingSchema = createInsertSchema(hotel_bookings, {
+  guest_name: z.string().min(1),
+  guest_email: z.string().email(),
+  guest_phone: z.string().optional(),
+  check_in: z.date(),
+  check_out: z.date(),
+  nights: z.number().int().positive(),
+  units: z.number().int().positive().default(1),
+  adults: z.number().int().positive().default(2),
+  children: z.number().int().nonnegative().default(0),
+  base_price: z.number().positive(),
+  extra_charges: z.number().nonnegative().default(0),
+  total_price: z.number().positive(),
+  status: statusZod.default('confirmed'),
+  payment_status: statusZod.default('pending'),
+}).omit({
+  id: true,
+  hotel_id: true,
+  room_type_id: true,
+  created_at: true,
+  updated_at: true,
+});
 
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -789,16 +901,11 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   canOfferServices: true,
 });
 
-// ✅ CORREÇÃO: Schema para rides com campos novos fromCity e toCity
-// ✅ CORREÇÃO: pricePerSeat agora é string no schema Zod também
-// ✅ CORREÇÃO COMPLETA: Adicionados todos os campos faltantes ao schema
 export const insertRideSchema = createInsertSchema(rides, {
   fromAddress: z.string().min(1),
   toAddress: z.string().min(1),
-  // ✅ CORREÇÃO ADICIONAL: Campos fromCity e toCity adicionados
   fromCity: z.string().optional(),
   toCity: z.string().optional(),
-  // ✅ CORREÇÃO COMPLETA: Campos fromDistrict e toDistrict adicionados
   fromDistrict: z.string().optional(),
   toDistrict: z.string().optional(),
   fromLocality: z.string().optional(),
@@ -807,13 +914,10 @@ export const insertRideSchema = createInsertSchema(rides, {
   toProvince: z.string().optional(),
   departureDate: z.date(),
   availableSeats: z.number().int().min(1).max(10),
-  // ✅ CORREÇÃO: pricePerSeat agora é string
   pricePerSeat: z.string().min(1),
   status: statusZod.optional(),
   type: rideTypeZod.optional(),
-  // ✅ CORREÇÃO: vehicleId adicionado como opcional para compatibilidade
   vehicleId: z.string().uuid().optional(),
-  // ✅ CORREÇÃO COMPLETA: Campos geométricos adicionados
   distance_real_km: z.number().optional(),
   from_geom: z.string().optional(),
   to_geom: z.string().optional(),
@@ -824,14 +928,11 @@ export const insertRideSchema = createInsertSchema(rides, {
   updatedAt: true,
 });
 
-// ✅ CORREÇÃO: Schema para atualização de rides com campos novos
 export const updateRideSchema = createInsertSchema(rides, {
   fromAddress: z.string().min(1).optional(),
   toAddress: z.string().min(1).optional(),
-  // ✅ CORREÇÃO ADICIONAL: Campos fromCity e toCity adicionados
   fromCity: z.string().optional(),
   toCity: z.string().optional(),
-  // ✅ CORREÇÃO COMPLETA: Campos fromDistrict e toDistrict adicionados
   fromDistrict: z.string().optional(),
   toDistrict: z.string().optional(),
   fromLocality: z.string().optional(),
@@ -840,13 +941,10 @@ export const updateRideSchema = createInsertSchema(rides, {
   toProvince: z.string().optional(),
   departureDate: z.date().optional(),
   availableSeats: z.number().int().min(1).max(10).optional(),
-  // ✅ CORREÇÃO: pricePerSeat agora é string
   pricePerSeat: z.string().min(1).optional(),
   status: statusZod.optional(),
   type: rideTypeZod.optional(),
-  // ✅ CORREÇÃO: vehicleId adicionado como opcional
   vehicleId: z.string().uuid().optional(),
-  // ✅ CORREÇÃO COMPLETA: Campos geométricos adicionados
   distance_real_km: z.number().optional(),
   from_geom: z.string().optional(),
   to_geom: z.string().optional(),
@@ -857,7 +955,6 @@ export const updateRideSchema = createInsertSchema(rides, {
   updatedAt: true,
 });
 
-// ✅ NOVO: Schema para veículos com validação de max_passengers
 export const vehicleSchema = z.object({
   plateNumber: z.string().min(3).max(20),
   make: z.string().min(1).max(100),
@@ -865,12 +962,11 @@ export const vehicleSchema = z.object({
   color: z.string().min(1).max(50),
   year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
   vehicleType: vehicleTypeZod,
-  maxPassengers: z.number().min(1).max(50), // ✅ CORREÇÃO: Validação movida para Zod
+  maxPassengers: z.number().min(1).max(50),
   features: z.array(z.string()).optional(),
   photoUrl: z.string().url().optional().or(z.literal(''))
 });
 
-// ✅ NOVO: Schema para inserção de veículos
 export const insertVehicleSchema = createInsertSchema(vehicles, {
   plate_number: z.string().min(3).max(20),
   plate_number_raw: z.string().min(3).max(20),
@@ -879,7 +975,7 @@ export const insertVehicleSchema = createInsertSchema(vehicles, {
   color: z.string().min(1).max(50),
   year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
   vehicle_type: vehicleTypeZod,
-  max_passengers: z.number().min(1).max(50), // ✅ CORREÇÃO: Validação no Zod
+  max_passengers: z.number().min(1).max(50),
   features: z.array(z.string()).optional(),
   photo_url: z.string().url().optional().or(z.literal('')),
   is_active: z.boolean().default(true),
@@ -890,7 +986,6 @@ export const insertVehicleSchema = createInsertSchema(vehicles, {
   updated_at: true,
 });
 
-// ✅ NOVO: Schema para criação de rides com vehicleId obrigatório (para uso futuro)
 export const createRideSchema = z.object({
   fromLocation: z.object({
     name: z.string().min(1),
@@ -908,7 +1003,6 @@ export const createRideSchema = z.object({
   departureTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
   pricePerSeat: z.number().min(1),
   maxPassengers: z.number().min(1),
-  // ✅ OBRIGATÓRIO no novo schema
   vehicleId: z.string().uuid(),
   description: z.string().optional(),
   allowNegotiation: z.boolean().default(false),
@@ -940,7 +1034,6 @@ export const insertBookingSchema = createInsertSchema(bookings, {
   updatedAt: true,
 });
 
-// SCHEMA ATUALIZADO para mozambique_locations
 export const insertMozambiqueLocationSchema = createInsertSchema(mozambiqueLocations, {
   name: z.string().min(1).max(100),
   province: z.string().max(100).optional(),
@@ -954,24 +1047,6 @@ export const insertMozambiqueLocationSchema = createInsertSchema(mozambiqueLocat
   updatedAt: true,
 });
 
-export const insertHotelRoomSchema = createInsertSchema(hotelRooms);
-export const insertRoomTypeSchema = createInsertSchema(roomTypes);
-export const insertPaymentSchema = createInsertSchema(payments);
-export const insertRatingSchema = createInsertSchema(ratings);
-export const insertChatRoomSchema = createInsertSchema(chatRooms);
-export const insertChatMessageSchema = createInsertSchema(chatMessages);
-export const insertPartnershipProposalSchema = createInsertSchema(partnershipProposals);
-export const insertPartnershipApplicationSchema = createInsertSchema(partnershipApplications);
-export const insertEventSchema = createInsertSchema(events);
-export const insertNotificationSchema = createInsertSchema(notifications);
-export const insertDriverStatsSchema = createInsertSchema(driverStats);
-export const insertDriverDocumentsSchema = createInsertSchema(driverDocuments);
-export const insertLoyaltyProgramSchema = createInsertSchema(loyaltyProgram);
-export const insertPointsHistorySchema = createInsertSchema(pointsHistory);
-export const insertLoyaltyRewardsSchema = createInsertSchema(loyaltyRewards);
-export const insertRewardRedemptionsSchema = createInsertSchema(rewardRedemptions);
-export const insertSystemSettingsSchema = createInsertSchema(systemSettings);
-
 // ==================== TIPOS TYPESCRIPT (ATUALIZADOS) ====================
 
 export type User = typeof users.$inferSelect;
@@ -980,12 +1055,21 @@ export type UserInsert = typeof users.$inferInsert;
 export type Ride = typeof rides.$inferSelect;
 export type RideInsert = typeof rides.$inferInsert;
 
-// ✅ NOVO: Tipos para veículos
 export type Vehicle = typeof vehicles.$inferSelect;
 export type VehicleInsert = typeof vehicles.$inferInsert;
 
-export type Accommodation = typeof accommodations.$inferSelect;
-export type AccommodationInsert = typeof accommodations.$inferInsert;
+// ✅ NOVO: Tipos para sistema hoteleiro
+export type Hotel = typeof hotels.$inferSelect;
+export type HotelInsert = typeof hotels.$inferInsert;
+
+export type RoomType = typeof room_types.$inferSelect;
+export type RoomTypeInsert = typeof room_types.$inferInsert;
+
+export type RoomAvailability = typeof room_availability.$inferSelect;
+export type RoomAvailabilityInsert = typeof room_availability.$inferInsert;
+
+export type HotelBooking = typeof hotel_bookings.$inferSelect;
+export type HotelBookingInsert = typeof hotel_bookings.$inferInsert;
 
 export type Booking = typeof bookings.$inferSelect;
 export type BookingInsert = typeof bookings.$inferInsert;
@@ -993,15 +1077,20 @@ export type BookingInsert = typeof bookings.$inferInsert;
 export type MozambiqueLocation = typeof mozambiqueLocations.$inferSelect;
 export type MozambiqueLocationInsert = typeof mozambiqueLocations.$inferInsert;
 
-export type HotelRoom = typeof hotelRooms.$inferSelect;
-export type HotelRoomInsert = typeof hotelRooms.$inferInsert;
-
-export type RoomType = typeof roomTypes.$inferSelect;
-export type RoomTypeInsert = typeof roomTypes.$inferInsert;
-
 export type NewSystemSetting = typeof systemSettings.$inferInsert;
 
-// Interface para busca inteligente (ATUALIZADA)
+// ✅ CORREÇÃO: Interface para busca de hotéis (atualizada)
+export interface HotelSearchParams {
+  location: LocationSuggestion | null;
+  checkIn?: string;
+  checkOut?: string;
+  guests?: number;
+  searchRadius?: number;
+  roomTypeFilter?: string;
+  maxPrice?: number;
+  requiredAmenities?: string[];
+}
+
 export interface LocationSuggestion {
   id: string;
   name: string;
@@ -1035,7 +1124,6 @@ export interface RideSearchParams {
   passengers?: number;
 }
 
-// ✅ NOVO: Interface para criação de rides com vehicleId
 export interface CreateRideRequest {
   fromLocation: {
     name: string;
@@ -1053,7 +1141,7 @@ export interface CreateRideRequest {
   departureTime: string;
   pricePerSeat: number;
   maxPassengers: number;
-  vehicleId: string; // ✅ OBRIGATÓRIO
+  vehicleId: string;
   description?: string;
   allowNegotiation?: boolean;
   allowPickupEnRoute?: boolean;
