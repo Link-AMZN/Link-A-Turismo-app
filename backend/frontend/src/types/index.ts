@@ -111,6 +111,74 @@ export interface RoomType {
   };
 }
 
+// ====================== EVENT SPACE TYPES ======================
+export interface EventSpace {
+  id: string;
+  event_space_id?: string;
+  hotel_id: string;
+  name: string;
+  description?: string;
+  
+  capacity_min: number;
+  capacity_max: number;
+  size_sqm?: number;
+  
+  price_per_hour?: number;
+  price_per_half_day?: number;
+  price_per_day?: number;
+  
+  space_type: 'conference' | 'banquet' | 'meeting' | 'outdoor' | 'ballroom' | 'theater' | 'other';
+  
+  amenities?: string[];
+  equipment?: string[];
+  images?: string[];
+  
+  is_active?: boolean;
+  created_at?: string | Date;
+  updated_at?: string | Date;
+}
+
+export interface EventSpaceCreateRequest {
+  name: string;
+  description?: string;
+  capacityMin: number;
+  capacityMax: number;
+  sizeSqm?: number;
+  pricePerHour?: number;
+  pricePerHalfDay?: number;
+  pricePerDay?: number;
+  spaceType: 'conference' | 'banquet' | 'meeting' | 'outdoor' | 'ballroom' | 'theater' | 'other';
+  amenities?: string[];
+  equipment?: string[];
+  images?: string[];
+  isActive?: boolean;
+}
+
+export interface EventSpaceUpdateRequest {
+  name?: string;
+  description?: string;
+  capacityMin?: number;
+  capacityMax?: number;
+  sizeSqm?: number;
+  pricePerHour?: number;
+  pricePerHalfDay?: number;
+  pricePerDay?: number;
+  spaceType?: 'conference' | 'banquet' | 'meeting' | 'outdoor' | 'ballroom' | 'theater' | 'other';
+  amenities?: string[];
+  equipment?: string[];
+  images?: string[];
+  isActive?: boolean;
+}
+
+export interface EventSpaceListResponse {
+  success: boolean;
+  data?: EventSpace[];
+  eventSpaces?: EventSpace[];
+  count?: number;
+  total?: number;
+  error?: string;
+}
+
 // ====================== HOTEL MANAGEMENT ======================
 export interface HotelCreateRequest {
   name: string;

@@ -13,6 +13,11 @@ import RoomTypeCreatePage from './pages/[hotelId]/room-types/create/RoomTypeCrea
 import RoomTypeEditPage from './pages/[hotelId]/room-types/edit/RoomTypeEditPage';
 import RoomTypeDetailsPage from './pages/[hotelId]/room-types/[roomTypeId]/RoomTypeDetailsPage';
 
+import EventSpaceListPage from './pages/[hotelId]/event-spaces/EventSpaceListPage';
+import EventSpaceCreatePage from './pages/[hotelId]/event-spaces/create/EventSpaceCreatePage';
+import EventSpaceEditPage from './pages/[hotelId]/event-spaces/edit/EventSpaceEditPage';
+import EventSpaceDetailsPage from './pages/[hotelId]/event-spaces/[eventSpaceId]/EventSpaceDetailsPage';
+
 import AvailabilityPage from './pages/[hotelId]/availability/AvailabilityPage';
 import BookingListPage from './pages/bookings/BookingListPage';
 import BookingDetailsPage from './pages/bookings/[bookingId]/BookingDetailsPage';
@@ -176,6 +181,34 @@ export default function HotelRoutes() {
       <Route path="/hotels/:hotelId/room-types">
         <PageContainer>
           <RoomTypeListPage />
+        </PageContainer>
+      </Route>
+      
+      {/* Event Space Edit - SEM selector */}
+      <Route path="/hotels/:hotelId/event-spaces/:eventSpaceId/edit">
+        <PageContainer>
+          <EventSpaceEditPage />
+        </PageContainer>
+      </Route>
+      
+      {/* Event Space Details - SEM selector */}
+      <Route path="/hotels/:hotelId/event-spaces/:eventSpaceId">
+        <PageContainer>
+          <EventSpaceDetailsPage />
+        </PageContainer>
+      </Route>
+      
+      {/* Criar Event Space - SEM selector */}
+      <Route path="/hotels/:hotelId/event-spaces/create">
+        <PageContainer>
+          <EventSpaceCreatePage />
+        </PageContainer>
+      </Route>
+      
+      {/* Listar Event Spaces - SEM selector */}
+      <Route path="/hotels/:hotelId/event-spaces">
+        <PageContainer>
+          <EventSpaceListPage />
         </PageContainer>
       </Route>
       

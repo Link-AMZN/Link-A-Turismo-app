@@ -39,6 +39,10 @@ import {
   ApiResponse,
   HotelByIdResponse,
   RoomTypesResponse,
+  EventSpace,
+  EventSpaceCreateRequest,
+  EventSpaceUpdateRequest,
+  EventSpaceListResponse,
 } from '../types/index';
 
 // ====================== TIPOS RIDE ======================
@@ -875,6 +879,142 @@ class ApiService {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Erro ao obter detalhes do tipo de quarto'
+        };
+      }
+    }
+  }
+
+  // ====================== GESTÃO DE EVENT SPACES ======================
+
+  async getEventSpacesByHotel(hotelId: string): Promise<EventSpaceListResponse> {
+    try {
+      return await this.get<EventSpaceListResponse>(`/api/v2/hotels/${hotelId}/event-spaces`);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao listar espaços para eventos',
+        data: [],
+        count: 0
+      };
+    }
+  }
+
+  async getEventSpaceById(eventSpaceId: string): Promise<ApiResponse<EventSpace>> {
+    try {
+      return await this.get<ApiResponse<EventSpace>>(`/api/v2/hotels/event-spaces/${eventSpaceId}`);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar espaço para eventos'
+      };
+    }
+  }
+
+  async createEventSpace(hotelId: string, data: EventSpaceCreateRequest): Promise<ApiResponse<EventSpace>> {
+    try {
+      return await this.post<ApiResponse<EventSpace>>(`/api/v2/hotels/${hotelId}/event-spaces`, data);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao criar espaço para eventos'
+      };
+    }
+  }
+
+  async updateEventSpace(eventSpaceId: string, data: EventSpaceUpdateRequest): Promise<ApiResponse<EventSpace>> {
+    try {
+      return await this.put<ApiResponse<EventSpace>>(`/api/v2/hotels/event-spaces/${eventSpaceId}`, data);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao atualizar espaço para eventos'
+      };
+    }
+  }
+
+  async deleteEventSpace(eventSpaceId: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔍 API: deleteEventSpace chamado com ID:', eventSpaceId);
+    
+    if (!eventSpaceId || eventSpaceId === 'undefined' || eventSpaceId === 'null' || eventSpaceId.trim() === '') {
+      console.error('❌ API deleteEventSpace: ID inválido recebido:', eventSpaceId);
+      return {
+        success: false,
+        error: 'ID do espaço para eventos inválido. Não pode ser undefined, null ou vazio.'
+      };
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(eventSpaceId)) {
+      console.error('❌ API deleteEventSpace: Formato UUID inválido:', eventSpaceId);
+      return {
+        success: false,
+        error: 'Formato do ID do espaço para eventos inválido. Deve ser um UUID válido.'
+      };
+    }
+
+    try {
+      console.log(`🗑️ API: Deletando event space com ID válido: ${eventSpaceId}`);
+      
+      const headers = await this.getAuthHeaders();
+      console.log('🔐 Headers sendo enviados para delete:', Object.keys(headers));
+      
+      return await this.delete<ApiResponse<{ message: string }>>(
+        `/api/v2/hotels/event-spaces/${eventSpaceId}`,
+        headers
+      );
+    } catch (error) {
+      console.error('❌ API deleteEventSpace error:', error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('403')) {
+          return {
+            success: false,
+            error: 'Você não tem permissão para deletar este espaço para eventos. Verifique se você é o proprietário do hotel.'
+          };
+        } else if (error.message.includes('401')) {
+          return {
+            success: false,
+            error: 'Autenticação expirada. Faça login novamente.'
+          };
+        } else if (error.message.includes('404')) {
+          return {
+            success: false,
+            error: 'Espaço para eventos não encontrado. Pode já ter sido deletado.'
+          };
+        }
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+      
+      return {
+        success: false,
+        error: 'Erro ao desativar espaço para eventos. Verifique sua conexão.'
+      };
+    }
+  }
+
+  async getEventSpaceDetails(hotelId: string, eventSpaceId: string): Promise<ApiResponse<EventSpace>> {
+    try {
+      return await this.get<ApiResponse<EventSpace>>(`/api/v2/hotels/${hotelId}/event-spaces/${eventSpaceId}`);
+    } catch (error) {
+      try {
+        const response = await this.getEventSpacesByHotel(hotelId);
+        if (response.success && Array.isArray(response.data)) {
+          const eventSpace = response.data.find((es: any) => es.id === eventSpaceId || es.eventSpaceId === eventSpaceId);
+          if (eventSpace) {
+            return {
+              success: true,
+              data: eventSpace
+            };
+          }
+        }
+        throw new Error('Espaço para eventos não encontrado');
+      } catch (fallbackError) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Erro ao obter detalhes do espaço para eventos'
         };
       }
     }
