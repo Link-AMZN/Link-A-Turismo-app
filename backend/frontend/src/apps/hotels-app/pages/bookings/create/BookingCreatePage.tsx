@@ -1,7 +1,7 @@
 // src/apps/hotels-app/pages/bookings/create/BookingCreatePage.tsx - VERSÃO CORRIGIDA
 import { useState, useEffect } from 'react';
 import { Link } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
@@ -10,12 +10,12 @@ import { Textarea } from '@/shared/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
 import { Calendar } from '@/shared/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover';
+import { Badge } from '@/shared/components/ui/badge';
 import { format } from 'date-fns';
 import { 
-  ArrowLeft, Calendar as CalendarIcon, User, Mail, Phone,
+  ArrowLeft, Calendar as CalendarIcon, User,
   Users, Bed, DollarSign, CheckCircle, Building2,
-  Clock, CreditCard, Save, AlertCircle,
-  Plus
+  Clock, AlertCircle, Plus, CreditCard, Save
 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useToast } from '@/shared/hooks/use-toast';
@@ -436,24 +436,45 @@ export default function BookingCreatePage() {
       
       console.log('📦 BookingCreatePage: Dados do booking:', bookingData);
 
-      // Em produção, use: return await apiService.createBooking(bookingData);
-      // Simulação por enquanto para demonstração
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          // Simular validação
-          if (Math.random() > 0.1) { // 90% de sucesso
-            console.log('✅ BookingCreatePage: Booking criado com sucesso (simulação)');
-            resolve({ 
-              success: true, 
-              bookingId: `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              message: 'Reserva criada com sucesso!' 
-            });
-          } else {
-            console.error('❌ BookingCreatePage: Simulação de erro no booking');
-            reject(new Error('Erro simulado ao criar reserva'));
-          }
-        }, 1500);
+      // Chamar API real para criar reserva
+      const response = await apiService.createHotelBooking({
+        hotelId: bookingData.hotelId,
+        roomTypeId: bookingData.roomTypeId,
+        guestName: bookingData.guestName,
+        guestEmail: bookingData.guestEmail,
+        guestPhone: bookingData.guestPhone,
+        checkIn: bookingData.checkIn,
+        checkOut: bookingData.checkOut,
+        adults: bookingData.adults,
+        children: bookingData.children,
+        units: bookingData.units,
+        specialRequests: bookingData.specialRequests,
+        promoCode: formData.promoCode || undefined
       });
+
+      console.log('📋 BookingCreatePage: Resposta da API:', response);
+
+      if (!response.success) {
+        throw new Error(response.error || 'Erro ao criar reserva');
+      }
+
+      // Extract bookingId from various response formats
+      const extractedBookingId = 
+        response.bookingId || 
+        response.booking_id || 
+        response.booking?.booking_id || 
+        response.booking?.bookingId ||
+        (response.booking as any)?.id;
+
+      if (!extractedBookingId) {
+        console.warn('⚠️ BookingCreatePage: bookingId não encontrado na resposta, usando confirmationCode');
+      }
+
+      return {
+        success: true,
+        bookingId: extractedBookingId || response.confirmationCode || response.confirmation_code,
+        message: response.message || 'Reserva criada com sucesso!'
+      };
     },
     onSuccess: (response: any) => {
       console.log('🎉 BookingCreatePage: Booking criado com sucesso:', response);
@@ -461,13 +482,17 @@ export default function BookingCreatePage() {
       toast({
         title: 'Sucesso!',
         description: response.message,
-        icon: <CheckCircle className="h-5 w-5 text-green-600" />,
       });
       
-      // Redirecionar para detalhes da reserva
+      // Redirecionar para lista ou detalhes da reserva
       setTimeout(() => {
-        console.log('📍 BookingCreatePage: Redirecionando para detalhes do booking');
-        window.location.href = `/hotels/bookings/${response.bookingId}`;
+        if (response.bookingId) {
+          console.log('📍 BookingCreatePage: Redirecionando para detalhes do booking:', response.bookingId);
+          window.location.href = `/hotels/bookings/${response.bookingId}`;
+        } else {
+          console.log('📍 BookingCreatePage: Redirecionando para lista de reservas');
+          window.location.href = `/hotels/bookings`;
+        }
       }, 2000);
     },
     onError: (error: any) => {
@@ -1138,8 +1163,6 @@ export default function BookingCreatePage() {
                   />
                 </div>
 
-                {/* ✅✅✅ CORREÇÃO: Adicionar Badge import */}
-                <Badge variant="outline" className="hidden">Placeholder para Badge</Badge>
               </CardContent>
             </Card>
 
