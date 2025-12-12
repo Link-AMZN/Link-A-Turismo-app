@@ -172,6 +172,29 @@ export const room_types = pgTable("room_types", {
   activeIdx: index("room_types_active_idx").on(table.is_active).where(sql`is_active = true`),
 }));
 
+// ✅ TABELA DE ESPAÇOS PARA EVENTOS
+export const event_spaces = pgTable("event_spaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hotel_id: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  capacity_min: integer("capacity_min").notNull().default(10),
+  capacity_max: integer("capacity_max").notNull().default(100),
+  price_per_hour: decimal("price_per_hour", { precision: 10, scale: 2 }),
+  price_per_day: decimal("price_per_day", { precision: 10, scale: 2 }),
+  price_per_event: decimal("price_per_event", { precision: 10, scale: 2 }),
+  area_sqm: integer("area_sqm"),
+  amenities: text("amenities").array().default(sql`'{}'`),
+  event_types: text("event_types").array().default(sql`'{}'`),
+  images: text("images").array().default(sql`'{}'`),
+  is_active: boolean("is_active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  hotelIdx: index("event_spaces_hotel_idx").on(table.hotel_id),
+  activeIdx: index("event_spaces_active_idx").on(table.is_active).where(sql`is_active = true`),
+}));
+
 // ✅ TABELA DE DISPONIBILIDADE (CRÍTICA - CORRIGIDA) - ÚNICA ALTERAÇÃO NECESSÁRIA
 export const room_availability = pgTable("room_availability", {
   id: uuid("id").primaryKey().defaultRandom(),

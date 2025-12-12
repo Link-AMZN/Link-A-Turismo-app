@@ -1970,6 +1970,144 @@ export class HotelService {
       };
     }
   }
+
+  // ====================== EVENT SPACES ======================
+
+  async getEventSpacesByHotel(hotelId: string) {
+    try {
+      const result = await db.execute(sql`
+        SELECT * FROM event_spaces 
+        WHERE hotel_id = ${hotelId} AND is_active = true
+        ORDER BY name ASC
+      `);
+      
+      return {
+        success: true,
+        data: result.rows || [],
+        count: result.rows?.length || 0
+      };
+    } catch (error) {
+      console.error('Error in getEventSpacesByHotel:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: [],
+        count: 0
+      };
+    }
+  }
+
+  async getEventSpaceById(eventSpaceId: string) {
+    try {
+      const result = await db.execute(sql`
+        SELECT * FROM event_spaces WHERE id = ${eventSpaceId}
+      `);
+      
+      if (!result.rows?.[0]) {
+        return { success: false, error: 'Event space not found' };
+      }
+      
+      return { success: true, data: result.rows[0] };
+    } catch (error) {
+      console.error('Error in getEventSpaceById:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async createEventSpace(hotelId: string, data: any) {
+    try {
+      const result = await db.execute(sql`
+        INSERT INTO event_spaces (
+          hotel_id, name, description, capacity_min, capacity_max,
+          price_per_hour, price_per_day, price_per_event, area_sqm,
+          amenities, event_types, images, is_active
+        ) VALUES (
+          ${hotelId}, ${data.name}, ${data.description || null},
+          ${data.capacity_min || 10}, ${data.capacity_max || 100},
+          ${data.price_per_hour || null}, ${data.price_per_day || null},
+          ${data.price_per_event || null}, ${data.area_sqm || null},
+          ${data.amenities || []}, ${data.event_types || []},
+          ${data.images || []}, true
+        ) RETURNING *
+      `);
+      
+      return {
+        success: true,
+        data: result.rows?.[0],
+        message: 'Event space created successfully'
+      };
+    } catch (error) {
+      console.error('Error in createEventSpace:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async updateEventSpace(eventSpaceId: string, data: any) {
+    try {
+      const updates: string[] = [];
+      const values: any[] = [];
+      
+      if (data.name !== undefined) updates.push('name');
+      if (data.description !== undefined) updates.push('description');
+      if (data.capacity_min !== undefined) updates.push('capacity_min');
+      if (data.capacity_max !== undefined) updates.push('capacity_max');
+      if (data.price_per_hour !== undefined) updates.push('price_per_hour');
+      if (data.price_per_day !== undefined) updates.push('price_per_day');
+      if (data.price_per_event !== undefined) updates.push('price_per_event');
+      if (data.area_sqm !== undefined) updates.push('area_sqm');
+      if (data.amenities !== undefined) updates.push('amenities');
+      if (data.event_types !== undefined) updates.push('event_types');
+      if (data.images !== undefined) updates.push('images');
+      if (data.is_active !== undefined) updates.push('is_active');
+
+      const result = await db.execute(sql`
+        UPDATE event_spaces SET
+          name = COALESCE(${data.name}, name),
+          description = COALESCE(${data.description}, description),
+          capacity_min = COALESCE(${data.capacity_min}, capacity_min),
+          capacity_max = COALESCE(${data.capacity_max}, capacity_max),
+          price_per_hour = COALESCE(${data.price_per_hour}, price_per_hour),
+          price_per_day = COALESCE(${data.price_per_day}, price_per_day),
+          price_per_event = COALESCE(${data.price_per_event}, price_per_event),
+          area_sqm = COALESCE(${data.area_sqm}, area_sqm),
+          amenities = COALESCE(${data.amenities}, amenities),
+          event_types = COALESCE(${data.event_types}, event_types),
+          images = COALESCE(${data.images}, images),
+          is_active = COALESCE(${data.is_active}, is_active),
+          updated_at = NOW()
+        WHERE id = ${eventSpaceId}
+        RETURNING *
+      `);
+      
+      if (!result.rows?.[0]) {
+        return { success: false, error: 'Event space not found' };
+      }
+      
+      return { success: true, data: result.rows[0], message: 'Event space updated successfully' };
+    } catch (error) {
+      console.error('Error in updateEventSpace:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async deleteEventSpace(eventSpaceId: string) {
+    try {
+      const result = await db.execute(sql`
+        UPDATE event_spaces SET is_active = false, updated_at = NOW()
+        WHERE id = ${eventSpaceId}
+        RETURNING id
+      `);
+      
+      if (!result.rows?.[0]) {
+        return { success: false, error: 'Event space not found' };
+      }
+      
+      return { success: true, message: 'Event space deleted successfully' };
+    } catch (error) {
+      console.error('Error in deleteEventSpace:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
 }
 
 // ✅ Export FINAL do serviço
