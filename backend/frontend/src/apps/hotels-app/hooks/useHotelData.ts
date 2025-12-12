@@ -172,7 +172,8 @@ export function useHotelData(hotelId?: string | null) {
   // 🔥 3. FUNÇÕES PARA MANIPULAR HOTEL SELECIONADO
   
   const selectHotel = useCallback((hotel: Hotel) => {
-    const hotelId = hotel.id || hotel.hotel_id || '';
+    const rawId = hotel.id ?? hotel.hotel_id;
+    const hotelId = rawId ? String(rawId) : '';
     if (hotelId) {
       setSelectedHotelId(hotelId);
       setSelectedHotel(hotel);
@@ -194,12 +195,13 @@ export function useHotelData(hotelId?: string | null) {
   
   // 🔥 4. FUNÇÕES ÚTEIS PARA HOTEL
   
-  const getHotelName = useCallback((hotel?: Hotel): string => {
+  const getHotelName = useCallback((hotel?: Partial<Hotel> | null): string => {
     return hotel?.name || hotel?.hotel_name || 'Hotel sem nome';
   }, []);
   
-  const getHotelId = useCallback((hotel?: Hotel): string => {
-    return hotel?.id || hotel?.hotel_id || '';
+  const getHotelId = useCallback((hotel?: Partial<Hotel> | null): string => {
+    const rawId = hotel?.id ?? hotel?.hotel_id;
+    return rawId ? String(rawId) : '';
   }, []);
   
   const formatPrice = useCallback((price?: string | number): string => {

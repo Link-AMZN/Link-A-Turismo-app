@@ -109,9 +109,9 @@ export default function HotelsDashboard() {
           return rooms.map((room: RoomType) => ({
             id: room.id || room.room_type_id || '',
             name: room.name || room.room_type_name || 'Quarto sem nome',
-            type: 'standard', // valor padrão
-            price_per_night: room.price_per_night || room.base_price || 0,
-            base_price: room.base_price || 0,
+            type: 'standard',
+            price_per_night: Number(room.price_per_night) || Number(room.base_price) || 0,
+            base_price: Number(room.base_price) || 0,
             total_units: room.total_units || 0,
             available_units: room.available_units || 0,
             total_rooms: room.total_units || 0,
@@ -134,7 +134,7 @@ export default function HotelsDashboard() {
   });
 
   // Buscar estatísticas
-  const { data: hotelStats, isLoading: statsLoading } = useQuery({
+  const { data: hotelStats } = useQuery({
     queryKey: ['hotel-stats', selectedHotelId] as const,
     queryFn: async (): Promise<HotelStatistics | null> => {
       if (!selectedHotelId) return null;

@@ -1,24 +1,17 @@
 // src/apps/hotels-app/components/shared/HotelSelector.tsx - VERSÃO SIMPLIFICADA
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
-import { Building2, Hotel, MapPin, Check, ChevronDown, ArrowRight, Loader2 } from 'lucide-react';
+import { Building2, Hotel as HotelIcon, MapPin, Check, ChevronDown } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Link, useLocation } from 'wouter';
-import { useHotelData } from '../../hooks/useHotelData'; // 🔥 USE O HOOK UNIFICADO
+import { useHotelData } from '../../hooks/useHotelData';
+import type { Hotel } from '@/types';
 
-interface Hotel {
-  id: string;
-  name: string;
-  locality?: string;
-  is_active?: boolean;
-  province?: string;
-  hotel_id?: string;
-  hotel_name?: string;
-}
+type HotelListItem = Partial<Hotel> & { id?: string; hotel_id?: string; name?: string; hotel_name?: string };
 
 interface HotelSelectorProps {
-  hotels: Hotel[];
+  hotels: HotelListItem[];
   isLoading?: boolean;
   className?: string;
 }
@@ -68,7 +61,7 @@ export default function HotelSelector({
       <Card className={className}>
         <CardContent className="p-6 text-center">
           <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-            <Hotel className="h-6 w-6 text-gray-400" />
+            <HotelIcon className="h-6 w-6 text-gray-400" />
           </div>
           <h3 className="font-semibold text-gray-900 mb-2">
             Nenhum hotel cadastrado
@@ -131,7 +124,13 @@ export default function HotelSelector({
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {hotels.map((hotel) => {
+              {hotels
+                .filter((hotel) => {
+                  const rawId = hotel.id ?? hotel.hotel_id;
+                  const id = rawId ? String(rawId).trim() : '';
+                  return id !== '';
+                })
+                .map((hotel) => {
                 const hotelId = getHotelId(hotel);
                 const hotelName = getHotelName(hotel);
                 const isSelected = hotelId === selectedHotelId;
@@ -195,7 +194,7 @@ export default function HotelSelector({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <Link href={`/hotels/${selectedHotelId}`}>
                   <Button className="w-full bg-blue-600 hover:bg-blue-700">
-                    <Hotel className="h-4 w-4 mr-2" />
+                    <HotelIcon className="h-4 w-4 mr-2" />
                     Dashboard
                   </Button>
                 </Link>
@@ -211,7 +210,7 @@ export default function HotelSelector({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Link href={`/hotels/${selectedHotelId}/room-types`}>
                   <Button variant="outline" className="w-full">
-                    <Hotel className="h-4 w-4 mr-2" />
+                    <HotelIcon className="h-4 w-4 mr-2" />
                     Quartos
                   </Button>
                 </Link>
