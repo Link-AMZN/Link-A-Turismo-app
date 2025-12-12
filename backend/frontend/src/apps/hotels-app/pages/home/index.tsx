@@ -7,8 +7,7 @@ import {
   Calendar, Users, ArrowRight, ChevronDown, MapPin,
   Star, Clock, Bell, Settings, HelpCircle, BarChart3,
   Filter, Search, Grid, List, Eye, Edit, MoreVertical,
-  RefreshCw, AlertCircle, Layers, HotelIcon,
-  ChevronRight
+  RefreshCw, AlertCircle, Layers, ChevronRight
 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { formatPrice } from '@/apps/hotels-app/utils/hotelHelpers';
@@ -666,7 +665,7 @@ export default function HotelsHome() {
       <div className="bg-gray-50 rounded-xl p-6 border">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center space-x-2">
-            <HotelIcon className="h-5 w-5 text-blue-600" />
+            <Hotel className="h-5 w-5 text-blue-600" />
             <span className="text-sm text-gray-600">Gestão Hoteleira • Resumo do Sistema</span>
           </div>
           <div className="flex flex-wrap gap-4">
