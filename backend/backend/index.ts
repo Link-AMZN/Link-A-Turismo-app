@@ -50,6 +50,12 @@ try {
 app.use(
   cors({
     origin: (origin, callback) => {
+      // In development, allow all origins (including Replit proxy)
+      if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+        callback(null, true);
+        return;
+      }
+      
       const allowedOrigins = [
         // Domínios de produção
         "https://link-aturismomoz.com",
@@ -63,6 +69,7 @@ app.use(
         "http://localhost:3000",
         "http://localhost:5000",
         "http://localhost:8000",
+        "http://127.0.0.1:5000",
         
         // Replit development
         undefined // Para ferramentas de desenvolvimento
