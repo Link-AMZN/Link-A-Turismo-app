@@ -449,6 +449,115 @@ export const createRoomType = async (req: Request, res: Response) => {
   }
 };
 
+// ====================== HANDLERS DE ROOM TYPE INDIVIDUAIS ======================
+
+/**
+ * Handler: Obter um room type específico por ID
+ * GET /api/v2/hotels/room-types/:roomTypeId
+ */
+export const getRoomTypeById = async (req: Request, res: Response) => {
+  try {
+    const { roomTypeId } = req.params;
+    console.log(`📋 GET /api/v2/hotels/room-types/${roomTypeId}`);
+
+    const result = await hotelService.getRoomTypeById(roomTypeId);
+    
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Erro em GET /api/v2/hotels/room-types/:roomTypeId:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+};
+
+/**
+ * Handler: Atualizar um room type
+ * PUT /api/v2/hotels/room-types/:roomTypeId
+ */
+export const updateRoomType = async (req: Request, res: Response) => {
+  try {
+    const { roomTypeId } = req.params;
+    const updateData = req.body;
+    console.log(`📋 PUT /api/v2/hotels/room-types/${roomTypeId}`, updateData);
+
+    // Converter campos camelCase para snake_case
+    const formattedData: any = {};
+    if (updateData.name !== undefined) formattedData.name = updateData.name;
+    if (updateData.description !== undefined) formattedData.description = updateData.description;
+    if (updateData.basePrice !== undefined) formattedData.base_price = updateData.basePrice;
+    if (updateData.totalUnits !== undefined) formattedData.total_units = updateData.totalUnits;
+    if (updateData.availableUnits !== undefined) formattedData.available_units = updateData.availableUnits;
+    if (updateData.baseOccupancy !== undefined) formattedData.base_occupancy = updateData.baseOccupancy;
+    if (updateData.maxOccupancy !== undefined) formattedData.max_occupancy = updateData.maxOccupancy;
+    if (updateData.minNightsDefault !== undefined) formattedData.min_nights_default = updateData.minNightsDefault;
+    if (updateData.extraAdultPrice !== undefined) formattedData.extra_adult_price = updateData.extraAdultPrice;
+    if (updateData.extraChildPrice !== undefined) formattedData.extra_child_price = updateData.extraChildPrice;
+    if (updateData.size !== undefined) formattedData.size = updateData.size;
+    if (updateData.bedType !== undefined) formattedData.bed_type = updateData.bedType;
+    if (updateData.bedTypes !== undefined) formattedData.bed_types = updateData.bedTypes;
+    if (updateData.bathroomType !== undefined) formattedData.bathroom_type = updateData.bathroomType;
+    if (updateData.childrenPolicy !== undefined) formattedData.children_policy = updateData.childrenPolicy;
+    if (updateData.amenities !== undefined) formattedData.amenities = updateData.amenities;
+    if (updateData.images !== undefined) formattedData.images = updateData.images;
+    if (updateData.isActive !== undefined) formattedData.is_active = updateData.isActive;
+
+    const result = await hotelService.updateRoomType(roomTypeId, formattedData);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+      message: result.message || 'Tipo de quarto atualizado com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro em PUT /api/v2/hotels/room-types/:roomTypeId:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+};
+
+/**
+ * Handler: Deletar/Desativar um room type
+ * DELETE /api/v2/hotels/room-types/:roomTypeId
+ */
+export const deleteRoomType = async (req: Request, res: Response) => {
+  try {
+    const { roomTypeId } = req.params;
+    console.log(`📋 DELETE /api/v2/hotels/room-types/${roomTypeId}`);
+
+    const result = await hotelService.deleteRoomType(roomTypeId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: result.message || 'Tipo de quarto removido com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro em DELETE /api/v2/hotels/room-types/:roomTypeId:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+};
+
 // ====================== HANDLERS DE DISPONIBILIDADE ======================
 
 /**
@@ -1112,6 +1221,9 @@ export default {
   // Room type handlers
   getHotelRoomTypes,
   createRoomType,
+  getRoomTypeById,
+  updateRoomType,
+  deleteRoomType,
   
   // Availability handlers
   getAvailability,

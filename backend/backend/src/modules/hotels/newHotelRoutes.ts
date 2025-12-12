@@ -18,6 +18,9 @@ import {
   updateHotel,
   deactivateHotel,
   createRoomType,
+  getRoomTypeById,
+  updateRoomType,
+  deleteRoomType,
   getHotelPerformance,
   healthCheck,
   validateUUID,
@@ -132,6 +135,26 @@ router.post('/:hotelId/availability/bulk',
   bulkUpdateAvailability
 );
 
+// ====================== ROTAS DE ROOM TYPES INDIVIDUAIS ======================
+
+// 19. Obter room type por ID - PÚBLICA
+router.get('/room-types/:roomTypeId', validateUUID('roomTypeId'), getRoomTypeById);
+
+// 20. Atualizar room type - PROTEGIDA
+router.put('/room-types/:roomTypeId', 
+  authenticate('hotel_manager'), 
+  validateUUID('roomTypeId'), 
+  validate(updateRoomTypeSchema), 
+  updateRoomType
+);
+
+// 21. Deletar room type - PROTEGIDA
+router.delete('/room-types/:roomTypeId', 
+  authenticate('hotel_manager'), 
+  validateUUID('roomTypeId'), 
+  deleteRoomType
+);
+
 // ====================== ROTA FALLBACK ======================
 
 // 19. Rota para debug de 404s
@@ -165,7 +188,10 @@ router.use('*', (req, res) => {
       'PUT /api/v2/hotels/:hotelId',
       'DELETE /api/v2/hotels/:hotelId',
       'POST /api/v2/hotels/:hotelId/room-types',
-      'POST /api/v2/hotels/:hotelId/availability/bulk' // ✅ CORRIGIDA
+      'POST /api/v2/hotels/:hotelId/availability/bulk',
+      'GET /api/v2/hotels/room-types/:roomTypeId',
+      'PUT /api/v2/hotels/room-types/:roomTypeId',
+      'DELETE /api/v2/hotels/room-types/:roomTypeId'
     ]
   });
 });
@@ -192,4 +218,7 @@ console.log('  POST /api/v2/hotels');
 console.log('  PUT  /api/v2/hotels/:hotelId');
 console.log('  DELETE /api/v2/hotels/:hotelId');
 console.log('  POST /api/v2/hotels/:hotelId/room-types');
-console.log('  POST /api/v2/hotels/:hotelId/availability/bulk ✅ CORRIGIDA');
+console.log('  POST /api/v2/hotels/:hotelId/availability/bulk');
+console.log('  GET  /api/v2/hotels/room-types/:roomTypeId');
+console.log('  PUT  /api/v2/hotels/room-types/:roomTypeId');
+console.log('  DELETE /api/v2/hotels/room-types/:roomTypeId');

@@ -1802,6 +1802,174 @@ export class HotelService {
       }
     }
   }
+
+  /**
+   * Get room type by ID
+   */
+  async getRoomTypeById(roomTypeId: string) {
+    try {
+      const result = await db
+        .select()
+        .from(room_types)
+        .where(eq(room_types.id, roomTypeId))
+        .limit(1);
+
+      const roomType = result[0];
+
+      if (!roomType) {
+        return {
+          success: false,
+          error: 'Room type not found',
+          data: null
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          ...roomType,
+          base_price: Number(roomType.base_price || 0),
+          max_occupancy: roomType.max_occupancy || 2,
+          total_units: roomType.total_units || 1
+        }
+      };
+    } catch (error) {
+      console.error('Error in getRoomTypeById:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
+      };
+    }
+  }
+
+  /**
+   * Update room type
+   */
+  async updateRoomType(roomTypeId: string, data: {
+    name?: string;
+    description?: string;
+    base_price?: number;
+    max_occupancy?: number;
+    total_units?: number;
+    available_units?: number;
+    base_occupancy?: number;
+    min_nights_default?: number;
+    extra_adult_price?: number;
+    extra_child_price?: number;
+    size?: number;
+    bed_type?: string;
+    bed_types?: string[];
+    bathroom_type?: string;
+    children_policy?: string;
+    amenities?: string[];
+    images?: string[];
+    is_active?: boolean;
+  }) {
+    try {
+      const existingResult = await db
+        .select()
+        .from(room_types)
+        .where(eq(room_types.id, roomTypeId))
+        .limit(1);
+
+      if (!existingResult[0]) {
+        return {
+          success: false,
+          error: 'Room type not found',
+          data: null
+        };
+      }
+
+      const updateData: any = {
+        updated_at: new Date()
+      };
+
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.base_price !== undefined) updateData.base_price = data.base_price.toString();
+      if (data.max_occupancy !== undefined) updateData.max_occupancy = data.max_occupancy;
+      if (data.total_units !== undefined) updateData.total_units = data.total_units;
+      if (data.available_units !== undefined) updateData.available_units = data.available_units;
+      if (data.base_occupancy !== undefined) updateData.base_occupancy = data.base_occupancy;
+      if (data.min_nights_default !== undefined) updateData.min_nights_default = data.min_nights_default;
+      if (data.extra_adult_price !== undefined) updateData.extra_adult_price = data.extra_adult_price.toString();
+      if (data.extra_child_price !== undefined) updateData.extra_child_price = data.extra_child_price.toString();
+      if (data.size !== undefined) updateData.size = data.size;
+      if (data.bed_type !== undefined) updateData.bed_type = data.bed_type;
+      if (data.bed_types !== undefined) updateData.bed_types = data.bed_types;
+      if (data.bathroom_type !== undefined) updateData.bathroom_type = data.bathroom_type;
+      if (data.children_policy !== undefined) updateData.children_policy = data.children_policy;
+      if (data.amenities !== undefined) updateData.amenities = data.amenities;
+      if (data.images !== undefined) updateData.images = data.images;
+      if (data.is_active !== undefined) updateData.is_active = data.is_active;
+
+      const result = await db
+        .update(room_types)
+        .set(updateData)
+        .where(eq(room_types.id, roomTypeId))
+        .returning();
+
+      const updated = result[0];
+
+      return {
+        success: true,
+        data: {
+          ...updated,
+          base_price: Number(updated.base_price || 0),
+          max_occupancy: updated.max_occupancy || 2,
+          total_units: updated.total_units || 1
+        },
+        message: 'Room type updated successfully'
+      };
+    } catch (error) {
+      console.error('Error in updateRoomType:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
+      };
+    }
+  }
+
+  /**
+   * Delete room type (soft delete by setting is_active to false)
+   */
+  async deleteRoomType(roomTypeId: string) {
+    try {
+      const existingResult = await db
+        .select()
+        .from(room_types)
+        .where(eq(room_types.id, roomTypeId))
+        .limit(1);
+
+      if (!existingResult[0]) {
+        return {
+          success: false,
+          error: 'Room type not found'
+        };
+      }
+
+      await db
+        .update(room_types)
+        .set({
+          is_active: false,
+          updated_at: new Date()
+        })
+        .where(eq(room_types.id, roomTypeId));
+
+      return {
+        success: true,
+        message: 'Room type deleted successfully'
+      };
+    } catch (error) {
+      console.error('Error in deleteRoomType:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
 }
 
 // ✅ Export FINAL do serviço
